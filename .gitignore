@@ -1,0 +1,18 @@
+# Python
+venv/
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Environment
+.env
+.env.*
+
+# Next.js
+.next/
+
+# Node
+node_modules/
+
+# Package lock
+package-lock.json
