@@ -2,7 +2,7 @@
 
 | Page | Route | Purpose | Status |
 |---|---|---|---|
-| Home | `/` | Redirects to `/dashboard` | Completed |
+| Landing Page | `/` | Public marketing landing page with live ChatDemo | Completed |
 | Sign In | `/login` | Merchant sign-in page | Completed |
 | Sign Up | `/signup` | Merchant account sign-up page | Completed |
 | Dashboard | `/dashboard` | Merchant sales, conversations, and sync activity dashboard | Completed |

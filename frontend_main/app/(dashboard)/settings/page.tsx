@@ -4,7 +4,7 @@ import React, { useState } from "react";
 import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/button";
-import { Check, Settings, Sparkles, Sliders, Shield } from "lucide-react";
+import { Check, Settings, UploadCloud, Sliders, Shield } from "lucide-react";
 
 export default function SettingsPage() {
   // Agent configuration states
@@ -109,7 +109,7 @@ export default function SettingsPage() {
                   className="w-16 h-16 rounded-xl border-2 border-dashed border-border bg-background flex flex-col items-center justify-center text-text-secondary hover:text-primary hover:border-primary transition-colors cursor-pointer"
                   role="presentation"
                 >
-                  <Sparkles className="w-6 h-6" />
+                  <UploadCloud className="w-6 h-6" />
                   <span className="text-[10px] font-semibold mt-1">Upload</span>
                 </div>
                 <div>

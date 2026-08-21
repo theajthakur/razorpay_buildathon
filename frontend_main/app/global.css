@@ -48,6 +48,18 @@
   font-family: var(--font-heading), sans-serif;
 }
 
+@utility bg-grid {
+  background-image: 
+    linear-gradient(to right, var(--color-border) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--color-border) 1px, transparent 1px);
+  background-size: 3rem 3rem;
+  opacity: 0.15;
+}
+
+@utility bg-grid-fade {
+  mask-image: radial-gradient(circle at center, black 40%, transparent 80%);
+}
+
 @layer base {
   body {
     background-color: var(--color-background);

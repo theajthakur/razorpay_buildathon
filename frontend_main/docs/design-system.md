@@ -66,3 +66,11 @@ Exactly two Google Fonts are used across the application:
    - Base body text size: 16px minimum (`text-base`), line-height 1.6 (`leading-relaxed`).
 
 3. **Whitespace**: Generous padding on cards and section layouts by default.
+
+## 4. Visual Assets & Icons
+
+- **Hero Backdrop**: The marketing page hero uses the `/assets/hero_backdrop.png` asset.
+  - On desktop: cover-fills full container backdrop (`inset-0 object-cover`).
+  - On mobile: bottom-right corner aligned (`bottom-0 right-0 object-contain w-3/5 h-1/2`).
+- **Icons**: General Lucide icons are encouraged. However, the `sparkles` icon is strictly prohibited in favor of minimal upload/system line icons like `UploadCloud` or `Layers`.
+
