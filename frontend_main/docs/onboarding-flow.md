@@ -1,46 +1,58 @@
 # Onboarding Flow Documentation
 
-This document describes the multi-step API onboarding wizard built in `frontend_main` used by merchants to connect their existing store databases with the AI shopping agent platform.
+This document describes the unified, single-page onboarding configuration flow built in `frontend_main` used by merchants to connect their existing store databases and settlement bank accounts.
 
-## Wizard Structure
+## Onboarding Structure
 
-The wizard guides the merchant through connecting 4 essential business APIs and linking their Razorpay payout account.
+Instead of separate wizard steps, onboarding is presented on a single dashboard divided into three functional blocks:
 
 ```mermaid
 graph TD
-  Step1[Products API] --> Step2[Orders API]
-  Step2 --> Step3[Customers API]
-  Step3 --> Step4[Auth API]
-  Step4 --> Step5[Razorpay Connection]
-  Step5 --> Step6[Review & Finish]
+  A[1. Shared Connection Details] --> B[2. Resource Endpoints]
+  B --> C[3. Settlement Bank Account]
+  C --> D[Verification & Finish]
 ```
 
 ---
 
-### Step 1: Products API
-- **Purpose**: Gives the AI shopping agent permissions to browse the store's inventory, query stock availability, and recommend items.
-- **Fields**: Base URL, Auth Method (Select), Credential value.
+## 1. Shared Connection Details
 
-### Step 2: Orders API
-- **Purpose**: Allows the AI agent to verify purchase states, create cart payloads, and register transactions.
-- **Fields**: Base URL, Auth Method (Select), Credential value.
+Entered once at the top of the page, these configuration credentials authorize all subsequent endpoint requests:
+- **API Base URL**: e.g., `https://api.yourstore.com/v1`
+- **Authentication Method**: Dropdown supporting `API Key`, `Bearer Token`, or `Basic Auth`.
+- **Credential Value**: Key/Token string.
 
-### Step 3: Customers API
-- **Purpose**: Retrieves customer loyalty metrics, addresses, and triggers custom discounts.
-- **Fields**: Base URL, Auth Method (Select), Credential value.
-
-### Step 4: Auth API
-- **Purpose**: Secures user sign-ins inside the chatbot, scoping agent permissions.
-- **Fields**: Base URL, Auth Method (Select), Credential value.
-
-### Step 5: Settlement Bank Account Connection
-- **Purpose**: Collects merchant bank routing targets to settle transaction payouts.
-- **Verification**: Resolves IFSC code dynamically using Razorpay's validation API (`https://ifsc.razorpay.com`), showing Bank Name and Branch Name. Proceeding is allowed only if IFSC is successfully resolved.
+Changing any of these fields automatically resets the verification states of the 5 endpoint rows below.
 
 ---
 
-## Connection Verification
+## 2. Resource Endpoints
 
-Each step features a validation test.
-- A step **cannot be skipped** or advanced until a successful verification (`success` status badge) is confirmed.
-- Once all 5 connections return positive checkmarks, the final summary screen unlocks the **Finish Setup** action to redirect the merchant to the primary dashboard.
+Configure individual paths appended to the shared Base URL and HTTP methods. Each endpoint features its own **Test** verification action.
+
+| Endpoint | Default Path | Default Method | Description |
+|---|---|---|---|
+| **Products API** | `/products` | `GET` | Catalog item discovery and detail queries. |
+| **Orders API** | `/orders` | `POST` | Order cart submission and registration. |
+| **Customers API** | `/customers` | `GET` | Customer profiling and loyalty validation. |
+| **Auth API** | `/auth` | `POST` | Secured shopper sign-ins and session scoping. |
+| **Order History** | `/orders/history` | `GET` | Active shipping updates and purchase history. |
+
+---
+
+## 3. Settlement Bank Account
+
+Links deposit target coordinates for Razorpay payout distribution:
+- **Bank Account Number**: Merchant deposit identifier.
+- **IFSC Code**: Checked against Razorpay's public IFSC validation service:
+  `GET https://ifsc.razorpay.com/{IFSC}`
+- On successful resolution, the UI displays the verified **Bank Name** and **Branch Name** in an inline success badge.
+
+---
+
+## Completion Criteria
+
+The **Finish Setup** action is enabled only when:
+1. Shared connection details are not empty.
+2. All 5 resource endpoints return positive verified `success` badges.
+3. The IFSC code lookup resolves successfully.

@@ -1,118 +1,118 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/Input";
-import { StepIndicator } from "@/components/ui/StepIndicator";
-import { ConnectionForm, ConnectionData } from "@/components/ui/ConnectionForm";
+import { EndpointRow } from "@/components/ui/EndpointRow";
 import { StatusBadge, StatusType } from "@/components/ui/StatusBadge";
-import { Globe, Settings2, Key, Database, BadgeCheck, CreditCard, ArrowRight, ArrowLeft, Landmark } from "lucide-react";
+import { BadgeCheck, Landmark, ShieldCheck, Database, CreditCard } from "lucide-react";
 
 export default function OnboardingPage() {
   const router = useRouter();
-  const [currentStep, setCurrentStep] = useState(1);
 
-  // Form State
-  const [formData, setFormData] = useState<{
-    products: ConnectionData;
-    orders: ConnectionData;
-    customers: ConnectionData;
-    auth: ConnectionData;
-  }>({
-    products: { baseUrl: "", authMethod: "apikey", credentialValue: "" },
-    orders: { baseUrl: "", authMethod: "bearer", credentialValue: "" },
-    customers: { baseUrl: "", authMethod: "apikey", credentialValue: "" },
-    auth: { baseUrl: "", authMethod: "bearer", credentialValue: "" },
+  // Part A: Shared Connection Details State
+  const [baseUrl, setBaseUrl] = useState("https://api.acmestore.com/v1");
+  const [authMethod, setAuthMethod] = useState("bearer");
+  const [credentialValue, setCredentialValue] = useState("tok_live_secret12345");
+
+  // Reset all endpoint statuses if shared connection details change
+  useEffect(() => {
+    setEndpointStatuses({
+      products: "untested",
+      orders: "untested",
+      customers: "untested",
+      auth: "untested",
+      orderHistory: "untested",
+    });
+  }, [baseUrl, authMethod, credentialValue]);
+
+  // Part B: Endpoints State
+  const [endpoints, setEndpoints] = useState({
+    products: { path: "products", method: "GET" },
+    orders: { path: "orders", method: "POST" },
+    customers: { path: "customers", method: "GET" },
+    auth: { path: "auth", method: "POST" },
+    orderHistory: { path: "orders/history", method: "GET" },
   });
 
-  // Bank connection details state
-  const [bankAccount, setBankAccount] = useState("");
-  const [ifsc, setIfsc] = useState("");
-  const [ifscError, setIfscError] = useState("");
-  const [resolvedBank, setResolvedBank] = useState("");
-  const [resolvedBranch, setResolvedBranch] = useState("");
-  const [razorpayConnected, setRazorpayConnected] = useState(false);
-  const [razorpayTesting, setRazorpayTesting] = useState(false);
-
-  // Connection status states
-  const [testStatuses, setTestStatuses] = useState<{
+  const [endpointStatuses, setEndpointStatuses] = useState<{
     products: StatusType;
     orders: StatusType;
     customers: StatusType;
     auth: StatusType;
+    orderHistory: StatusType;
   }>({
     products: "untested",
     orders: "untested",
     customers: "untested",
     auth: "untested",
+    orderHistory: "untested",
   });
 
-  const steps = [
-    "Products API",
-    "Orders API",
-    "Customers API",
-    "Auth API",
-    "Settlement Account",
-    "Review & Complete",
-  ];
+  // Bank Settlement Account State
+  const [bankAccount, setBankAccount] = useState("");
+  const [ifsc, setIfsc] = useState("");
+  const [ifscError, setIfscError] = useState("");
+  const [resolvedBank, setResolvedBank] = useState("");
+  const [resolvedBranch, setResolvedBranch] = useState("");
+  const [bankVerified, setBankVerified] = useState(false);
+  const [bankLoading, setBankLoading] = useState(false);
 
-  const handleFormChange = (
-    apiKey: "products" | "orders" | "customers" | "auth",
-    updated: Partial<ConnectionData>
+  const handleEndpointChange = (
+    key: keyof typeof endpoints,
+    field: "path" | "method",
+    val: string
   ) => {
-    setFormData((prev) => ({
+    setEndpoints((prev) => ({
       ...prev,
-      [apiKey]: { ...prev[apiKey], ...updated },
+      [key]: { ...prev[key], [field]: val },
     }));
-    setTestStatuses((prev) => ({
+    setEndpointStatuses((prev) => ({
       ...prev,
-      [apiKey]: "untested",
+      [key]: "untested",
     }));
   };
 
-  const simulateTestConnection = (
-    apiKey: "products" | "orders" | "customers" | "auth"
-  ) => {
-    setTestStatuses((prev) => ({ ...prev, [apiKey]: "pending" }));
+  const handleTestEndpoint = (key: keyof typeof endpoints) => {
+    setEndpointStatuses((prev) => ({ ...prev, [key]: "pending" }));
     setTimeout(() => {
-      setTestStatuses((prev) => ({ ...prev, [apiKey]: "success" }));
+      setEndpointStatuses((prev) => ({ ...prev, [key]: "success" }));
     }, 1000);
   };
 
   const handleIfscLookup = async (code: string) => {
     const cleaned = code.trim().toUpperCase();
     setIfsc(cleaned);
-    
-    // Clear resolved bank and connection state if user modifies code away from 11 chars
+
     if (cleaned.length !== 11) {
       setResolvedBank("");
       setResolvedBranch("");
-      setRazorpayConnected(false);
+      setBankVerified(false);
       setIfscError("");
       return;
     }
 
-    setRazorpayTesting(true);
+    setBankLoading(true);
     setIfscError("");
-    
+
     try {
       const res = await fetch(`https://ifsc.razorpay.com/${cleaned}`);
       if (!res.ok) {
-        throw new Error("Invalid IFSC Code");
+        throw new Error("Invalid IFSC");
       }
       const data = await res.json();
       setResolvedBank(data.BANK);
       setResolvedBranch(data.BRANCH);
-      setRazorpayConnected(true);
+      setBankVerified(true);
     } catch (err) {
       setIfscError("Failed to detect branch. Please check the IFSC code.");
       setResolvedBank("");
       setResolvedBranch("");
-      setRazorpayConnected(false);
+      setBankVerified(false);
     } finally {
-      setRazorpayTesting(false);
+      setBankLoading(false);
     }
   };
 
@@ -120,332 +120,232 @@ export default function OnboardingPage() {
     router.push("/dashboard");
   };
 
-  const isStep5Valid = bankAccount.trim().length >= 8 && razorpayConnected;
+  // Onboarding Completion Criteria
+  const isSharedCredsValid =
+    baseUrl.trim() !== "" && credentialValue.trim() !== "";
+
+  const allEndpointsSuccess =
+    endpointStatuses.products === "success" &&
+    endpointStatuses.orders === "success" &&
+    endpointStatuses.customers === "success" &&
+    endpointStatuses.auth === "success" &&
+    endpointStatuses.orderHistory === "success";
+
+  const isBankSetupValid = bankAccount.trim().length >= 8 && bankVerified;
+
+  const isSetupComplete =
+    isSharedCredsValid && allEndpointsSuccess && isBankSetupValid;
 
   return (
     <div className="space-y-8 max-w-4xl mx-auto py-4">
-      {/* Page Title Header */}
-      <div className="text-center sm:text-left">
+      {/* Title Header */}
+      <div>
         <h1 className="font-heading text-2xl font-bold text-text-primary">
           Connect Your Business APIs
         </h1>
         <p className="text-sm text-text-secondary mt-1">
-          Link your store databases and setup Razorpay payouts for automated payment links.
+          Provide your endpoint coordinates, authentication settings, and payout account details to complete setup.
         </p>
       </div>
 
-      {/* Progress Tracker */}
-      <div className="bg-surface border border-border rounded-xl p-6 shadow-xs">
-        <StepIndicator currentStep={currentStep} steps={steps} />
-      </div>
+      {/* Part A: Shared Connection Details Card */}
+      <Card
+        title="1. Shared Connection Details"
+        description="Configure the base URL and authorization scheme. These credentials are used for all endpoint verifications below."
+      >
+        <div className="space-y-6">
+          <Input
+            label="API Base URL"
+            placeholder="https://api.yourstore.com/v1"
+            value={baseUrl}
+            onChange={(e) => setBaseUrl(e.target.value)}
+            required
+          />
 
-      {/* Wizard Step Render */}
-      {currentStep === 1 && (
-        <ConnectionForm
-          apiName="Products"
-          description="Provide access to your product catalog so the AI shopping agent can browse, fetch inventory, and recommend products."
-          values={formData.products}
-          onChange={(val) => handleFormChange("products", val)}
-          onTestConnection={() => simulateTestConnection("products")}
-          testStatus={testStatuses.products}
-          onNext={() => setCurrentStep(2)}
-          isFirstStep
-        />
-      )}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div>
+              <label className="block text-sm font-medium text-text-primary mb-1.5">
+                Authentication Method
+              </label>
+              <select
+                value={authMethod}
+                onChange={(e) => setAuthMethod(e.target.value)}
+                className="w-full bg-surface border border-border rounded-lg px-3.5 py-2.5 text-base text-text-primary focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-colors cursor-pointer"
+              >
+                <option value="apikey">API Key</option>
+                <option value="bearer">Bearer Token</option>
+                <option value="basic">Basic Auth</option>
+              </select>
+            </div>
 
-      {currentStep === 2 && (
-        <ConnectionForm
-          apiName="Orders"
-          description="Provide access to your orders API to allow the AI agent to verify purchase states, create order carts, and lookup history."
-          values={formData.orders}
-          onChange={(val) => handleFormChange("orders", val)}
-          onTestConnection={() => simulateTestConnection("orders")}
-          testStatus={testStatuses.orders}
-          onNext={() => setCurrentStep(3)}
-          onBack={() => setCurrentStep(1)}
-        />
-      )}
+            <Input
+              label={
+                authMethod === "basic"
+                  ? "Username:Password (Base64)"
+                  : authMethod === "bearer"
+                  ? "Bearer Token"
+                  : "API Key Header Value"
+              }
+              type="password"
+              placeholder="••••••••"
+              value={credentialValue}
+              onChange={(e) => setCredentialValue(e.target.value)}
+              required
+            />
+          </div>
+        </div>
+      </Card>
 
-      {currentStep === 3 && (
-        <ConnectionForm
-          apiName="Customers"
-          description="Provide access to customer records so the AI agent can lookup profiles, apply personalized discounts, and check purchase patterns."
-          values={formData.customers}
-          onChange={(val) => handleFormChange("customers", val)}
-          onTestConnection={() => simulateTestConnection("customers")}
-          testStatus={testStatuses.customers}
-          onNext={() => setCurrentStep(4)}
-          onBack={() => setCurrentStep(2)}
-        />
-      )}
+      {/* Part B: Endpoints Mapping Card */}
+      <Card
+        title="2. Resource Endpoints"
+        description="Verify individual endpoint resource routes. You must test and confirm success on each row."
+      >
+        <div className="divide-y divide-border">
+          <EndpointRow
+            label="Products API"
+            path={endpoints.products.path}
+            method={endpoints.products.method}
+            onPathChange={(p) => handleEndpointChange("products", "path", p)}
+            onMethodChange={(m) => handleEndpointChange("products", "method", m)}
+            onTest={() => handleTestEndpoint("products")}
+            testStatus={endpointStatuses.products}
+            disabled={!isSharedCredsValid}
+          />
 
-      {currentStep === 4 && (
-        <ConnectionForm
-          apiName="Auth"
-          description="Provide authentication endpoints to securely sign in shoppers and scope agent permissions for backend operations."
-          values={formData.auth}
-          onChange={(val) => handleFormChange("auth", val)}
-          onTestConnection={() => simulateTestConnection("auth")}
-          testStatus={testStatuses.auth}
-          onNext={() => setCurrentStep(5)}
-          onBack={() => setCurrentStep(3)}
-        />
-      )}
+          <EndpointRow
+            label="Orders API"
+            path={endpoints.orders.path}
+            method={endpoints.orders.method}
+            onPathChange={(p) => handleEndpointChange("orders", "path", p)}
+            onMethodChange={(m) => handleEndpointChange("orders", "method", m)}
+            onTest={() => handleTestEndpoint("orders")}
+            testStatus={endpointStatuses.orders}
+            disabled={!isSharedCredsValid}
+          />
 
-      {currentStep === 5 && (
-        <Card
-          title="Setup Bank Settlement Account"
-          description="Provide your business bank details to receive payouts. Razorpay's network maps dynamic checkouts to split client margins directly into this deposit target."
-        >
-          <div className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* Account Number */}
+          <EndpointRow
+            label="Customers API"
+            path={endpoints.customers.path}
+            method={endpoints.customers.method}
+            onPathChange={(p) => handleEndpointChange("customers", "path", p)}
+            onMethodChange={(m) => handleEndpointChange("customers", "method", m)}
+            onTest={() => handleTestEndpoint("customers")}
+            testStatus={endpointStatuses.customers}
+            disabled={!isSharedCredsValid}
+          />
+
+          <EndpointRow
+            label="Auth API"
+            path={endpoints.auth.path}
+            method={endpoints.auth.method}
+            onPathChange={(p) => handleEndpointChange("auth", "path", p)}
+            onMethodChange={(m) => handleEndpointChange("auth", "method", m)}
+            onTest={() => handleTestEndpoint("auth")}
+            testStatus={endpointStatuses.auth}
+            disabled={!isSharedCredsValid}
+          />
+
+          <EndpointRow
+            label="Order History"
+            path={endpoints.orderHistory.path}
+            method={endpoints.orderHistory.method}
+            onPathChange={(p) => handleEndpointChange("orderHistory", "path", p)}
+            onMethodChange={(m) => handleEndpointChange("orderHistory", "method", m)}
+            onTest={() => handleTestEndpoint("orderHistory")}
+            testStatus={endpointStatuses.orderHistory}
+            disabled={!isSharedCredsValid}
+          />
+        </div>
+      </Card>
+
+      {/* Part C: Settlement Bank Target */}
+      <Card
+        title="3. Settlement Bank Account"
+        description="Provide your business deposit details to route payouts from Razorpay transaction completions."
+      >
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <Input
+              label="Bank Account Number"
+              type="text"
+              placeholder="09280192839128"
+              value={bankAccount}
+              onChange={(e) => setBankAccount(e.target.value.replace(/\D/g, ""))}
+              required
+            />
+
+            <div className="relative">
               <Input
-                label="Bank Account Number"
+                label="IFSC Code"
                 type="text"
-                placeholder="09280192839128"
-                value={bankAccount}
-                onChange={(e) => setBankAccount(e.target.value.replace(/\D/g, ""))}
+                placeholder="HDFC0000261"
+                value={ifsc}
+                onChange={(e) => handleIfscLookup(e.target.value)}
+                maxLength={11}
+                error={ifscError}
                 required
               />
-
-              {/* IFSC Code */}
-              <div className="relative">
-                <Input
-                  label="IFSC Code"
-                  type="text"
-                  placeholder="HDFC0000261"
-                  value={ifsc}
-                  onChange={(e) => handleIfscLookup(e.target.value)}
-                  maxLength={11}
-                  error={ifscError}
-                  required
-                />
-                {razorpayTesting && (
-                  <span className="absolute right-3 top-9 text-xs text-text-secondary animate-pulse">
-                    Validating...
-                  </span>
-                )}
-              </div>
-            </div>
-
-            {/* Resolved Bank Banner */}
-            {razorpayConnected && resolvedBank && (
-              <div className="p-4 border border-success/20 bg-success/5 rounded-lg flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <Landmark className="w-6 h-6 text-success shrink-0" />
-                  <div>
-                    <p className="font-semibold text-text-primary">
-                      {resolvedBank}
-                    </p>
-                    <p className="text-xs text-text-secondary">
-                      Branch: {resolvedBranch} &bull; Route Active
-                    </p>
-                  </div>
-                </div>
-                <StatusBadge status="success" message="Branch Detected" />
-              </div>
-            )}
-
-            {/* Actions Panel */}
-            <div className="pt-4 border-t border-border flex items-center justify-between">
-              <Button
-                type="button"
-                variant="ghost"
-                onClick={() => setCurrentStep(4)}
-                className="flex items-center gap-2"
-              >
-                <ArrowLeft className="w-4 h-4" />
-                <span>Back</span>
-              </Button>
-
-              <Button
-                type="button"
-                variant="primary"
-                onClick={() => setCurrentStep(6)}
-                disabled={!isStep5Valid}
-                className="flex items-center gap-2"
-              >
-                <span>Next</span>
-                <ArrowRight className="w-4 h-4" />
-              </Button>
+              {bankLoading && (
+                <span className="absolute right-3 top-9 text-xs text-text-secondary animate-pulse">
+                  Validating...
+                </span>
+              )}
             </div>
           </div>
-        </Card>
-      )}
 
-      {currentStep === 6 && (
-        <Card
-          title="Review & Complete Setup"
-          description="Review your connected endpoints. All connections must be tested and verified green to proceed."
-        >
-          <div className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {/* Products Summary Card */}
-              <div className="p-5 border border-border rounded-xl bg-background flex flex-col justify-between h-40">
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="p-2.5 rounded-lg bg-primary-light text-primary">
-                      <Database className="w-5 h-5 shrink-0" />
-                    </div>
-                    <div>
-                      <h4 className="font-heading font-semibold text-text-primary">
-                        Products API
-                      </h4>
-                      <p className="text-xs text-text-secondary mt-0.5 truncate max-w-[180px]">
-                        {formData.products.baseUrl}
-                      </p>
-                    </div>
-                  </div>
-                  <StatusBadge status={testStatuses.products} />
-                </div>
-                <div className="text-xs text-text-secondary">
-                  Auth Method:{" "}
-                  <span className="font-semibold text-text-primary capitalize">
-                    {formData.products.authMethod}
-                  </span>
-                </div>
-              </div>
-
-              {/* Orders Summary Card */}
-              <div className="p-5 border border-border rounded-xl bg-background flex flex-col justify-between h-40">
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="p-2.5 rounded-lg bg-primary-light text-primary">
-                      <Globe className="w-5 h-5 shrink-0" />
-                    </div>
-                    <div>
-                      <h4 className="font-heading font-semibold text-text-primary">
-                        Orders API
-                      </h4>
-                      <p className="text-xs text-text-secondary mt-0.5 truncate max-w-[180px]">
-                        {formData.orders.baseUrl}
-                      </p>
-                    </div>
-                  </div>
-                  <StatusBadge status={testStatuses.orders} />
-                </div>
-                <div className="text-xs text-text-secondary">
-                  Auth Method:{" "}
-                  <span className="font-semibold text-text-primary capitalize">
-                    {formData.orders.authMethod}
-                  </span>
-                </div>
-              </div>
-
-              {/* Customers Summary Card */}
-              <div className="p-5 border border-border rounded-xl bg-background flex flex-col justify-between h-40">
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="p-2.5 rounded-lg bg-primary-light text-primary">
-                      <Settings2 className="w-5 h-5 shrink-0" />
-                    </div>
-                    <div>
-                      <h4 className="font-heading font-semibold text-text-primary">
-                        Customers API
-                      </h4>
-                      <p className="text-xs text-text-secondary mt-0.5 truncate max-w-[180px]">
-                        {formData.customers.baseUrl}
-                      </p>
-                    </div>
-                  </div>
-                  <StatusBadge status={testStatuses.customers} />
-                </div>
-                <div className="text-xs text-text-secondary">
-                  Auth Method:{" "}
-                  <span className="font-semibold text-text-primary capitalize">
-                    {formData.customers.authMethod}
-                  </span>
-                </div>
-              </div>
-
-              {/* Auth Summary Card */}
-              <div className="p-5 border border-border rounded-xl bg-background flex flex-col justify-between h-40">
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="p-2.5 rounded-lg bg-primary-light text-primary">
-                      <Key className="w-5 h-5 shrink-0" />
-                    </div>
-                    <div>
-                      <h4 className="font-heading font-semibold text-text-primary">
-                        Auth API
-                      </h4>
-                      <p className="text-xs text-text-secondary mt-0.5 truncate max-w-[180px]">
-                        {formData.auth.baseUrl}
-                      </p>
-                    </div>
-                  </div>
-                  <StatusBadge status={testStatuses.auth} />
-                </div>
-                <div className="text-xs text-text-secondary">
-                  Auth Method:{" "}
-                  <span className="font-semibold text-text-primary capitalize">
-                    {formData.auth.authMethod}
-                  </span>
-                </div>
-              </div>
-
-              {/* Razorpay Summary Card */}
-              <div className="p-5 border border-border rounded-xl bg-background flex flex-col justify-between h-40 md:col-span-2">
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="p-2.5 rounded-lg bg-primary-light text-primary">
-                      <CreditCard className="w-5 h-5 shrink-0" />
-                    </div>
-                    <div>
-                      <h4 className="font-heading font-semibold text-text-primary">
-                        Razorpay Settlement Target
-                      </h4>
-                      <p className="text-xs text-text-secondary mt-0.5">
-                        A/C: {bankAccount.replace(/.*(?=.{4})/, "******")} &bull; IFSC: {ifsc}
-                      </p>
-                    </div>
-                  </div>
-                  <StatusBadge status={razorpayConnected ? "success" : "untested"} message={razorpayConnected ? "Verified" : "Unconnected"} />
-                </div>
-                <div className="text-xs text-text-secondary flex justify-between">
-                  <span>Bank: {resolvedBank} &bull; {resolvedBranch}</span>
-                  <span className="text-success font-semibold">Direct Deposit Payout Enabled</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Complete Setup Action Banner */}
-            <div className="p-5 border border-success/20 rounded-xl bg-success/5 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          {bankVerified && resolvedBank && (
+            <div className="p-4 border border-success/20 bg-success/5 rounded-lg flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <BadgeCheck className="w-8 h-8 text-success shrink-0" />
+                <Landmark className="w-6 h-6 text-success shrink-0" />
                 <div>
                   <p className="font-semibold text-text-primary">
-                    All Connections Verified
+                    {resolvedBank}
                   </p>
                   <p className="text-xs text-text-secondary">
-                    Your store APIs and settlement bank account have been validated successfully.
+                    Branch: {resolvedBranch} &bull; Route Verified
                   </p>
                 </div>
               </div>
+              <StatusBadge status="success" message="Branch Active" />
+            </div>
+          )}
+        </div>
+      </Card>
 
-              <div className="flex items-center gap-3 self-end sm:self-auto">
-                <Button
-                  type="button"
-                  variant="ghost"
-                  onClick={() => setCurrentStep(5)}
-                  className="flex items-center gap-2"
-                >
-                  <span>Edit Setup</span>
-                </Button>
-                <Button
-                  type="button"
-                  variant="primary"
-                  onClick={handleFinish}
-                  className="flex items-center gap-2 shadow-xs"
-                >
-                  <span>Finish Setup</span>
-                </Button>
-              </div>
+      {/* Complete Setup Action Banner */}
+      <Card>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-6">
+          <div className="flex items-center gap-3">
+            {isSetupComplete ? (
+              <BadgeCheck className="w-8 h-8 text-success shrink-0" />
+            ) : (
+              <Database className="w-8 h-8 text-text-secondary shrink-0" />
+            )}
+            <div>
+              <p className="font-semibold text-text-primary">
+                {isSetupComplete ? "All Integration Rules Met" : "Pending Setup Configuration"}
+              </p>
+              <p className="text-xs text-text-secondary">
+                {isSetupComplete
+                  ? "Your endpoints, credentials, and settlement bank have been verified successfully."
+                  : "All 5 endpoints and the bank settlement lookup must be verified to complete setup."}
+              </p>
             </div>
           </div>
-        </Card>
-      )}
+
+          <Button
+            type="button"
+            variant="primary"
+            onClick={handleFinish}
+            disabled={!isSetupComplete}
+            className="flex items-center gap-2 shadow-xs"
+          >
+            <ShieldCheck className="w-5 h-5 shrink-0" />
+            <span>Finish Setup</span>
+          </Button>
+        </div>
+      </Card>
     </div>
   );
 }
