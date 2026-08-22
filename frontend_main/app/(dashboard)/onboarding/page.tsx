@@ -7,26 +7,22 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/Input";
 import { EndpointRow } from "@/components/ui/EndpointRow";
 import { StatusBadge, StatusType } from "@/components/ui/StatusBadge";
-import { BadgeCheck, Landmark, ShieldCheck, Database, CreditCard } from "lucide-react";
+import { BadgeCheck, Landmark, ShieldCheck, Database, Loader2 } from "lucide-react";
+import { Switch } from "@/components/ui/switch";
+import { fetchOnboardingDetails, saveOnboardingDetails, testEndpoint } from "@/lib/api/onboarding";
 
 export default function OnboardingPage() {
   const router = useRouter();
 
+  // Loading and saving states
+  const [pageLoading, setPageLoading] = useState(true);
+  const [saveLoading, setSaveLoading] = useState(false);
+
   // Part A: Shared Connection Details State
   const [baseUrl, setBaseUrl] = useState("https://api.acmestore.com/v1");
+  const [requireAuth, setRequireAuth] = useState(true);
   const [authMethod, setAuthMethod] = useState("bearer");
   const [credentialValue, setCredentialValue] = useState("tok_live_secret12345");
-
-  // Reset all endpoint statuses if shared connection details change
-  useEffect(() => {
-    setEndpointStatuses({
-      products: "untested",
-      orders: "untested",
-      customers: "untested",
-      auth: "untested",
-      orderHistory: "untested",
-    });
-  }, [baseUrl, authMethod, credentialValue]);
 
   // Part B: Endpoints State
   const [endpoints, setEndpoints] = useState({
@@ -60,6 +56,57 @@ export default function OnboardingPage() {
   const [bankVerified, setBankVerified] = useState(false);
   const [bankLoading, setBankLoading] = useState(false);
 
+  // Load existing onboarding details on mount
+  useEffect(() => {
+    async function loadOnboarding() {
+      try {
+        const config = await fetchOnboardingDetails();
+        if (config) {
+          setBaseUrl(config.base_url);
+          setRequireAuth(config.auth_needed);
+          if (config.auth_method) setAuthMethod(config.auth_method);
+          if (config.credential_value) setCredentialValue(config.credential_value);
+          if (config.endpoints) {
+            setEndpoints(config.endpoints as any);
+          }
+          if (config.bank_account) setBankAccount(config.bank_account);
+          if (config.ifsc) {
+            setIfsc(config.ifsc);
+            // Trigger IFSC Lookup immediately to auto-resolve bank name & branch
+            handleIfscLookup(config.ifsc);
+          }
+          
+          // Mark endpoints as tested and successful since they were previously saved
+          setEndpointStatuses({
+            products: "success",
+            orders: "success",
+            customers: "success",
+            auth: "success",
+            orderHistory: "success",
+          });
+        }
+      } catch (err) {
+        console.error("Failed to load onboarding info: ", err);
+      } finally {
+        setPageLoading(false);
+      }
+    }
+    loadOnboarding();
+  }, []);
+
+  // Reset endpoint test statuses if connection properties change
+  useEffect(() => {
+    // Prevent clearing statuses on first initial load
+    if (pageLoading) return;
+    setEndpointStatuses({
+      products: "untested",
+      orders: "untested",
+      customers: "untested",
+      auth: "untested",
+      orderHistory: "untested",
+    });
+  }, [baseUrl, requireAuth, authMethod, credentialValue]);
+
   const handleEndpointChange = (
     key: keyof typeof endpoints,
     field: "path" | "method",
@@ -75,11 +122,26 @@ export default function OnboardingPage() {
     }));
   };
 
-  const handleTestEndpoint = (key: keyof typeof endpoints) => {
+  const handleTestEndpoint = async (key: keyof typeof endpoints) => {
     setEndpointStatuses((prev) => ({ ...prev, [key]: "pending" }));
-    setTimeout(() => {
-      setEndpointStatuses((prev) => ({ ...prev, [key]: "success" }));
-    }, 1000);
+    try {
+      const result = await testEndpoint({
+        base_url: baseUrl,
+        auth_needed: requireAuth,
+        auth_method: requireAuth ? authMethod : null,
+        credential_value: requireAuth ? credentialValue : null,
+        path: endpoints[key].path,
+        method: endpoints[key].method,
+      });
+
+      setEndpointStatuses((prev) => ({
+        ...prev,
+        [key]: result.status === "success" ? "success" : "error",
+      }));
+    } catch (err) {
+      console.error(err);
+      setEndpointStatuses((prev) => ({ ...prev, [key]: "error" }));
+    }
   };
 
   const handleIfscLookup = async (code: string) => {
@@ -116,13 +178,30 @@ export default function OnboardingPage() {
     }
   };
 
-  const handleFinish = () => {
-    router.push("/dashboard");
+  const handleFinish = async () => {
+    setSaveLoading(true);
+    try {
+      await saveOnboardingDetails({
+        base_url: baseUrl,
+        auth_needed: requireAuth,
+        auth_method: requireAuth ? authMethod : null,
+        credential_value: requireAuth ? credentialValue : null,
+        endpoints,
+        bank_account: bankAccount,
+        ifsc,
+        branch_name: resolvedBranch || resolvedBank || "Verified Branch",
+      });
+      router.push("/dashboard");
+    } catch (err) {
+      console.error("Failed to save onboarding configuration: ", err);
+    } finally {
+      setSaveLoading(false);
+    }
   };
 
   // Onboarding Completion Criteria
   const isSharedCredsValid =
-    baseUrl.trim() !== "" && credentialValue.trim() !== "";
+    baseUrl.trim() !== "" && (!requireAuth || credentialValue.trim() !== "");
 
   const allEndpointsSuccess =
     endpointStatuses.products === "success" &&
@@ -135,6 +214,17 @@ export default function OnboardingPage() {
 
   const isSetupComplete =
     isSharedCredsValid && allEndpointsSuccess && isBankSetupValid;
+
+  if (pageLoading) {
+    return (
+      <div className="min-h-[60vh] flex flex-col items-center justify-center gap-4">
+        <Loader2 className="w-10 h-10 text-primary animate-spin" />
+        <p className="text-sm font-semibold text-text-secondary animate-pulse">
+          Loading Onboarding Profile...
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8 max-w-4xl mx-auto py-4">
@@ -160,39 +250,60 @@ export default function OnboardingPage() {
             value={baseUrl}
             onChange={(e) => setBaseUrl(e.target.value)}
             required
+            disabled={saveLoading}
           />
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div className="flex items-center justify-between p-4 bg-background border border-border rounded-xl">
             <div>
-              <label className="block text-sm font-medium text-text-primary mb-1.5">
-                Authentication Method
-              </label>
-              <select
-                value={authMethod}
-                onChange={(e) => setAuthMethod(e.target.value)}
-                className="w-full bg-surface border border-border rounded-lg px-3.5 py-2.5 text-base text-text-primary focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-colors cursor-pointer"
-              >
-                <option value="apikey">API Key</option>
-                <option value="bearer">Bearer Token</option>
-                <option value="basic">Basic Auth</option>
-              </select>
+              <p className="text-sm font-semibold text-text-primary">
+                Authentication Required?
+              </p>
+              <p className="text-xs text-text-secondary mt-0.5">
+                Enable if your API endpoints require api-keys, bearer tokens, or basic authorization headers.
+              </p>
             </div>
-
-            <Input
-              label={
-                authMethod === "basic"
-                  ? "Username:Password (Base64)"
-                  : authMethod === "bearer"
-                  ? "Bearer Token"
-                  : "API Key Header Value"
-              }
-              type="password"
-              placeholder="••••••••"
-              value={credentialValue}
-              onChange={(e) => setCredentialValue(e.target.value)}
-              required
+            <Switch
+              checked={requireAuth}
+              onCheckedChange={setRequireAuth}
+              disabled={saveLoading}
             />
           </div>
+
+          {requireAuth && (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
+              <div>
+                <label className="block text-sm font-medium text-text-primary mb-1.5">
+                  Authentication Method
+                </label>
+                <select
+                  value={authMethod}
+                  onChange={(e) => setAuthMethod(e.target.value)}
+                  className="w-full bg-surface border border-border rounded-lg px-3.5 py-2.5 text-base text-text-primary focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-colors cursor-pointer"
+                  disabled={saveLoading}
+                >
+                  <option value="apikey">API Key</option>
+                  <option value="bearer">Bearer Token</option>
+                  <option value="basic">Basic Auth</option>
+                </select>
+              </div>
+
+              <Input
+                label={
+                  authMethod === "basic"
+                    ? "Username:Password (Base64)"
+                    : authMethod === "bearer"
+                    ? "Bearer Token"
+                    : "API Key Header Value"
+                }
+                type="password"
+                placeholder="••••••••"
+                value={credentialValue}
+                onChange={(e) => setCredentialValue(e.target.value)}
+                required
+                disabled={saveLoading}
+              />
+            </div>
+          )}
         </div>
       </Card>
 
@@ -210,7 +321,7 @@ export default function OnboardingPage() {
             onMethodChange={(m) => handleEndpointChange("products", "method", m)}
             onTest={() => handleTestEndpoint("products")}
             testStatus={endpointStatuses.products}
-            disabled={!isSharedCredsValid}
+            disabled={!isSharedCredsValid || saveLoading}
           />
 
           <EndpointRow
@@ -221,7 +332,7 @@ export default function OnboardingPage() {
             onMethodChange={(m) => handleEndpointChange("orders", "method", m)}
             onTest={() => handleTestEndpoint("orders")}
             testStatus={endpointStatuses.orders}
-            disabled={!isSharedCredsValid}
+            disabled={!isSharedCredsValid || saveLoading}
           />
 
           <EndpointRow
@@ -232,7 +343,7 @@ export default function OnboardingPage() {
             onMethodChange={(m) => handleEndpointChange("customers", "method", m)}
             onTest={() => handleTestEndpoint("customers")}
             testStatus={endpointStatuses.customers}
-            disabled={!isSharedCredsValid}
+            disabled={!isSharedCredsValid || saveLoading}
           />
 
           <EndpointRow
@@ -243,7 +354,7 @@ export default function OnboardingPage() {
             onMethodChange={(m) => handleEndpointChange("auth", "method", m)}
             onTest={() => handleTestEndpoint("auth")}
             testStatus={endpointStatuses.auth}
-            disabled={!isSharedCredsValid}
+            disabled={!isSharedCredsValid || saveLoading}
           />
 
           <EndpointRow
@@ -254,7 +365,7 @@ export default function OnboardingPage() {
             onMethodChange={(m) => handleEndpointChange("orderHistory", "method", m)}
             onTest={() => handleTestEndpoint("orderHistory")}
             testStatus={endpointStatuses.orderHistory}
-            disabled={!isSharedCredsValid}
+            disabled={!isSharedCredsValid || saveLoading}
           />
         </div>
       </Card>
@@ -273,6 +384,7 @@ export default function OnboardingPage() {
               value={bankAccount}
               onChange={(e) => setBankAccount(e.target.value.replace(/\D/g, ""))}
               required
+              disabled={saveLoading}
             />
 
             <div className="relative">
@@ -285,6 +397,7 @@ export default function OnboardingPage() {
                 maxLength={11}
                 error={ifscError}
                 required
+                disabled={saveLoading}
               />
               {bankLoading && (
                 <span className="absolute right-3 top-9 text-xs text-text-secondary animate-pulse">
@@ -295,7 +408,7 @@ export default function OnboardingPage() {
           </div>
 
           {bankVerified && resolvedBank && (
-            <div className="p-4 border border-success/20 bg-success/5 rounded-lg flex items-center justify-between">
+            <div className="p-4 border border-success/20 bg-success/5 rounded-lg flex items-center justify-between animate-fade-in">
               <div className="flex items-center gap-3">
                 <Landmark className="w-6 h-6 text-success shrink-0" />
                 <div>
@@ -338,11 +451,20 @@ export default function OnboardingPage() {
             type="button"
             variant="primary"
             onClick={handleFinish}
-            disabled={!isSetupComplete}
-            className="flex items-center gap-2 shadow-xs"
+            disabled={!isSetupComplete || saveLoading}
+            className="flex items-center gap-2 shadow-xs min-w-[140px] justify-center"
           >
-            <ShieldCheck className="w-5 h-5 shrink-0" />
-            <span>Finish Setup</span>
+            {saveLoading ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin" />
+                <span>Saving...</span>
+              </>
+            ) : (
+              <>
+                <ShieldCheck className="w-5 h-5 shrink-0" />
+                <span>Finish Setup</span>
+              </>
+            )}
           </Button>
         </div>
       </Card>

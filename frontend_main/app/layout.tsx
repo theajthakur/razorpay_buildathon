@@ -21,6 +21,9 @@ export const metadata: Metadata = {
   description: "Merchant-facing SaaS dashboard for AI shopping agent platform",
 };
 
+import { ClerkProvider } from "@clerk/nextjs";
+import { Toaster } from "sonner";
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -32,7 +35,15 @@ export default function RootLayout({
       className={`${inter.variable} ${plusJakartaSans.variable} h-full antialiased`}
     >
       <body className="bg-background text-text-primary font-sans text-base leading-relaxed min-h-full flex flex-col">
-        {children}
+        <ClerkProvider>
+          {children}
+          <Toaster 
+            position="bottom-right" 
+            toastOptions={{
+              className: "font-sans border border-border bg-surface text-text-primary rounded-xl shadow-lg p-4",
+            }}
+          />
+        </ClerkProvider>
       </body>
     </html>
   );

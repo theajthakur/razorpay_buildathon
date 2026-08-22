@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import Link from "next/link";
+import { useAuth, UserButton } from "@clerk/nextjs";
 import { Button } from "@/components/ui/button";
 import { Menu, X } from "lucide-react";
 
@@ -10,6 +11,7 @@ export default function MarketingLayout({
 }: {
   children: React.ReactNode;
 }) {
+  const { isSignedIn } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
   const [isScrolled, setIsScrolled] = useState(false);
 
@@ -62,17 +64,30 @@ export default function MarketingLayout({
 
           <div className="h-4 w-px bg-border" />
 
-          <div className="flex items-center gap-3">
-            <Link href="/login">
-              <Button variant="ghost" size="sm">
-                Sign In
-              </Button>
-            </Link>
-            <Link href="/signup">
-              <Button variant="primary" size="sm" className="shadow-xs">
-                Get Started
-              </Button>
-            </Link>
+          <div className="flex items-center gap-4">
+            {isSignedIn ? (
+              <>
+                <Link href="/dashboard">
+                  <Button variant="ghost" size="sm">
+                    Dashboard
+                  </Button>
+                </Link>
+                <UserButton />
+              </>
+            ) : (
+              <>
+                <Link href="/login">
+                  <Button variant="ghost" size="sm">
+                    Sign In
+                  </Button>
+                </Link>
+                <Link href="/signup">
+                  <Button variant="primary" size="sm" className="shadow-xs">
+                    Get Started
+                  </Button>
+                </Link>
+              </>
+            )}
           </div>
         </div>
 
@@ -112,16 +127,31 @@ export default function MarketingLayout({
           <div className="h-px bg-border w-full" />
 
           <div className="flex flex-col space-y-2.5">
-            <Link href="/login" onClick={() => setIsOpen(false)}>
-              <Button variant="ghost" size="md" className="w-full justify-center">
-                Sign In
-              </Button>
-            </Link>
-            <Link href="/signup" onClick={() => setIsOpen(false)}>
-              <Button variant="primary" size="md" className="w-full justify-center shadow-xs">
-                Get Started
-              </Button>
-            </Link>
+            {isSignedIn ? (
+              <>
+                <Link href="/dashboard" onClick={() => setIsOpen(false)}>
+                  <Button variant="primary" size="md" className="w-full justify-center shadow-xs">
+                    Dashboard
+                  </Button>
+                </Link>
+                <div className="flex justify-center pt-2">
+                  <UserButton />
+                </div>
+              </>
+            ) : (
+              <>
+                <Link href="/login" onClick={() => setIsOpen(false)}>
+                  <Button variant="ghost" size="md" className="w-full justify-center">
+                    Sign In
+                  </Button>
+                </Link>
+                <Link href="/signup" onClick={() => setIsOpen(false)}>
+                  <Button variant="primary" size="md" className="w-full justify-center shadow-xs">
+                    Get Started
+                  </Button>
+                </Link>
+              </>
+            )}
           </div>
         </div>
       )}

@@ -3,16 +3,26 @@
 import React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, Compass, Settings, Store, LogOut } from "lucide-react";
+import { LayoutDashboard, Compass, Settings, LogOut } from "lucide-react";
+import { useClerk } from "@clerk/nextjs";
+import { logoutUser } from "@/lib/api/auth";
 
 export const Sidebar: React.FC = () => {
   const pathname = usePathname();
+  const { signOut } = useClerk();
 
   const navItems = [
     { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
     { label: "Onboarding", href: "/onboarding", icon: Compass },
     { label: "Settings", href: "/settings", icon: Settings },
   ];
+
+  const handleSignOut = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    logoutUser();
+    await signOut();
+    window.location.href = "/";
+  };
 
   return (
     <aside className="w-64 bg-surface border-r border-border flex flex-col h-screen sticky top-0 shrink-0">
@@ -55,13 +65,14 @@ export const Sidebar: React.FC = () => {
 
       {/* Footer / Sign Out action */}
       <div className="p-4 border-t border-border">
-        <Link
-          href="/login"
-          className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-text-secondary hover:text-error hover:bg-background transition-colors w-full"
+        <button
+          type="button"
+          onClick={handleSignOut}
+          className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-text-secondary hover:text-error hover:bg-background transition-colors w-full text-left cursor-pointer"
         >
           <LogOut className="w-5 h-5 shrink-0" />
           <span>Sign Out</span>
-        </Link>
+        </button>
       </div>
     </aside>
   );
