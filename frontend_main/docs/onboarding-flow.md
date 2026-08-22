@@ -1,42 +1,64 @@
 # Onboarding Flow Documentation
 
-This document describes the unified, single-page onboarding configuration flow built in `frontend_main` used by merchants to connect their existing store databases and settlement bank accounts.
+This document describes the unified onboarding configuration flow built in `frontend_main` used by merchants to connect their existing store databases, setup customer credentials authorization, and specify settlement bank accounts.
 
 ## Onboarding Structure
 
-Instead of separate wizard steps, onboarding is presented on a single dashboard divided into three functional blocks:
+The onboarding process is presented on a single dashboard divided into three functional blocks:
 
 ```mermaid
 graph TD
-  A[1. Shared Connection Details] --> B[2. Resource Endpoints]
-  B --> C[3. Settlement Bank Account]
-  C --> D[Verification & Finish]
+  A["1. Shared Connection Details (Customer Auth)"] -->|Locked Gating| B["2. Resource Endpoints"]
+  B --> C["3. Settlement Bank Account"]
+  C --> D["Verification & Finish"]
 ```
 
 ---
 
-## 1. Shared Connection Details
+## 1. Connection Details & Customer Authentication
 
-Entered once at the top of the page, these configuration credentials authorize all subsequent endpoint requests:
-- **API Base URL**: e.g., `https://api.yourstore.com/v1`
-- **Authentication Method**: Dropdown supporting `API Key`, `Bearer Token`, or `Basic Auth`.
-- **Credential Value**: Key/Token string.
+This section configures the primary store base API coordinates and establishes how the AI agent identifies customers securely.
 
-Changing any of these fields automatically resets the verification states of the 5 endpoint rows below.
+* **Draft Persistence**: As changes are made in Step 1, progress is automatically synced to `localStorage` (blob key `"onboarding_step1_draft"`). On page load, if no configuration is present in the database, progress is restored from the local draft. Once Step 1 is saved, the draft is cleared and database records become the single source of truth.
+* **Gating Rules**: Step 2 remains locked and inaccessible until connection details have been successfully saved to the backend database via the **Save Connection Details** action.
+* **Require Customer Authentication Toggle**: Enabled by default (ON).
+  * **Toggle OFF Intervention**: Intercepted with a danger confirmation warning modal describing data safety implications (inability to resolve user identities, profiles, or purchase histories). Requires explicit merchant confirmation to proceed.
+  * **When Enabled (ON)**: Reveals Auth URL and HTTP Method selection along with the **Map Login Fields** button launching a 4-step configuration wizard (Payload Mapping -> Test API -> Token Path Extraction -> Cookie/Header Token Delivery). Tested tokens are automatically cached for subsequent testing steps.
 
 ---
 
 ## 2. Resource Endpoints
 
-Configure individual paths appended to the shared Base URL and HTTP methods. Each endpoint features its own **Test** verification action.
+Configure individual resource endpoint paths appended to the base URL and HTTP methods.
 
-| Endpoint | Default Path | Default Method | Description |
-|---|---|---|---|
-| **Products API** | `/products` | `GET` | Catalog item discovery and detail queries. |
-| **Orders API** | `/orders` | `POST` | Order cart submission and registration. |
-| **Customers API** | `/customers` | `GET` | Customer profiling and loyalty validation. |
-| **Auth API** | `/auth` | `POST` | Secured shopper sign-ins and session scoping. |
-| **Order History** | `/orders/history` | `GET` | Active shipping updates and purchase history. |
+* **Token Reuse**: When testing resource endpoints, if customer authentication is enabled, the AI agent automatically attaches the active session token gathered during Step 1's test using the exact delivery method configured (header names + Bearer prefixes, or cookies).
+* **Modal Configuration & Real Testing**: Replaced the inline row layout with simple resource cards. Clicking a resource card opens a scoped modal presenting input fields tailored specifically to that resource. Tooltips (Info icons) next to input fields provide inline operational context.
+* **Save & Test Flow**: Modals end with a test action dispatching requests (using shared base URL + cached auth tokens) and presenting the fully formatted JSON response body with green/red status badges.
+
+### Per-Resource Modal Specifications
+
+a) **Products Search**:
+   - GET path (default `/products`).
+   - Payload key for query keywords (e.g. `query`).
+   - Response key mapping products lists in the JSON response payload.
+
+b) **Order History**:
+   - GET path (default `/orders/history`).
+   - Token-secured query, no search payload required.
+   - Optional nested JSON response key mapping.
+
+c) **Customer Profile**:
+   - GET path (default `/customers`).
+   - Token-secured, no payload.
+
+d) **Addresses (Fetch & Create tabs)**:
+   - **Fetch**: GET path (default `/addresses`) and optional nested results key.
+   - **Create**: POST path (default `/addresses`). Free-form key list mapper specifying expected parameters (e.g. `line1, city, pincode`). Test panel prompts values for configured keys and posts address details.
+
+e) **Create Order**:
+   - POST path (default `/orders`).
+   - Cart array wrapper key mapping (default `cart`) and exactly 3 item parameter fields (`item_id`, `price`, `quantity`). Tests send payloads structured as:
+     `{ "<cart_key>": [ { "<item_id_field>": "...", "<price_field>": 0, "<quantity_field>": 1 } ] }`
 
 ---
 
@@ -53,6 +75,6 @@ Links deposit target coordinates for Razorpay payout distribution:
 ## Completion Criteria
 
 The **Finish Setup** action is enabled only when:
-1. Shared connection details are not empty.
-2. All 5 resource endpoints return positive verified `success` badges.
+1. Shared connection details are saved to the database.
+2. All 5 resource endpoints (Products, Order History, Customer Profile, Addresses, Create Order) have been configured and verified successfully.
 3. The IFSC code lookup resolves successfully.

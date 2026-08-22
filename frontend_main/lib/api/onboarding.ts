@@ -1,16 +1,51 @@
 import apiClient from "./client";
 
 export interface EndpointDetails {
-  path: string;
+  path?: string;
+  method?: string;
+  payload_key?: string;
+  response_key?: string;
+  fetch_path?: string;
+  fetch_method?: string;
+  fetch_response_key?: string;
+  create_path?: string;
+  create_method?: string;
+  create_fields?: string;
+  cart_key?: string;
+  item_id_field?: string;
+  price_field?: string;
+  quantity_field?: string;
+  [key: string]: any;
+}
+
+export interface TokenDeliveryConfig {
+  method: "header" | "cookie";
+  header_name?: string | null;
+  bearer_prefix?: boolean | null;
+  cookie_name?: string | null;
+}
+
+export interface AuthConfig {
+  auth_url: string;
   method: string;
+  identifier_field: string;
+  identifier_type: string;
+  password_field: string;
+  token_path: string;
+  token_delivery: TokenDeliveryConfig;
 }
 
 export interface OnboardingData {
   base_url: string;
-  auth_needed: boolean;
-  auth_method?: string | null;
-  credential_value?: string | null;
-  endpoints: Record<string, EndpointDetails>;
+  auth_enabled: boolean;
+  auth_disabled_ack: boolean;
+  auth_config?: AuthConfig | null;
+  endpoints?: Record<string, EndpointDetails> | null;
+  products_config?: EndpointDetails | null;
+  order_history_config?: EndpointDetails | null;
+  customer_profile_config?: EndpointDetails | null;
+  addresses_config?: EndpointDetails | null;
+  create_order_config?: EndpointDetails | null;
   bank_account?: string | null;
   ifsc?: string | null;
   branch_name?: string | null;
@@ -29,12 +64,29 @@ export interface TestEndpointPayload {
   credential_value?: string | null;
   path: string;
   method: string;
+  token_delivery_method?: string | null;
+  token_delivery_name?: string | null;
+  token_delivery_bearer?: boolean | null;
+  payload?: Record<string, any> | null;
 }
 
 export interface TestEndpointResponse {
   status: "success" | "failed";
   status_code: number;
   preview: string;
+  data: any;
+}
+
+export interface TestCustomerAuthPayload {
+  auth_url: string;
+  auth_method: string;
+  payload: Record<string, any>;
+}
+
+export interface TestCustomerAuthResponse {
+  status: "success" | "failed";
+  status_code: number;
+  data: any;
 }
 
 /**
@@ -67,5 +119,13 @@ export async function saveOnboardingDetails(data: OnboardingData): Promise<Onboa
  */
 export async function testEndpoint(data: TestEndpointPayload): Promise<TestEndpointResponse> {
   const response = await apiClient.post<TestEndpointResponse>("/system/onboarding/test-endpoint", data);
+  return response.data;
+}
+
+/**
+ * Proxy test customer login requests to merchant auth url to bypass CORS.
+ */
+export async function testCustomerAuth(data: TestCustomerAuthPayload): Promise<TestCustomerAuthResponse> {
+  const response = await apiClient.post<TestCustomerAuthResponse>("/system/onboarding/test-customer-auth", data);
   return response.data;
 }

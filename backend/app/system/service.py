@@ -56,14 +56,28 @@ def upsert_user_onboarding(db: Session, user_id: str, data: OnboardingUpsertRequ
     """
     db_onboarding = db.query(Onboarding).filter(Onboarding.user_id == user_id).first()
     
+    # Convert Pydantic auth_config structure to serializable dictionary for JSON storage
+    auth_config_dict = data.auth_config.model_dump() if data.auth_config else None
+    
+    # Convert scoped resource configs to serializable dictionaries
+    products_config_dict = data.products_config.model_dump() if data.products_config else None
+    order_history_config_dict = data.order_history_config.model_dump() if data.order_history_config else None
+    customer_profile_config_dict = data.customer_profile_config.model_dump() if data.customer_profile_config else None
+    addresses_config_dict = data.addresses_config.model_dump() if data.addresses_config else None
+    create_order_config_dict = data.create_order_config.model_dump() if data.create_order_config else None
+
     if not db_onboarding:
         db_onboarding = Onboarding(
             user_id=user_id,
             base_url=data.base_url,
-            auth_needed=data.auth_needed,
-            auth_method=data.auth_method,
-            credential_value=data.credential_value,
-            endpoints=data.endpoints,
+            auth_enabled=data.auth_enabled,
+            auth_disabled_ack=data.auth_disabled_ack,
+            auth_config=auth_config_dict,
+            products_config=products_config_dict,
+            order_history_config=order_history_config_dict,
+            customer_profile_config=customer_profile_config_dict,
+            addresses_config=addresses_config_dict,
+            create_order_config=create_order_config_dict,
             bank_account=data.bank_account,
             ifsc=data.ifsc,
             branch_name=data.branch_name
@@ -71,10 +85,14 @@ def upsert_user_onboarding(db: Session, user_id: str, data: OnboardingUpsertRequ
         db.add(db_onboarding)
     else:
         db_onboarding.base_url = data.base_url
-        db_onboarding.auth_needed = data.auth_needed
-        db_onboarding.auth_method = data.auth_method
-        db_onboarding.credential_value = data.credential_value
-        db_onboarding.endpoints = data.endpoints
+        db_onboarding.auth_enabled = data.auth_enabled
+        db_onboarding.auth_disabled_ack = data.auth_disabled_ack
+        db_onboarding.auth_config = auth_config_dict
+        db_onboarding.products_config = products_config_dict
+        db_onboarding.order_history_config = order_history_config_dict
+        db_onboarding.customer_profile_config = customer_profile_config_dict
+        db_onboarding.addresses_config = addresses_config_dict
+        db_onboarding.create_order_config = create_order_config_dict
         db_onboarding.bank_account = data.bank_account
         db_onboarding.ifsc = data.ifsc
         db_onboarding.branch_name = data.branch_name
