@@ -31,9 +31,8 @@ export default function MarketingLayout({
     <div className="min-h-screen bg-background flex flex-col text-text-primary">
       {/* Sticky Scroll-linked Navbar */}
       <header
-        className={`h-16 border-b border-border flex items-center justify-between px-6 md:px-12 sticky top-0 z-50 transition-all duration-200 ${
-          isScrolled ? "bg-surface shadow-md" : "bg-background"
-        }`}
+        className={`h-16 border-b border-border flex items-center justify-between px-6 md:px-12 sticky top-0 z-50 transition-all duration-200 ${isScrolled ? "bg-surface shadow-md" : "bg-background"
+          }`}
       >
         {/* Wordmark logo */}
         <Link href="/" className="flex items-center gap-2.5">
@@ -49,16 +48,10 @@ export default function MarketingLayout({
         <div className="hidden md:flex items-center gap-6">
           <nav className="flex items-center gap-6">
             <Link
-              href="#how-it-works"
+              href="/documentation"
               className="text-sm font-medium text-text-secondary hover:text-text-primary transition-colors"
             >
-              How it works
-            </Link>
-            <Link
-              href="#features"
-              className="text-sm font-medium text-text-secondary hover:text-text-primary transition-colors"
-            >
-              Features
+              Documentation
             </Link>
           </nav>
 

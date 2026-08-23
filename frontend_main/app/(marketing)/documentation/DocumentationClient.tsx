@@ -183,7 +183,7 @@ export default function DocumentationClient({ rawMarkdown }: DocumentationClient
   };
 
   return (
-    <div className="max-w-7xl mx-auto w-full px-6 md:px-12 py-10 flex-1 flex flex-col lg:flex-row gap-12 relative">
+    <>
       
       {/* Table of Contents: Mobile Floating Drawer Toggle */}
       <div className="lg:hidden fixed bottom-6 right-6 z-40">
@@ -744,6 +744,6 @@ Authorization: Bearer <YOUR_SHOPAGENT_API_KEY>`}
           </nav>
         </div>
       </aside>
-    </div>
+    </>
   );
 }
