@@ -306,17 +306,26 @@ export default function OnboardingClient() {
               <div className="absolute -left-12 top-0.5 w-8 h-8 rounded-full bg-primary flex items-center justify-center text-text-on-primary font-heading font-bold text-sm shadow-sm">
                 7
               </div>
-              <h3 className="text-lg font-bold text-text-primary mb-2 font-heading">Embed the agent on your storefront</h3>
-              <p className="text-base text-text-secondary leading-relaxed font-sans">
-                Add the shopper chat widget directly to your website. Copy and paste this script snippet right before your storefront page's closing <code className="px-1.5 py-0.5 rounded-md bg-background border border-border text-primary font-mono text-xs font-semibold">&lt;/body&gt;</code> element:
+              <h3 className="text-lg font-bold text-text-primary mb-2 font-heading">Access your hosted agent portal</h3>
+              <p className="text-base text-text-secondary leading-relaxed font-sans mb-4">
+                ShopAgent automatically provisions a dedicated, fully managed conversational shopping web portal on your custom store subdomain. Customers directly visit this URL to converse with your AI agent, search products, track orders, and complete checkouts.
               </p>
-              <CodeBlock>
-{`<script 
-  src="https://cdn.shopagent.dev/widget.js" 
-  data-store-id="YOUR_STORE_ID" 
-  async
-></script>`}
-              </CodeBlock>
+              <div className="relative my-4 p-4 rounded-xl border border-border bg-background flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 shadow-2xs">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-lg bg-primary-light flex items-center justify-center text-primary font-mono text-xs font-semibold shrink-0">
+                    URL
+                  </div>
+                  <span className="font-mono text-sm text-text-primary truncate">
+                    https://yourstore.shopagent.dev
+                  </span>
+                </div>
+                <span className="px-3.5 py-1.5 rounded-lg border border-border bg-surface text-xs font-semibold text-text-secondary select-none text-center sm:text-left">
+                  Hosted Agent URL
+                </span>
+              </div>
+              <p className="text-base text-text-secondary leading-relaxed font-sans mt-2">
+                You can copy your unique hosted agent portal link directly from your ShopAgent dashboard to share with shoppers, embed in promotional campaigns, or link from your main site's navigation.
+              </p>
             </div>
 
             {/* Step 8 */}

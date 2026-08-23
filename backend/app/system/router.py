@@ -146,7 +146,7 @@ async def test_onboarding_endpoint(
     full_url = f"{base}/{path}"
 
     headers = {
-        "User-Agent": "MerchantOS-API-Agent/1.0",
+        "User-Agent": "ShopAgent-API-Agent/1.0",
         "Accept": "application/json"
     }
     cookies = {}
@@ -248,7 +248,7 @@ async def test_customer_auth_endpoint(
     body = payload.payload
 
     headers = {
-        "User-Agent": "MerchantOS-API-Agent/1.0",
+        "User-Agent": "ShopAgent-API-Agent/1.0",
         "Accept": "application/json",
         "Content-Type": "application/json"
     }

@@ -36,11 +36,9 @@ export default function MarketingLayout({
       >
         {/* Wordmark logo */}
         <Link href="/" className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center text-text-on-primary font-heading font-bold text-lg">
-            M
-          </div>
+          <img src="/assets/logo.png" alt="ShopAgent Logo" className="w-8 h-8 object-contain" />
           <span className="font-heading font-bold text-lg tracking-tight text-text-primary">
-            Merchant OS
+            ShopAgent
           </span>
         </Link>
 
@@ -152,9 +150,9 @@ export default function MarketingLayout({
       {/* Page Canvas */}
       <div className="flex-1 flex flex-col">{children}</div>
 
-      {/* Footer */}
-      <footer className="relative z-20 bg-secondary py-12 text-center text-xs text-text-on-primary">
-        <p>&copy; {new Date().getFullYear()} Merchant OS. All rights reserved.</p>
+      <footer className="relative z-20 bg-secondary py-12 text-center text-xs text-text-on-primary flex flex-col items-center justify-center gap-3">
+        <img src="/assets/logo.png" alt="ShopAgent Logo" className="w-6 h-6 object-contain opacity-80 hover:opacity-100 transition-opacity" />
+        <p>&copy; {new Date().getFullYear()} ShopAgent. All rights reserved.</p>
       </footer>
     </div>
   );

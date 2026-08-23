@@ -17,8 +17,8 @@ const plusJakartaSans = Plus_Jakarta_Sans({
 });
 
 export const metadata: Metadata = {
-  title: "frontend_main — Merchant Dashboard",
-  description: "Merchant-facing SaaS dashboard for AI shopping agent platform",
+  title: "ShopAgent — Merchant Dashboard",
+  description: "Securely manage settings, explore integration guides, and track order payouts for your ShopAgent AI shopping agent store.",
 };
 
 import { ClerkProvider } from "@clerk/nextjs";

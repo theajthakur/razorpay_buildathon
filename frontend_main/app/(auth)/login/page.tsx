@@ -171,11 +171,9 @@ export default function LoginPage() {
       <div className="w-full max-w-md">
         {/* Logo / Header */}
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-primary text-text-on-primary font-heading font-bold text-2xl mb-3">
-            M
-          </div>
+          <img src="/assets/logo.png" alt="ShopAgent Logo" className="w-12 h-12 object-contain mx-auto mb-3" />
           <h1 className="font-heading text-2xl font-bold text-text-primary">
-            {verifying ? "Enter Verification Code" : "Sign in to Merchant OS"}
+            {verifying ? "Enter Verification Code" : "Sign in to ShopAgent"}
           </h1>
           <p className="text-sm text-text-secondary mt-1">
             {verifying
