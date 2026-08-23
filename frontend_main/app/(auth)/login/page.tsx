@@ -186,6 +186,7 @@ export default function LoginPage() {
 
         {/* Card Form */}
         <div className="bg-surface border border-border rounded-xl p-8 shadow-xs relative">
+          <div id="clerk-captcha"></div>
           {loading && (
             <div className="absolute inset-0 bg-surface/70 backdrop-blur-[2px] flex flex-col items-center justify-center rounded-xl z-20 transition-all duration-200">
               <div className="w-10 h-10 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>

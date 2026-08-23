@@ -35,43 +35,68 @@ async def clerk_webhook(
     Receives and processes webhook events from Clerk (e.g. user.created).
     Verifies signatures using Svix if CLERK_WEBHOOK_SECRET is set in environment.
     """
+    import traceback
+    import sys
+
+    print(">>> RECEIVED CLERK WEBHOOK REQUEST <<<")
     settings = get_settings()
-    body = await request.body()
-    body_str = body.decode("utf-8")
+    
+    try:
+        body = await request.body()
+        body_str = body.decode("utf-8")
 
-    # 1. Signature Verification
-    if settings.CLERK_WEBHOOK_SECRET:
-        if not svix_id or not svix_timestamp or not svix_signature:
-            raise HTTPException(status_code=400, detail="Missing Svix verification headers")
-        
-        try:
-            wh = Webhook(settings.CLERK_WEBHOOK_SECRET)
-            payload = wh.verify(body_str, {
-                "svix-id": svix_id,
-                "svix-timestamp": svix_timestamp,
-                "svix-signature": svix_signature
-            })
-        except WebhookVerificationError:
-            raise HTTPException(status_code=400, detail="Invalid webhook signature")
-    else:
-        # Bypassed signature check in local development
-        try:
-            payload = json.loads(body_str)
-        except json.JSONDecodeError:
-            raise HTTPException(status_code=400, detail="Invalid JSON body")
+        # 1. Signature Verification
+        if settings.CLERK_WEBHOOK_SECRET:
+            if not svix_id or not svix_timestamp or not svix_signature:
+                print("Error: Missing Svix verification headers")
+                raise HTTPException(status_code=400, detail="Missing Svix verification headers")
+            
+            try:
+                wh = Webhook(settings.CLERK_WEBHOOK_SECRET)
+                payload = wh.verify(body_str, {
+                    "svix-id": svix_id,
+                    "svix-timestamp": svix_timestamp,
+                    "svix-signature": svix_signature
+                })
+            except WebhookVerificationError:
+                print("Error: Invalid webhook signature")
+                raise HTTPException(status_code=400, detail="Invalid webhook signature")
+        else:
+            # Bypassed signature check in local development
+            try:
+                payload = json.loads(body_str)
+            except json.JSONDecodeError:
+                print("Error: Invalid JSON body")
+                raise HTTPException(status_code=400, detail="Invalid JSON body")
 
-    event_type = payload.get("type")
-    event_data = payload.get("data", {})
+        event_type = payload.get("type")
+        event_data = payload.get("data", {})
+        print(f"Webhook event type: {event_type} for user ID: {event_data.get('id')}")
 
-    # 2. Event Routing
-    if event_type in ("user.created", "user.updated"):
-        try:
-            user = handle_clerk_user_upsert(db, event_data)
-            return {"status": "success", "user_id": user.id}
-        except ValueError as err:
-            raise HTTPException(status_code=400, detail=str(err))
+        # 2. Event Routing
+        if event_type in ("user.created", "user.updated"):
+            try:
+                user = handle_clerk_user_upsert(db, event_data)
+                print(f"Successfully upserted user: {user.id}")
+                return {"status": "success", "user_id": user.id}
+            except ValueError as err:
+                print(f"Validation error handling Clerk user upsert: {err}")
+                raise HTTPException(status_code=400, detail=str(err))
 
-    return {"status": "ignored"}
+        print(f"Ignored webhook event type: {event_type}")
+        return {"status": "ignored"}
+
+    except HTTPException as http_err:
+        # Re-raise HTTPExceptions as-is
+        raise http_err
+    except Exception as e:
+        print("====== ERROR IN CLERK WEBHOOK ROUTER ======", file=sys.stderr)
+        traceback.print_exc(file=sys.stderr)
+        print("===========================================", file=sys.stderr)
+        raise HTTPException(
+            status_code=500,
+            detail=f"Internal webhook processing error: {str(e)}"
+        )
 
 @router.get("/accounts/me", response_model=AccountResponse)
 def get_current_user_account(

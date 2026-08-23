@@ -8,16 +8,52 @@ const apiClient = axios.create({
   },
 });
 
-// Request interceptor: Attach Clerk User ID token dynamically from localStorage
+// Helper: Wait for global Clerk instance to be fully loaded and initialized
+const waitForClerk = (): Promise<any> => {
+  return new Promise((resolve) => {
+    if (typeof window === "undefined") {
+      resolve(null);
+      return;
+    }
+    
+    // Check if Clerk is already initialized
+    if ((window as any).Clerk?.isReady?.() || (window as any).Clerk?.session) {
+      resolve((window as any).Clerk);
+      return;
+    }
+
+    // Poll every 50ms (up to 5 seconds) to wait for Clerk initialization
+    let attempts = 0;
+    const interval = setInterval(() => {
+      attempts++;
+      if ((window as any).Clerk?.isReady?.() || (window as any).Clerk?.session || attempts > 100) {
+        clearInterval(interval);
+        resolve((window as any).Clerk || null);
+      }
+    }, 50);
+  });
+};
+
+// Request interceptor: Attach Clerk JWT token dynamically
 apiClient.interceptors.request.use(
-  (config) => {
+  async (config) => {
     if (typeof window !== "undefined") {
-      let token = localStorage.getItem("clerk_user_id");
+      // Asynchronously wait for Clerk to initialize
+      const clerk = await waitForClerk();
+      let token: string | null = null;
       
-      // Fallback: If localStorage is empty, try to resolve user ID from global Clerk object
-      if (!token && (window as any).Clerk?.user?.id) {
-        token = (window as any).Clerk.user.id;
-        localStorage.setItem("clerk_user_id", token!);
+      // Retrieve signed JWT token dynamically from active Clerk session
+      if (clerk?.session) {
+        try {
+          token = await clerk.session.getToken();
+        } catch (e) {
+          console.error("Failed to retrieve Clerk JWT token dynamically:", e);
+        }
+      }
+
+      // Fallback: Use stored clerk_user_id if Clerk session JWT is still not available
+      if (!token) {
+        token = localStorage.getItem("clerk_user_id");
       }
 
       if (token && config.headers) {

@@ -98,8 +98,8 @@ export async function fetchOnboardingDetails(): Promise<OnboardingResponse | nul
     const response = await apiClient.get<OnboardingResponse>("/system/onboarding");
     return response.data;
   } catch (error: any) {
-    // If onboarding data is not found (404), return null indicating a clean signup
-    if (error.response && error.response.status === 404) {
+    // If onboarding data is not found (404) or request is unauthorized (401), return null to indicate clean state
+    if (error.response && (error.response.status === 404 || error.response.status === 401)) {
       return null;
     }
     throw error;
