@@ -1,14 +1,15 @@
 "use client";
 
 import React from "react";
-import { Bell } from "lucide-react";
+import { Bell, Menu } from "lucide-react";
 import { useUser, UserButton } from "@clerk/nextjs";
 
 export interface HeaderProps {
   title?: string;
+  onMenuToggle?: () => void;
 }
 
-export const Header: React.FC<HeaderProps> = ({ title = "Dashboard" }) => {
+export const Header: React.FC<HeaderProps> = ({ title = "Dashboard", onMenuToggle }) => {
   const { user } = useUser();
 
   React.useEffect(() => {
@@ -21,10 +22,20 @@ export const Header: React.FC<HeaderProps> = ({ title = "Dashboard" }) => {
   }, [user]);
 
   return (
-    <header className="h-16 bg-surface border-b border-border flex items-center justify-between px-8 sticky top-0 z-10">
-      {/* Title */}
-      <div>
-        <h1 className="font-heading text-lg font-bold text-text-primary">
+    <header className="h-16 bg-surface border-b border-border flex items-center justify-between px-4 md:px-8 sticky top-0 z-20">
+      {/* Title & Hamburger Menu */}
+      <div className="flex items-center gap-3">
+        {onMenuToggle && (
+          <button
+            type="button"
+            onClick={onMenuToggle}
+            className="md:hidden p-2 rounded-lg text-text-secondary hover:text-text-primary hover:bg-background transition-colors cursor-pointer"
+            aria-label="Open menu"
+          >
+            <Menu className="w-5 h-5" />
+          </button>
+        )}
+        <h1 className="font-heading text-base md:text-lg font-bold text-text-primary">
           {title}
         </h1>
       </div>
