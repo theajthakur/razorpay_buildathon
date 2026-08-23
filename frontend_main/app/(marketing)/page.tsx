@@ -26,7 +26,7 @@ export default function MarketingLandingPage() {
   return (
     <main className="flex-1">
       {/* 1. Hero Section with Backdrop Image */}
-      <section className="relative overflow-hidden min-h-[calc(100vh-4rem)] flex items-center justify-center py-20 px-6 md:px-12 border-b border-border bg-background">
+      <section className="relative overflow-hidden min-h-0 md:min-h-[calc(100vh-4rem)] flex items-center justify-center py-12 md:py-20 px-6 md:px-12 border-b border-border bg-background">
         {/* Responsive Backdrop Image */}
         <img
           src="/assets/hero_backdrop.png"

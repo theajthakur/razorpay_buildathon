@@ -100,18 +100,11 @@ export default function MarketingLayout({
         <div className="md:hidden fixed top-16 left-0 right-0 bg-surface border-b border-border shadow-lg flex flex-col p-6 space-y-4 z-40 transition-all duration-200">
           <nav className="flex flex-col space-y-3">
             <Link
-              href="#how-it-works"
+              href="/documentation"
               onClick={() => setIsOpen(false)}
               className="text-base font-semibold text-text-secondary hover:text-text-primary py-1.5 transition-colors"
             >
-              How it works
-            </Link>
-            <Link
-              href="#features"
-              onClick={() => setIsOpen(false)}
-              className="text-base font-semibold text-text-secondary hover:text-text-primary py-1.5 transition-colors"
-            >
-              Features
+              Documentation
             </Link>
           </nav>
 
