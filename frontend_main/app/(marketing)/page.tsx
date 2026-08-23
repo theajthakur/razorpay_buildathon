@@ -31,9 +31,8 @@ export default function MarketingLandingPage() {
         <img
           src="/assets/hero_backdrop.png"
           alt="Hero Backdrop decoration"
-          className="fixed pointer-events-none z-0 opacity-35 select-none
-                     md:inset-0 md:w-full md:h-full md:object-cover
-                     max-md:bottom-0 max-md:right-0 max-md:top-auto max-md:left-auto max-md:w-3/5 max-md:h-1/2 max-md:object-contain"
+          className="absolute inset-0 w-full h-full object-cover pointer-events-none z-0 opacity-35 select-none"
+          style={{ objectPosition: "right bottom" }}
         />
 
         {/* Subtle grid background pattern with radial fade */}
