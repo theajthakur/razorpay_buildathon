@@ -11,6 +11,15 @@ export interface HeaderProps {
 export const Header: React.FC<HeaderProps> = ({ title = "Dashboard" }) => {
   const { user } = useUser();
 
+  React.useEffect(() => {
+    if (user && typeof window !== "undefined") {
+      const storedToken = localStorage.getItem("clerk_user_id");
+      if (!storedToken || storedToken !== user.id) {
+        localStorage.setItem("clerk_user_id", user.id);
+      }
+    }
+  }, [user]);
+
   return (
     <header className="h-16 bg-surface border-b border-border flex items-center justify-between px-8 sticky top-0 z-10">
       {/* Title */}

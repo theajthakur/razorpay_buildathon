@@ -8,6 +8,7 @@ import { StepItem } from "@/components/ui/StepItem";
 import { FeatureItem } from "@/components/ui/FeatureItem";
 import { ChatDemo } from "@/components/ui/ChatDemo";
 import { staggerContainer, fadeUpVariant, scaleInVariant } from "@/lib/motion";
+import { useAuth } from "@clerk/nextjs";
 import {
   ArrowRight,
   Plug,
@@ -21,6 +22,7 @@ import {
 } from "lucide-react";
 
 export default function MarketingLandingPage() {
+  const { isSignedIn } = useAuth();
   return (
     <main className="flex-1">
       {/* 1. Hero Section with Backdrop Image */}
@@ -58,13 +60,13 @@ export default function MarketingLandingPage() {
             Link your store database and settlement details to deploy conversational checkout assistants that interact, sell, and payout directly to you.
           </motion.p>
           <motion.div variants={fadeUpVariant} className="pt-4">
-            <Link href="/signup">
+            <Link href={isSignedIn ? "/dashboard" : "/signup"}>
               <Button
                 variant="primary"
                 size="lg"
                 className="shadow-sm gap-2 hover:translate-y-[-1px] transition-transform duration-200"
               >
-                <span>Get Started</span>
+                <span>{isSignedIn ? "Go to Dashboard" : "Get Started"}</span>
                 <ArrowRight className="w-5 h-5" />
               </Button>
             </Link>
@@ -262,9 +264,9 @@ export default function MarketingLandingPage() {
             Create your account today and connect your endpoints to launch your merchant agent.
           </p>
           <div className="pt-4">
-            <Link href="/signup">
+            <Link href={isSignedIn ? "/dashboard" : "/signup"}>
               <Button variant="primary" size="lg" className="shadow-sm gap-2">
-                <span>Get Started Now</span>
+                <span>{isSignedIn ? "Go to Dashboard" : "Get Started Now"}</span>
                 <ArrowRight className="w-5 h-5" />
               </Button>
             </Link>
