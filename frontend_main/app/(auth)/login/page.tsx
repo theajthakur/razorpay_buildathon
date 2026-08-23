@@ -25,6 +25,7 @@ export default function LoginPage() {
   const [code, setCode] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [loadingText, setLoadingText] = useState("Please wait...");
 
   const handleSendCode = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -38,6 +39,7 @@ export default function LoginPage() {
       return;
     }
 
+    setLoadingText("Signing in...");
     setLoading(true);
     setError("");
 
@@ -106,6 +108,7 @@ export default function LoginPage() {
       return;
     }
 
+    setLoadingText("Verifying code...");
     setLoading(true);
     setError("");
 
@@ -148,12 +151,13 @@ export default function LoginPage() {
   const handleGoogleLogin = async () => {
     if (!signIn) return;
     try {
+      setLoadingText("Connecting to Google...");
       setLoading(true);
       setError("");
-      await signIn.authenticateWithRedirect({
+      await signIn.sso({
         strategy: "oauth_google",
-        redirectUrl: "/sso-callback",
-        redirectUrlComplete: "/dashboard",
+        redirectCallbackUrl: `${window.location.origin}/sso-callback`,
+        redirectUrl: `${window.location.origin}/dashboard`,
       });
     } catch (err: any) {
       setError(err.message || "An error occurred during Google sign-in.");
@@ -181,7 +185,13 @@ export default function LoginPage() {
         </div>
 
         {/* Card Form */}
-        <div className="bg-surface border border-border rounded-xl p-8 shadow-xs">
+        <div className="bg-surface border border-border rounded-xl p-8 shadow-xs relative">
+          {loading && (
+            <div className="absolute inset-0 bg-surface/70 backdrop-blur-[2px] flex flex-col items-center justify-center rounded-xl z-20 transition-all duration-200">
+              <div className="w-10 h-10 border-4 border-primary border-t-transparent rounded-full animate-spin"></div>
+              <p className="text-sm font-semibold text-text-secondary mt-3">{loadingText}</p>
+            </div>
+          )}
           {error && (
             <div className="p-3 rounded-lg bg-primary-light border border-border text-xs text-error mb-5">
               {error}

@@ -12,7 +12,14 @@ const apiClient = axios.create({
 apiClient.interceptors.request.use(
   (config) => {
     if (typeof window !== "undefined") {
-      const token = localStorage.getItem("clerk_user_id");
+      let token = localStorage.getItem("clerk_user_id");
+      
+      // Fallback: If localStorage is empty, try to resolve user ID from global Clerk object
+      if (!token && (window as any).Clerk?.user?.id) {
+        token = (window as any).Clerk.user.id;
+        localStorage.setItem("clerk_user_id", token!);
+      }
+
       if (token && config.headers) {
         config.headers.Authorization = `Bearer ${token}`;
       }
