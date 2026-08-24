@@ -35,6 +35,11 @@ export interface AuthConfig {
   token_delivery: TokenDeliveryConfig;
 }
 
+export interface BrandingConfig {
+  colorTheme?: string | null;
+  logoUrl?: string | null;
+}
+
 export interface OnboardingData {
   base_url: string;
   auth_enabled: boolean;
@@ -49,6 +54,8 @@ export interface OnboardingData {
   bank_account?: string | null;
   ifsc?: string | null;
   branch_name?: string | null;
+  branding_config?: BrandingConfig | null;
+  webhook_url?: string | null;
 }
 
 export interface OnboardingResponse extends OnboardingData {

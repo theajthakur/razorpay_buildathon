@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect } from "react";
-import { AlertTriangle, Copy, Check, Eye, EyeOff } from "lucide-react";
+import { Info, Copy, Check, Eye, EyeOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 interface RevealKeyDialogProps {
@@ -43,7 +43,7 @@ export const RevealKeyDialog: React.FC<RevealKeyDialogProps> = ({
   return (
     <div className="fixed inset-0 bg-secondary/80 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
       <div className="bg-surface max-w-lg w-full rounded-2xl border border-border shadow-2xl overflow-hidden flex flex-col animate-in zoom-in-95 duration-200">
-        
+
         {/* Header */}
         <div className="p-5 border-b border-border bg-background-alt">
           <h3 className="font-heading text-lg font-bold text-text-primary">
@@ -56,28 +56,13 @@ export const RevealKeyDialog: React.FC<RevealKeyDialogProps> = ({
 
         {/* Body */}
         <div className="p-6 space-y-6">
-          
-          {/* Warning Banner */}
-          <div className="p-4 bg-error/10 border border-error/20 text-error rounded-xl flex items-start gap-3">
-            <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5" />
-            <div className="text-sm">
-              <p className="font-bold">This key will only be shown once!</p>
-              <p className="text-xs opacity-90 mt-0.5">
-                For security reasons, we do not store this key on our servers and it cannot be recovered if lost. Please copy it now and store it in a secure password manager.
-              </p>
-            </div>
-          </div>
-
           {/* Key Block */}
           <div className="space-y-2">
-            <label className="block text-xs font-bold text-text-secondary uppercase tracking-wider">
-              Secret API Key
-            </label>
             <div className="flex items-center gap-2 p-3.5 bg-background border border-border rounded-xl font-mono text-sm text-text-primary overflow-hidden relative">
               <span className={`flex-1 select-all break-all pr-12 ${!showKey ? "blur-[5px]" : ""}`}>
                 {apiKey}
               </span>
-              
+
               <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1.5 bg-background pl-2 pr-1">
                 {/* Toggle Show/Hide Key */}
                 <button
@@ -88,16 +73,15 @@ export const RevealKeyDialog: React.FC<RevealKeyDialogProps> = ({
                 >
                   {showKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
-                
+
                 {/* Copy Button */}
                 <button
                   type="button"
                   onClick={handleCopy}
-                  className={`p-1.5 rounded-lg border transition-all cursor-pointer flex items-center gap-1 ${
-                    copied
-                      ? "bg-success/10 border-success/20 text-success"
-                      : "bg-surface border-border text-text-secondary hover:text-text-primary hover:border-text-secondary"
-                  }`}
+                  className={`p-1.5 rounded-lg border transition-all cursor-pointer flex items-center gap-1 ${copied
+                    ? "bg-success/10 border-success/20 text-success"
+                    : "bg-surface border-border text-text-secondary hover:text-text-primary hover:border-text-secondary"
+                    }`}
                   title="Copy to clipboard"
                 >
                   {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
@@ -112,7 +96,7 @@ export const RevealKeyDialog: React.FC<RevealKeyDialogProps> = ({
         <div className="p-5 border-t border-border flex items-center justify-between bg-background-alt">
           <p className="text-xs text-text-secondary max-w-[65%]">
             {!hasCopiedOnce ? (
-              <span className="text-error font-medium">Please copy your API key to continue.</span>
+              <span className="text-text-secondary font-medium">Please copy your API key to continue.</span>
             ) : (
               <span className="text-success font-medium">Key copied. Ready to close.</span>
             )}

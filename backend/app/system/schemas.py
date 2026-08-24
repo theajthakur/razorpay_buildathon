@@ -64,6 +64,10 @@ class CreateOrderConfigSchema(BaseModel):
     price_field: str
     quantity_field: str
 
+class BrandingConfigSchema(BaseModel):
+    colorTheme: Optional[str] = None
+    logoUrl: Optional[str] = None
+
 class OnboardingUpsertRequest(BaseModel):
     base_url: str
     auth_enabled: bool = True
@@ -80,6 +84,10 @@ class OnboardingUpsertRequest(BaseModel):
     bank_account: Optional[str] = None
     ifsc: Optional[str] = None
     branch_name: Optional[str] = None
+    
+    # Branding & Webhook
+    branding_config: Optional[BrandingConfigSchema] = None
+    webhook_url: Optional[str] = None
 
 class OnboardingResponse(BaseModel):
     user_id: str
@@ -97,6 +105,9 @@ class OnboardingResponse(BaseModel):
     bank_account: Optional[str] = None
     ifsc: Optional[str] = None
     branch_name: Optional[str] = None
+    
+    branding_config: Optional[BrandingConfigSchema] = None
+    webhook_url: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 

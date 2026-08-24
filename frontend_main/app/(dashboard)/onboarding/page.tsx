@@ -1,40 +1,53 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/Input";
 import { StatusBadge, StatusType } from "@/components/ui/StatusBadge";
-import { 
-  BadgeCheck, 
-  Landmark, 
-  ShieldCheck, 
-  Database, 
-  Loader2, 
-  AlertTriangle, 
-  X, 
-  ArrowRight, 
-  Check, 
+import {
+  BadgeCheck,
+  Landmark,
+  ShieldCheck,
+  Database,
+  Loader2,
+  AlertTriangle,
+  X,
+  ArrowRight,
+  Check,
   Edit3,
   HelpCircle,
   Lock,
   Unlock,
   Info,
   Server,
-  Play
+  Play,
+  UploadCloud
 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { fetchOnboardingDetails, saveOnboardingDetails, testEndpoint, testCustomerAuth } from "@/lib/api/onboarding";
+import { useAuth } from "@clerk/nextjs";
+import axios from "axios";
 import { toast } from "sonner";
 
 export default function OnboardingPage() {
   const router = useRouter();
+  const { isLoaded: authLoaded, isSignedIn: authSignedIn } = useAuth();
 
   // Loading and saving states
   const [pageLoading, setPageLoading] = useState(true);
   const [saveLoading, setSaveLoading] = useState(false);
   const [isSavedToDb, setIsSavedToDb] = useState(false); // Step 1 Lock/Unlock gating state
+
+  // Edit & Change Tracking States
+  const [isEditing, setIsEditing] = useState(false);
+  const [originalConfig, setOriginalConfig] = useState<any>(null);
+
+  // Branding & Webhook States
+  const [colorTheme, setColorTheme] = useState("");
+  const [logoUrl, setLogoUrl] = useState("");
+  const [webhookUrl, setWebhookUrl] = useState("");
 
   // Modals state
   const [showConfirmDisableModal, setShowConfirmDisableModal] = useState(false);
@@ -51,7 +64,7 @@ export default function OnboardingPage() {
   const [authDisabledAck, setAuthDisabledAck] = useState(false);
   const [authUrl, setAuthUrl] = useState("https://api.acmestore.com/v1/auth/login");
   const [authMethod, setAuthMethod] = useState("POST");
-  
+
   // Custom authConfig structure
   const [authConfig, setAuthConfig] = useState<any>({
     identifier_field: "email",
@@ -87,16 +100,16 @@ export default function OnboardingPage() {
     products: { path: "products", method: "GET", payload_key: "query", response_key: "products" },
     orderHistory: { path: "orders/history", method: "GET", response_key: "orders" },
     customerProfile: { path: "customers", method: "GET" },
-    addresses: { 
-      fetch_path: "addresses", 
-      fetch_method: "GET", 
+    addresses: {
+      fetch_path: "addresses",
+      fetch_method: "GET",
       fetch_response_key: "addresses",
       create_path: "addresses",
       create_method: "POST",
       create_fields: "line1, line2, city, state, pincode"
     },
-    createOrder: { 
-      path: "orders", 
+    createOrder: {
+      path: "orders",
       method: "POST",
       cart_key: "cart",
       item_id_field: "item_id",
@@ -213,9 +226,21 @@ export default function OnboardingPage() {
         const config = await fetchOnboardingDetails();
         if (config) {
           setIsSavedToDb(true);
+          setOriginalConfig(config);
+          setIsEditing(false);
           setBaseUrl(config.base_url);
           setAuthEnabled(config.auth_enabled);
           setAuthDisabledAck(config.auth_disabled_ack);
+
+          if (config.branding_config) {
+            setColorTheme(config.branding_config.colorTheme || "");
+            setLogoUrl(config.branding_config.logoUrl || "");
+          } else {
+            setColorTheme("");
+            setLogoUrl("");
+          }
+          setWebhookUrl(config.webhook_url || "");
+
           if (config.auth_config) {
             setAuthUrl(config.auth_config.auth_url || "https://api.acmestore.com/v1/auth/login");
             setAuthMethod(config.auth_config.method || "POST");
@@ -223,7 +248,7 @@ export default function OnboardingPage() {
             setModalIdentifierType(config.auth_config.identifier_type || "Email");
             setModalPasswordField(config.auth_config.password_field || "password");
             setTokenPath(config.auth_config.token_path || "token");
-            
+
             const delivery = config.auth_config.token_delivery || {
               method: "header",
               header_name: "Authorization",
@@ -234,7 +259,7 @@ export default function OnboardingPage() {
             setHeaderName(delivery.header_name || "Authorization");
             setAddBearer(delivery.bearer_prefix !== false);
             setCookieName(delivery.cookie_name || "session");
-            
+
             setAuthConfig({
               isConfigured: true,
               auth_url: config.auth_config.auth_url,
@@ -306,7 +331,7 @@ export default function OnboardingPage() {
             // Trigger IFSC Lookup immediately to auto-resolve bank details
             handleIfscLookup(config.ifsc);
           }
-          
+
           setEndpointStatuses({
             products: "success",
             orderHistory: "success",
@@ -315,6 +340,7 @@ export default function OnboardingPage() {
             createOrder: "success",
           });
         } else {
+          setIsEditing(true); // Default to editing if DB is empty
           // Restore draft from localStorage if DB is empty
           const draftStr = localStorage.getItem("onboarding_step1_draft");
           if (draftStr) {
@@ -341,6 +367,9 @@ export default function OnboardingPage() {
           }
         }
       } catch (err) {
+        if (axios.isCancel(err)) {
+          return;
+        }
         console.error("Failed to load onboarding info: ", err);
       } finally {
         setPageLoading(false);
@@ -353,8 +382,211 @@ export default function OnboardingPage() {
       setSessionToken(cachedToken);
     }
 
-    loadOnboarding();
-  }, []);
+    if (authLoaded) {
+      if (authSignedIn) {
+        loadOnboarding();
+      } else {
+        setPageLoading(false);
+      }
+    }
+  }, [authLoaded, authSignedIn]);
+
+  const handleCancelEdit = () => {
+    if (originalConfig) {
+      setBaseUrl(originalConfig.base_url || "");
+      setAuthEnabled(originalConfig.auth_enabled || false);
+      setAuthDisabledAck(originalConfig.auth_disabled_ack || false);
+      setBankAccount(originalConfig.bank_account || "");
+      setIfsc(originalConfig.ifsc || "");
+
+      if (originalConfig.branding_config) {
+        setColorTheme(originalConfig.branding_config.colorTheme || "");
+        setLogoUrl(originalConfig.branding_config.logoUrl || "");
+      } else {
+        setColorTheme("");
+        setLogoUrl("");
+      }
+      setWebhookUrl(originalConfig.webhook_url || "");
+
+      const oAuth = originalConfig.auth_config || {};
+      setAuthUrl(oAuth.auth_url || "https://api.acmestore.com/v1/auth/login");
+      setAuthMethod(oAuth.method || "POST");
+      setModalIdentifierField(oAuth.identifier_field || "email");
+      setModalIdentifierType(oAuth.identifier_type || "Email");
+      setModalPasswordField(oAuth.password_field || "password");
+      setTokenPath(oAuth.token_path || "token");
+
+      const delivery = oAuth.token_delivery || {
+        method: "header",
+        header_name: "Authorization",
+        bearer_prefix: true,
+        cookie_name: "session"
+      };
+      setDeliveryType(delivery.method);
+      setHeaderName(delivery.header_name || "Authorization");
+      setAddBearer(delivery.bearer_prefix !== false);
+      setCookieName(delivery.cookie_name || "session");
+
+      setAuthConfig({
+        isConfigured: true,
+        auth_url: oAuth.auth_url,
+        method: oAuth.method,
+        identifier_field: oAuth.identifier_field,
+        identifier_type: oAuth.identifier_type,
+        password_field: oAuth.password_field,
+        token_path: oAuth.token_path,
+        token_delivery: delivery
+      });
+
+      const oEndpoints = originalConfig.endpoints || {};
+      const oProd = oEndpoints.products || originalConfig.products_config || {};
+      setProdPath(oProd.path || "products");
+      setProdPayloadKey(oProd.payload_key || "query");
+      setProdResponseKey(oProd.response_key || "products");
+
+      const oOh = oEndpoints.orderHistory || originalConfig.order_history_config || {};
+      setOhPath(oOh.path || "orders/history");
+      setOhResponseKey(oOh.response_key || "orders");
+
+      const oCp = oEndpoints.customerProfile || originalConfig.customer_profile_config || {};
+      setCpPath(oCp.path || "customers");
+
+      const oAddr = oEndpoints.addresses || originalConfig.addresses_config || {};
+      if (oAddr.fetch) {
+        setAddrFetchPath(oAddr.fetch.path || "addresses");
+        setAddrFetchResponseKey(oAddr.fetch.response_key || "addresses");
+      } else {
+        setAddrFetchPath(oAddr.fetch_path || "addresses");
+        setAddrFetchResponseKey(oAddr.fetch_response_key || "addresses");
+      }
+      if (oAddr.create) {
+        setAddrCreatePath(oAddr.create.path || "addresses");
+        setAddrCreateFields(oAddr.create.field_mapping ? oAddr.create.field_mapping.join(", ") : "line1, line2, city, state, pincode");
+      } else {
+        setAddrCreatePath(oAddr.create_path || "addresses");
+        setAddrCreateFields(oAddr.create_fields || "line1, line2, city, state, pincode");
+      }
+
+      const oCo = oEndpoints.createOrder || originalConfig.create_order_config || {};
+      setCoPath(oCo.path || "orders");
+      setCoCartKey(oCo.cart_key || "cart");
+      setCoItemIdField(oCo.item_id_field || "item_id");
+      setCoPriceField(oCo.price_field || "price");
+      setCoQuantityField(oCo.quantity_field || "quantity");
+
+      if (originalConfig.ifsc) {
+        handleIfscLookup(originalConfig.ifsc);
+      }
+    }
+    setIsEditing(false);
+  };
+
+  const hasPendingChanges = useMemo(() => {
+    if (!originalConfig) {
+      return baseUrl !== "" || bankAccount !== "" || ifsc !== "" || colorTheme !== "" || logoUrl !== "" || webhookUrl !== "";
+    }
+
+    if (baseUrl !== (originalConfig.base_url || "")) return true;
+    if (authEnabled !== originalConfig.auth_enabled) return true;
+    if (authDisabledAck !== originalConfig.auth_disabled_ack) return true;
+    if (bankAccount !== (originalConfig.bank_account || "")) return true;
+    if (ifsc !== (originalConfig.ifsc || "")) return true;
+    if (webhookUrl !== (originalConfig.webhook_url || "")) return true;
+
+    const oBrand = originalConfig.branding_config || {};
+    if (colorTheme !== (oBrand.colorTheme || "")) return true;
+    if (logoUrl !== (oBrand.logoUrl || "")) return true;
+
+    const oAuth = originalConfig.auth_config || {};
+    if (authUrl !== (oAuth.auth_url || "")) return true;
+    if (authMethod !== (oAuth.method || "POST")) return true;
+    if (modalIdentifierField !== (oAuth.identifier_field || "")) return true;
+    if (modalIdentifierType !== (oAuth.identifier_type || "")) return true;
+    if (modalPasswordField !== (oAuth.password_field || "")) return true;
+    if (tokenPath !== (oAuth.token_path || "")) return true;
+
+    const oDel = oAuth.token_delivery || {};
+    if (deliveryType !== (oDel.method || "header")) return true;
+    if (headerName !== (oDel.header_name || "Authorization")) return true;
+    if (addBearer !== (oDel.bearer_prefix !== false)) return true;
+    if (cookieName !== (oDel.cookie_name || "session")) return true;
+
+    const oEndpoints = originalConfig.endpoints || {};
+    const oProd = oEndpoints.products || originalConfig.products_config || {};
+    if (prodPath !== (oProd.path || "products")) return true;
+    if (prodPayloadKey !== (oProd.payload_key || "query")) return true;
+    if (prodResponseKey !== (oProd.response_key || "products")) return true;
+
+    const oOh = oEndpoints.orderHistory || originalConfig.order_history_config || {};
+    if (ohPath !== (oOh.path || "orders/history")) return true;
+    if (ohResponseKey !== (oOh.response_key || "orders")) return true;
+
+    const oCp = oEndpoints.customerProfile || originalConfig.customer_profile_config || {};
+    if (cpPath !== (oCp.path || "customers")) return true;
+
+    const oAddr = oEndpoints.addresses || originalConfig.addresses_config || {};
+    if (oAddr.fetch) {
+      if (addrFetchPath !== (oAddr.fetch.path || "addresses")) return true;
+      if (addrFetchResponseKey !== (oAddr.fetch.response_key || "addresses")) return true;
+    } else {
+      if (addrFetchPath !== (oAddr.fetch_path || "addresses")) return true;
+      if (addrFetchResponseKey !== (oAddr.fetch_response_key || "addresses")) return true;
+    }
+    if (oAddr.create) {
+      if (addrCreatePath !== (oAddr.create.path || "addresses")) return true;
+      const originalFields = oAddr.create.field_mapping ? oAddr.create.field_mapping.join(", ") : "line1, line2, city, state, pincode";
+      if (addrCreateFields !== originalFields) return true;
+    } else {
+      if (addrCreatePath !== (oAddr.create_path || "addresses")) return true;
+      if (addrCreateFields !== (oAddr.create_fields || "line1, line2, city, state, pincode")) return true;
+    }
+
+    const oCo = oEndpoints.createOrder || originalConfig.create_order_config || {};
+    if (coPath !== (oCo.path || "orders")) return true;
+    if (coCartKey !== (oCo.cart_key || "cart")) return true;
+    if (coItemIdField !== (oCo.item_id_field || "item_id")) return true;
+    if (coPriceField !== (oCo.price_field || "price")) return true;
+    if (coQuantityField !== (oCo.quantity_field || "quantity")) return true;
+
+    return false;
+  }, [
+    originalConfig,
+    baseUrl,
+    authEnabled,
+    authDisabledAck,
+    bankAccount,
+    ifsc,
+    colorTheme,
+    logoUrl,
+    webhookUrl,
+    authUrl,
+    authMethod,
+    modalIdentifierField,
+    modalIdentifierType,
+    modalPasswordField,
+    tokenPath,
+    deliveryType,
+    headerName,
+    addBearer,
+    cookieName,
+    prodPath,
+    prodPayloadKey,
+    prodResponseKey,
+    ohPath,
+    ohResponseKey,
+    cpPath,
+    addrFetchPath,
+    addrFetchResponseKey,
+    addrCreatePath,
+    addrCreateFields,
+    coPath,
+    coCartKey,
+    coItemIdField,
+    coPriceField,
+    coQuantityField,
+  ]);
+
+  const isFinishButtonVisible = !isSavedToDb || (isEditing && hasPendingChanges);
 
   // Update test token status resolving on object
   const getNestedValue = (obj: any, path: string): any => {
@@ -460,7 +692,7 @@ export default function OnboardingPage() {
       });
 
       setTestResponseData(result.data);
-      
+
       if (result.status === "success") {
         toast.success("Received login response from server!");
         const detected = findTokenPathInObject(result.data);
@@ -533,6 +765,12 @@ export default function OnboardingPage() {
     toast.success("Customer login configurations saved successfully!");
   };
 
+  const handleMockLogoUpload = () => {
+    if (!isEditing) return;
+    toast.success("Logo uploaded successfully (mock file: logo.png)");
+    setLogoUrl("https://yourstore.com/logo.png");
+  };
+
   // STEP GATING: Save Step 1 Connection details to Backend to unlock Step 2
   const handleSaveStep1 = async () => {
     setSaveLoading(true);
@@ -592,7 +830,7 @@ export default function OnboardingPage() {
         quantity_field: coQuantityField
       };
 
-      await saveOnboardingDetails({
+      const savedResponse = await saveOnboardingDetails({
         base_url: baseUrl,
         auth_enabled: authEnabled,
         auth_disabled_ack: authDisabledAck,
@@ -605,9 +843,13 @@ export default function OnboardingPage() {
         bank_account: bankAccount,
         ifsc,
         branch_name: resolvedBranch || resolvedBank,
+        branding_config: { colorTheme, logoUrl },
+        webhook_url: webhookUrl,
       });
 
       setIsSavedToDb(true);
+      setOriginalConfig(savedResponse);
+      setIsEditing(false);
       localStorage.removeItem("onboarding_step1_draft");
       toast.success("Step 1 (Connection Details) saved successfully! Step 2 is now unlocked.");
     } catch (err) {
@@ -624,7 +866,7 @@ export default function OnboardingPage() {
     setModalTestResponse(null);
     setModalTestStatus("untested");
     setModalTestLoading(false);
-    
+
     // Set dynamic tab for addresses
     if (resourceKey === "addresses") {
       setAddrActiveTab("fetch");
@@ -635,7 +877,7 @@ export default function OnboardingPage() {
   const handleSaveAndTestResource = async (resourceKey: string) => {
     setModalTestLoading(true);
     setModalTestResponse(null);
-    
+
     let path = "";
     let method = "GET";
     let reqPayload: Record<string, any> = {};
@@ -682,8 +924,8 @@ export default function OnboardingPage() {
         credential_value: authEnabled ? sessionToken : null,
         token_delivery_method: authEnabled ? authConfig.token_delivery?.method : null,
         token_delivery_name: authEnabled ? (
-          authConfig.token_delivery?.method === "header" 
-            ? authConfig.token_delivery.header_name 
+          authConfig.token_delivery?.method === "header"
+            ? authConfig.token_delivery.header_name
             : authConfig.token_delivery.cookie_name
         ) : null,
         token_delivery_bearer: authEnabled ? authConfig.token_delivery?.bearer_prefix : null,
@@ -800,7 +1042,7 @@ export default function OnboardingPage() {
         quantity_field: coQuantityField
       };
 
-      await saveOnboardingDetails({
+      const savedResponse = await saveOnboardingDetails({
         base_url: baseUrl,
         auth_enabled: authEnabled,
         auth_disabled_ack: authDisabledAck,
@@ -813,10 +1055,15 @@ export default function OnboardingPage() {
         bank_account: bankAccount,
         ifsc,
         branch_name: resolvedBranch || resolvedBank || "Verified Branch",
+        branding_config: { colorTheme, logoUrl },
+        webhook_url: webhookUrl,
       });
-      
+
+      setOriginalConfig(savedResponse);
+      setIsEditing(false);
+
       toast.success("Onboarding configurations saved successfully!");
-      
+
       setTimeout(() => {
         window.location.href = "/dashboard";
       }, 1000);
@@ -854,13 +1101,31 @@ export default function OnboardingPage() {
   return (
     <div className="space-y-8 max-w-4xl mx-auto py-4">
       {/* Title Header */}
-      <div>
-        <h1 className="font-heading text-2xl font-bold text-text-primary">
-          Connect Your Business APIs
-        </h1>
-        <p className="text-sm text-text-secondary mt-1">
-          Provide your endpoint coordinates, authentication settings, and payout account details to complete setup.
-        </p>
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-border pb-4">
+        <div>
+          <h1 className="font-heading text-2xl font-bold text-text-primary">
+            Connect Your Business APIs
+          </h1>
+          <p className="text-sm text-text-secondary mt-1">
+            Provide your endpoint coordinates, authentication settings, and payout account details to complete setup.
+          </p>
+        </div>
+        {isSavedToDb && (
+          <Button
+            type="button"
+            variant={isEditing ? "secondary" : "primary"}
+            onClick={() => {
+              if (isEditing) {
+                handleCancelEdit();
+              } else {
+                setIsEditing(true);
+              }
+            }}
+            className="font-semibold shrink-0"
+          >
+            {isEditing ? "Cancel" : "Edit Settings"}
+          </Button>
+        )}
       </div>
 
       {/* Part A: Shared Connection Details Card */}
@@ -875,7 +1140,7 @@ export default function OnboardingPage() {
             value={baseUrl}
             onChange={(e) => setBaseUrl(e.target.value)}
             required
-            disabled={saveLoading}
+            disabled={saveLoading || !isEditing}
           />
 
           {/* Toggle Switch */}
@@ -898,7 +1163,7 @@ export default function OnboardingPage() {
             <Switch
               checked={authEnabled}
               onCheckedChange={handleToggleAuth}
-              disabled={saveLoading}
+              disabled={saveLoading || !isEditing}
             />
           </div>
 
@@ -924,7 +1189,7 @@ export default function OnboardingPage() {
                     value={authUrl}
                     onChange={(e) => setAuthUrl(e.target.value)}
                     required
-                    disabled={saveLoading}
+                    disabled={saveLoading || !isEditing}
                   />
                 </div>
                 <div>
@@ -935,7 +1200,7 @@ export default function OnboardingPage() {
                     value={authMethod}
                     onChange={(e) => setAuthMethod(e.target.value)}
                     className="w-full bg-surface border border-border rounded-lg px-3.5 py-2.5 text-base text-text-primary focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-colors cursor-pointer"
-                    disabled={saveLoading}
+                    disabled={saveLoading || !isEditing}
                   >
                     <option value="POST">POST</option>
                     <option value="GET">GET</option>
@@ -956,16 +1221,18 @@ export default function OnboardingPage() {
                       Delivery: <strong className="text-text-primary">{authConfig.token_delivery.method === "header" ? `Header (${authConfig.token_delivery.header_name})` : `Cookie (${authConfig.token_delivery.cookie_name})`}</strong>
                     </p>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setMappingStep(1);
-                      setShowMappingModal(true);
-                    }}
-                    className="text-primary hover:underline font-semibold flex items-center gap-1 text-xs cursor-pointer"
-                  >
-                    <Edit3 className="w-3.5 h-3.5" /> Edit Configuration
-                  </button>
+                  {isEditing && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMappingStep(1);
+                        setShowMappingModal(true);
+                      }}
+                      className="text-primary hover:underline font-semibold flex items-center gap-1 text-xs cursor-pointer"
+                    >
+                      <Edit3 className="w-3.5 h-3.5" /> Edit Configuration
+                    </button>
+                  )}
                 </div>
               ) : (
                 <div className="flex justify-end pt-2">
@@ -976,7 +1243,7 @@ export default function OnboardingPage() {
                       setMappingStep(1);
                       setShowMappingModal(true);
                     }}
-                    disabled={authUrl.trim() === ""}
+                    disabled={authUrl.trim() === "" || !isEditing}
                     className="flex items-center gap-2"
                   >
                     <span>Map Login Fields</span>
@@ -987,28 +1254,115 @@ export default function OnboardingPage() {
             </div>
           )}
 
-          {/* STEP 1 SAVE BUTTON */}
-          <div className="flex justify-end border-t border-border pt-4">
-            <Button
-              type="button"
-              variant="primary"
-              onClick={handleSaveStep1}
-              disabled={saveLoading || baseUrl.trim() === "" || (authEnabled && !authConfig.isConfigured)}
-              className="flex items-center gap-2"
-            >
-              {saveLoading ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>Saving Connection...</span>
-                </>
-              ) : (
-                <>
-                  <Server className="w-4 h-4" />
-                  <span>Save Connection Details</span>
-                </>
-              )}
-            </Button>
+          {/* Widget Branding & Webhook Settings */}
+          <div className="border border-border bg-background p-5 rounded-xl space-y-6">
+            <span className="text-sm font-bold text-text-primary block border-b border-border pb-3">Widget Branding & Webhooks</span>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
+
+              {/* Accent Color Picker & Text Input */}
+              <div>
+                <label className="block text-sm font-medium text-text-primary mb-1.5">
+                  Accent Color Theme (Hex)
+                </label>
+                <div className="flex items-center gap-3">
+                  <input
+                    type="color"
+                    value={colorTheme || "#4338CA"}
+                    onChange={(e) => setColorTheme(e.target.value)}
+                    disabled={saveLoading || !isEditing}
+                    className="w-11 h-11 border border-border rounded-lg cursor-pointer bg-surface p-1"
+                  />
+                  <div className="flex-1">
+                    <Input
+                      value={(colorTheme || "").toUpperCase()}
+                      onChange={(e) => setColorTheme(e.target.value)}
+                      placeholder="#4338CA"
+                      maxLength={7}
+                      disabled={saveLoading || !isEditing}
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Logo Mock Upload UI */}
+              <div>
+                <label className="block text-sm font-medium text-text-primary mb-1.5">
+                  Widget Logo
+                </label>
+                <div className="flex items-center gap-4">
+                  {logoUrl ? (
+                    <div className="relative w-16 h-16 rounded-xl border border-border bg-surface flex items-center justify-center overflow-hidden">
+                      <img src={logoUrl} alt="Logo" className="w-full h-full object-cover" onError={(e) => {
+                        (e.target as any).style.display = 'none';
+                      }} />
+                      <div className="absolute inset-0 bg-secondary/55 flex items-center justify-center text-white opacity-0 hover:opacity-100 transition-opacity">
+                        <UploadCloud className="w-5 h-5 animate-pulse" />
+                      </div>
+                    </div>
+                  ) : (
+                    <div
+                      onClick={handleMockLogoUpload}
+                      className={`w-16 h-16 rounded-xl border-2 border-dashed border-border bg-background flex flex-col items-center justify-center text-text-secondary hover:text-primary hover:border-primary transition-colors ${isEditing ? "cursor-pointer" : "opacity-50 cursor-not-allowed"}`}
+                      role="presentation"
+                    >
+                      <UploadCloud className="w-6 h-6" />
+                      <span className="text-[10px] font-semibold mt-1">Upload</span>
+                    </div>
+                  )}
+                  <div>
+                    <p className="text-sm font-semibold text-text-primary">
+                      {logoUrl ? "Custom Logo Active" : "Default Avatar Active"}
+                    </p>
+                    <p className="text-xs text-text-secondary mt-0.5">
+                      Supports PNG, JPG, or SVG. Suggested size 512x512px.
+                    </p>
+                    {logoUrl && isEditing && (
+                      <button
+                        type="button"
+                        onClick={() => setLogoUrl("")}
+                        className="text-error hover:underline text-xs font-semibold mt-1 block"
+                      >
+                        Remove Logo
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+            </div>
+            <Input
+              label="Merchant Webhook URL"
+              placeholder="https://api.yourstore.com/webhooks/payments"
+              value={webhookUrl}
+              onChange={(e) => setWebhookUrl(e.target.value)}
+              disabled={saveLoading || !isEditing}
+            />
           </div>
+
+          {/* STEP 1 SAVE BUTTON */}
+          {!isSavedToDb && (
+            <div className="flex justify-end border-t border-border pt-4">
+              <Button
+                type="button"
+                variant="primary"
+                onClick={handleSaveStep1}
+                disabled={saveLoading || baseUrl.trim() === "" || (authEnabled && !authConfig.isConfigured)}
+                className="flex items-center gap-2"
+              >
+                {saveLoading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    <span>Saving Connection...</span>
+                  </>
+                ) : (
+                  <>
+                    <Server className="w-4 h-4" />
+                    <span>Save Connection Details</span>
+                  </>
+                )}
+              </Button>
+            </div>
+          )}
         </div>
       </Card>
 
@@ -1046,6 +1400,7 @@ export default function OnboardingPage() {
                 size="sm"
                 onClick={() => handleOpenResourceModal("products")}
                 className="w-full justify-center"
+                disabled={!isEditing}
               >
                 Configure & Test
               </Button>
@@ -1068,6 +1423,7 @@ export default function OnboardingPage() {
                 size="sm"
                 onClick={() => handleOpenResourceModal("orderHistory")}
                 className="w-full justify-center"
+                disabled={!isEditing}
               >
                 Configure & Test
               </Button>
@@ -1090,6 +1446,7 @@ export default function OnboardingPage() {
                 size="sm"
                 onClick={() => handleOpenResourceModal("customerProfile")}
                 className="w-full justify-center"
+                disabled={!isEditing}
               >
                 Configure & Test
               </Button>
@@ -1112,6 +1469,7 @@ export default function OnboardingPage() {
                 size="sm"
                 onClick={() => handleOpenResourceModal("addresses")}
                 className="w-full justify-center"
+                disabled={!isEditing}
               >
                 Configure & Test
               </Button>
@@ -1134,6 +1492,7 @@ export default function OnboardingPage() {
                 size="sm"
                 onClick={() => handleOpenResourceModal("createOrder")}
                 className="w-full justify-center"
+                disabled={!isEditing}
               >
                 Configure & Test
               </Button>
@@ -1156,7 +1515,7 @@ export default function OnboardingPage() {
               value={bankAccount}
               onChange={(e) => setBankAccount(e.target.value.replace(/\D/g, ""))}
               required
-              disabled={saveLoading}
+              disabled={saveLoading || !isEditing}
             />
 
             <div className="relative">
@@ -1169,7 +1528,7 @@ export default function OnboardingPage() {
                 maxLength={11}
                 error={ifscError}
                 required
-                disabled={saveLoading}
+                disabled={saveLoading || !isEditing}
               />
               {bankLoading && (
                 <span className="absolute right-3 top-9 text-xs text-text-secondary animate-pulse">
@@ -1219,25 +1578,27 @@ export default function OnboardingPage() {
             </div>
           </div>
 
-          <Button
-            type="button"
-            variant="primary"
-            onClick={handleFinish}
-            disabled={!isSetupComplete || saveLoading}
-            className="flex items-center gap-2 shadow-xs min-w-[140px] justify-center"
-          >
-            {saveLoading ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin" />
-                <span>Saving...</span>
-              </>
-            ) : (
-              <>
-                <ShieldCheck className="w-5 h-5 shrink-0" />
-                <span>Finish Setup</span>
-              </>
-            )}
-          </Button>
+          {isFinishButtonVisible && (
+            <Button
+              type="button"
+              variant="primary"
+              onClick={handleFinish}
+              disabled={!isSetupComplete || saveLoading}
+              className="flex items-center gap-2 shadow-xs min-w-[140px] justify-center"
+            >
+              {saveLoading ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Saving...</span>
+                </>
+              ) : (
+                <>
+                  <ShieldCheck className="w-5 h-5 shrink-0" />
+                  <span>Finish Setup</span>
+                </>
+              )}
+            </Button>
+          )}
         </div>
       </Card>
 
@@ -1245,7 +1606,7 @@ export default function OnboardingPage() {
       {showConfirmDisableModal && (
         <div className="fixed inset-0 bg-secondary/80 backdrop-blur-xs flex items-center justify-center p-4 z-55 animate-fade-in">
           <div className="bg-surface max-w-md w-full rounded-2xl border-2 border-error p-6 shadow-2xl relative">
-            <button 
+            <button
               onClick={() => setShowConfirmDisableModal(false)}
               className="absolute right-4 top-4 p-1.5 rounded-lg text-text-secondary hover:text-text-primary hover:bg-background transition-colors"
             >
@@ -1300,7 +1661,7 @@ export default function OnboardingPage() {
                   Configure payload shapes and token delivery rules.
                 </p>
               </div>
-              <button 
+              <button
                 onClick={() => setShowMappingModal(false)}
                 className="p-1.5 rounded-lg text-text-secondary hover:text-text-primary hover:bg-background transition-colors"
               >
@@ -1491,7 +1852,7 @@ export default function OnboardingPage() {
                       onChange={(e) => setTokenPath(e.target.value)}
                       required
                     />
-                    
+
                     {/* Status Indicator */}
                     <div className="absolute right-3 top-8.5">
                       {tokenPathStatus === "success" && (
@@ -1644,21 +2005,21 @@ export default function OnboardingPage() {
       {activeResource && (
         <div className="fixed inset-0 bg-secondary/80 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
           <div className="bg-surface max-w-2xl w-full rounded-2xl border border-border shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
-            
+
             {/* Modal Header */}
             <div className="p-5 border-b border-border flex items-center justify-between bg-background-alt shrink-0">
               <div>
                 <h3 className="font-heading text-lg font-bold text-text-primary">
-                  Configure {activeResource === "products" ? "Products API" : 
-                             activeResource === "orderHistory" ? "Order History API" : 
-                             activeResource === "customerProfile" ? "Customer Profile API" : 
-                             activeResource === "addresses" ? "Addresses (Fetch/Create)" : "Create Order API"}
+                  Configure {activeResource === "products" ? "Products API" :
+                    activeResource === "orderHistory" ? "Order History API" :
+                      activeResource === "customerProfile" ? "Customer Profile API" :
+                        activeResource === "addresses" ? "Addresses (Fetch/Create)" : "Create Order API"}
                 </h3>
                 <p className="text-xs text-text-secondary mt-0.5">
                   Configure specific resource properties and verify real API responses.
                 </p>
               </div>
-              <button 
+              <button
                 onClick={() => setActiveResource(null)}
                 className="p-1.5 rounded-lg text-text-secondary hover:text-text-primary hover:bg-background transition-colors"
               >
@@ -1668,7 +2029,7 @@ export default function OnboardingPage() {
 
             {/* Modal Body */}
             <div className="p-6 overflow-y-auto space-y-6 flex-1 font-sans">
-              
+
               {/* products resource layout */}
               {activeResource === "products" && (
                 <div className="space-y-6 animate-fade-in">

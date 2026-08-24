@@ -64,6 +64,10 @@ class Onboarding(Base):
     customer_profile_config = Column(JSON, nullable=True, default=dict)
     addresses_config = Column(JSON, nullable=True, default=dict)
     create_order_config = Column(JSON, nullable=True, default=dict)
+
+    # Branding & Webhook Columns
+    branding_config = Column(JSON, nullable=True, default=dict)
+    webhook_url = Column(String, nullable=True)
     
     # Settlement Bank Details
     bank_account = Column(String, nullable=True)

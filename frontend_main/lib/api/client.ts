@@ -56,6 +56,15 @@ apiClient.interceptors.request.use(
         token = localStorage.getItem("clerk_user_id");
       }
 
+      // If we still do not have a token and Clerk is initialized without a session,
+      // the user is not authenticated. Abort the request cleanly to avoid unnecessary server calls/errors.
+      if (!token && clerk && !clerk.session) {
+        const controller = new AbortController();
+        config.signal = controller.signal;
+        controller.abort("User is not authenticated.");
+        return Promise.reject(new axios.Cancel("User is not authenticated."));
+      }
+
       if (token && config.headers) {
         config.headers.Authorization = `Bearer ${token}`;
       }

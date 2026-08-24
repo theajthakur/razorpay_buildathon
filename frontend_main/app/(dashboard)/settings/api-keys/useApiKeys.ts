@@ -1,4 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
+import { useAuth } from "@clerk/nextjs";
+import axios from "axios";
 import {
   fetchApiKeys,
   createApiKey,
@@ -11,6 +13,7 @@ import {
 import { toast } from "sonner";
 
 export function useApiKeys() {
+  const { isLoaded: authLoaded, isSignedIn: authSignedIn } = useAuth();
   const [keys, setKeys] = useState<APIKeyData[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -33,6 +36,9 @@ export function useApiKeys() {
       setMaxKeys(data.max_keys);
       setError(null);
     } catch (err: any) {
+      if (axios.isCancel(err)) {
+        return;
+      }
       console.error("Failed to load API keys:", err);
       const errMsg = err.response?.data?.detail || "Failed to load API keys.";
       setError(errMsg);
@@ -108,8 +114,14 @@ export function useApiKeys() {
   }, [totalCount, maxKeys]);
 
   useEffect(() => {
-    loadKeys();
-  }, [loadKeys]);
+    if (authLoaded) {
+      if (authSignedIn) {
+        loadKeys();
+      } else {
+        setLoading(false);
+      }
+    }
+  }, [authLoaded, authSignedIn, loadKeys]);
 
   return {
     keys,

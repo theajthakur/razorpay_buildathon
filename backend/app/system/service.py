@@ -65,6 +65,7 @@ def upsert_user_onboarding(db: Session, user_id: str, data: OnboardingUpsertRequ
     customer_profile_config_dict = data.customer_profile_config.model_dump() if data.customer_profile_config else None
     addresses_config_dict = data.addresses_config.model_dump() if data.addresses_config else None
     create_order_config_dict = data.create_order_config.model_dump() if data.create_order_config else None
+    branding_config_dict = data.branding_config.model_dump() if data.branding_config else None
 
     if not db_onboarding:
         db_onboarding = Onboarding(
@@ -80,7 +81,9 @@ def upsert_user_onboarding(db: Session, user_id: str, data: OnboardingUpsertRequ
             create_order_config=create_order_config_dict,
             bank_account=data.bank_account,
             ifsc=data.ifsc,
-            branch_name=data.branch_name
+            branch_name=data.branch_name,
+            branding_config=branding_config_dict,
+            webhook_url=data.webhook_url
         )
         db.add(db_onboarding)
     else:
@@ -96,6 +99,8 @@ def upsert_user_onboarding(db: Session, user_id: str, data: OnboardingUpsertRequ
         db_onboarding.bank_account = data.bank_account
         db_onboarding.ifsc = data.ifsc
         db_onboarding.branch_name = data.branch_name
+        db_onboarding.branding_config = branding_config_dict
+        db_onboarding.webhook_url = data.webhook_url
 
     # Auto-approve user status upon completing onboarding setup
     db_user = db.query(User).filter(User.id == user_id).first()
