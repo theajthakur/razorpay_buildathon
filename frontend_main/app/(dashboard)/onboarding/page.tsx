@@ -912,7 +912,8 @@ export default function OnboardingPage() {
             [coPriceField]: Number(coTestPrice) || 0,
             [coQuantityField]: Number(coTestQuantity) || 1
           }
-        ]
+        ],
+        "address": "123 Mock Lane, Springfield"
       };
     }
 
