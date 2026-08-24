@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState } from "react";
+import Link from "next/link";
 import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/button";
@@ -248,6 +249,25 @@ export default function SettingsPage() {
               helperText="Requires secondary manual approval for payment links exceeding this amount."
               required
             />
+          </div>
+        </Card>
+
+        {/* 4. Developer Settings */}
+        <Card
+          title="Developer API Keys"
+          description="Manage secret API keys to authenticate and integrate external checkout platforms."
+        >
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="max-w-md">
+              <p className="text-sm text-text-secondary">
+                Generate, pause, or delete keys to authenticate incoming requests from your custom shop integration.
+              </p>
+            </div>
+            <Link href="/settings/api-keys">
+              <Button type="button" variant="secondary" className="w-full sm:w-auto font-semibold">
+                Manage API Keys
+              </Button>
+            </Link>
           </div>
         </Card>
 

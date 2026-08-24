@@ -81,3 +81,117 @@ def get_current_user(
         db.refresh(user)
         
     return user
+
+def get_current_approved_user(
+    current_user: User = Depends(get_current_user)
+) -> User:
+    """
+    Dependency to ensure the current authenticated user has an 'approved' status.
+    """
+    if current_user.status != "approved":
+        raise HTTPException(
+            status_code=403,
+            detail="Access forbidden: account status is not approved"
+        )
+    return current_user
+
+import hmac
+import hashlib
+from datetime import datetime, timezone
+from app.system.models import APIKey
+
+def hash_api_key(key: str, secret: str) -> str:
+    """Computes HMAC-SHA256 hash of an API key using the server-side secret/pepper."""
+    return hmac.new(
+        secret.encode("utf-8"),
+        key.encode("utf-8"),
+        hashlib.sha256
+    ).hexdigest()
+
+def validate_api_key(
+    authorization: str | None = Header(None),
+    x_api_key: str | None = Header(None, alias="X-API-Key"),
+    db: Session = Depends(get_db)
+) -> User:
+    """
+    Authenticates external API key requests:
+    - Supports 'Authorization: Bearer <key>', 'Authorization: <key>', and 'X-API-Key: <key>'
+    - Verifies format, prefix, active status, expiration
+    - Updates last_used_at with a 60-second debounce write limit
+    """
+    raw_key = None
+    if authorization and authorization.lower().startswith("bearer "):
+        raw_key = authorization.split(" ")[1]
+    elif x_api_key:
+        raw_key = x_api_key
+    elif authorization:
+        raw_key = authorization
+
+    if not raw_key or not (raw_key.startswith("sk_live_") or raw_key.startswith("sk_test_")):
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid or missing API Key"
+        )
+
+    # Prefix is the first 6 chars of the random portion (sk_live_ is 8 characters long)
+    prefix = raw_key[8:14]
+    
+    # Compute the hash of the full key
+    hashed_key = hash_api_key(raw_key, settings.API_KEY_HMAC_SECRET)
+    
+    # Query database
+    key_record = (
+        db.query(APIKey)
+        .filter(APIKey.key_prefix == prefix, APIKey.key_hash == hashed_key)
+        .first()
+    )
+    
+    if not key_record:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid API Key"
+        )
+    
+    if key_record.status == "paused":
+        raise HTTPException(
+            status_code=401,
+            detail="API Key is paused"
+        )
+    elif key_record.status != "active":
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid API Key"
+        )
+        
+    # Passive expiration check
+    now = datetime.now(timezone.utc)
+    if key_record.expires_at:
+        expires_at_utc = key_record.expires_at.astimezone(timezone.utc) if key_record.expires_at.tzinfo else key_record.expires_at.replace(tzinfo=timezone.utc)
+        if expires_at_utc < now:
+            raise HTTPException(
+                status_code=401,
+                detail="Expired API Key"
+            )
+            
+    # Debounced update of last_used_at (at most once every 60 seconds)
+    should_update = False
+    if not key_record.last_used_at:
+        should_update = True
+    else:
+        last_used_utc = key_record.last_used_at.astimezone(timezone.utc) if key_record.last_used_at.tzinfo else key_record.last_used_at.replace(tzinfo=timezone.utc)
+        if (now - last_used_utc).total_seconds() > 60:
+            should_update = True
+            
+    if should_update:
+        key_record.last_used_at = now
+        db.commit()
+        
+    # Get the user owning this key
+    user = db.query(User).filter(User.id == key_record.customer_id).first()
+    if not user or user.status != "approved":
+        raise HTTPException(
+            status_code=401,
+            detail="User account associated with this key is inactive or blocked"
+        )
+        
+    return user

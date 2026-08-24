@@ -1,4 +1,5 @@
-from sqlalchemy import Column, String, DateTime, func, ForeignKey, Boolean, JSON
+import uuid
+from sqlalchemy import Column, String, DateTime, func, ForeignKey, Boolean, JSON, UniqueConstraint, Index
 from sqlalchemy.orm import relationship
 from app.core.database import Base
 
@@ -18,6 +19,34 @@ class User(Base):
         back_populates="user",
         uselist=False,
         cascade="all, delete-orphan"
+    )
+
+    # 1-N relationship with API Keys
+    api_keys = relationship(
+        "APIKey",
+        back_populates="user",
+        cascade="all, delete-orphan"
+    )
+
+class APIKey(Base):
+    __tablename__ = "api_keys"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    customer_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    name = Column(String, nullable=False)
+    key_prefix = Column(String, nullable=False, index=True)
+    key_hash = Column(String, nullable=False)
+    status = Column(String, default="active", nullable=False)  # active | paused
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    expires_at = Column(DateTime(timezone=True), nullable=True)
+    last_used_at = Column(DateTime(timezone=True), nullable=True)
+
+    # Relationship to User
+    user = relationship("User", back_populates="api_keys")
+
+    __table_args__ = (
+        UniqueConstraint("customer_id", "name", name="uq_customer_id_name"),
+        Index("idx_customer_id_status", "customer_id", "status"),
     )
 
 class Onboarding(Base):

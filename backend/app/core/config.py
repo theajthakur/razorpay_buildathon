@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     RAZORPAY_SECRET_KEY: str = ""
     CLERK_WEBHOOK_SECRET: str = ""
     CLERK_JWKS_URL: str = "https://pumped-caiman-79.clerk.accounts.dev/.well-known/jwks.json"
+    API_KEY_HMAC_SECRET: str = "default_development_hmac_secret_key_1234567890"
 
     model_config = SettingsConfigDict(
         env_file=".env",

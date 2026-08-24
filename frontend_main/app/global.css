@@ -60,6 +60,14 @@
   mask-image: radial-gradient(circle at center, black 40%, transparent 80%);
 }
 
+@utility no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
 @layer base {
   body {
     background-color: var(--color-background);
