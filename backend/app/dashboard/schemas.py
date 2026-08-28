@@ -61,3 +61,4 @@ class MerchantSettingsResponse(BaseModel):
     display_name: Optional[str] = None
     confirmation_limit: Optional[int] = None
     toggles: Optional[dict] = None
+    assigned_domain: Optional[str] = None

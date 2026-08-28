@@ -1,27 +1,22 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/button";
-import { Check, Settings, UploadCloud, Sliders, Shield, AlertTriangle } from "lucide-react";
+import { Check, Settings, Sliders, Shield, AlertTriangle, X } from "lucide-react";
 import { toast } from "sonner";
 import {
   fetchMerchantSettings,
   updateMerchantSettings,
-  getPresignedLogoUrl,
-  uploadFileToS3,
 } from "@/lib/api/settings";
-import { ImageCropperModal } from "@/components/shared/ImageCropperModal";
 
 export default function SettingsPage() {
   // Initial database values for dirty checking
   const [initialSettings, setInitialSettings] = useState<{
     agentName: string;
-    agentColor: string;
     confirmationLimit: number;
-    logoUrl: string;
     toggles: {
       historyLookup: boolean;
       cartNegotiation: boolean;
@@ -32,19 +27,14 @@ export default function SettingsPage() {
 
   // Agent configuration states
   const [agentName, setAgentName] = useState("Acme Shopping Assistant");
-  const [agentColor, setAgentColor] = useState("#4338CA");
   const [confirmationLimit, setConfirmationLimit] = useState(5000);
-  const [logoUrl, setLogoUrl] = useState("");
   const [saveSuccess, setSaveSuccess] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
-  const [isUploading, setIsUploading] = useState(false);
 
-  // States for Image Cropper modal & upload retry resilience
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [isCropperOpen, setIsCropperOpen] = useState(false);
-  const [croppedBlob, setCroppedBlob] = useState<Blob | null>(null);
-  const [uploadError, setUploadError] = useState<string | null>(null);
+  // Domain configuration states
+  const [assignedDomain, setAssignedDomain] = useState<string | null>(null);
+  const [isBannerDismissed, setIsBannerDismissed] = useState(false);
 
   // Toggles state
   const [toggles, setToggles] = useState({
@@ -54,8 +44,6 @@ export default function SettingsPage() {
     smartUpsell: true,
   });
 
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
   // Load settings on mount
   useEffect(() => {
     async function loadSettings() {
@@ -64,9 +52,7 @@ export default function SettingsPage() {
         const data = await fetchMerchantSettings();
 
         const name = data.display_name || "Acme Shopping Assistant";
-        const color = data.brand_color || "#4338CA";
         const limit = data.confirmation_limit ?? 5000;
-        const logo = data.logo_url || "";
         const loadedToggles = {
           historyLookup: data.toggles?.historyLookup ?? true,
           cartNegotiation: data.toggles?.cartNegotiation ?? true,
@@ -75,16 +61,16 @@ export default function SettingsPage() {
         };
 
         setAgentName(name);
-        setAgentColor(color);
         setConfirmationLimit(limit);
-        setLogoUrl(logo);
         setToggles(loadedToggles);
+
+        if (data.assigned_domain) {
+          setAssignedDomain(data.assigned_domain);
+        }
 
         setInitialSettings({
           agentName: name,
-          agentColor: color,
           confirmationLimit: limit,
-          logoUrl: logo,
           toggles: loadedToggles,
         });
       } catch (err: any) {
@@ -105,105 +91,19 @@ export default function SettingsPage() {
     }));
   };
 
-  const handleLogoSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    // Client-side validations
-    const allowedTypes = ["image/png", "image/jpeg", "image/webp", "image/svg+xml"];
-    if (!allowedTypes.includes(file.type)) {
-      toast.error("Unsupported file type. Please select a PNG, JPEG, WEBP, or SVG image.");
-      if (fileInputRef.current) fileInputRef.current.value = "";
-      return;
-    }
-
-    const maxSizeBytes = 2 * 1024 * 1024; // 2MB
-    if (file.size > maxSizeBytes) {
-      toast.error("File is too large. Logos must be smaller than 2MB.");
-      if (fileInputRef.current) fileInputRef.current.value = "";
-      return;
-    }
-
-    setSelectedFile(file);
-    setIsCropperOpen(true);
-  };
-
-  const uploadCroppedBlob = async (blob: Blob) => {
-    try {
-      setIsUploading(true);
-      setUploadError(null);
-
-      const fileType = blob.type || "image/png";
-      const originalName = selectedFile?.name || "logo.png";
-      const dotIndex = originalName.lastIndexOf(".");
-      const baseName = dotIndex !== -1 ? originalName.substring(0, dotIndex) : originalName;
-      const ext = fileType === "image/jpeg" ? "jpeg" : fileType.split("/")[1] || "png";
-      const fileName = `${baseName}_cropped.${ext}`;
-
-      toast.info("Requesting upload signature...");
-      const presignData = await getPresignedLogoUrl(fileName, fileType);
-
-      toast.info("Uploading logo to S3...");
-      const uploadFile = new File([blob], fileName, { type: fileType });
-      await uploadFileToS3(presignData.uploadUrl, uploadFile, fileType);
-
-      setLogoUrl(presignData.publicUrl);
-      setCroppedBlob(null); // Clear retry state
-      toast.success("Logo uploaded successfully! Click 'Save Settings' to commit changes.");
-    } catch (err: any) {
-      console.error("Logo upload error:", err);
-      setUploadError("Upload failed");
-      setCroppedBlob(blob); // Save blob for retry
-      if (err.response && err.response.config && err.response.config.url?.includes("s3.amazonaws.com")) {
-        toast.error("Failed to upload logo to S3. Direct bucket access failed.");
-      } else {
-        toast.error(err.response?.data?.detail || "Failed to generate presigned upload signature.");
-      }
-    } finally {
-      setIsUploading(false);
-      if (fileInputRef.current) {
-        fileInputRef.current.value = "";
-      }
-    }
-  };
-
-  const handleCropComplete = async (blob: Blob) => {
-    setIsCropperOpen(false);
-    await uploadCroppedBlob(blob);
-  };
-
-  const handleCropCancel = () => {
-    setIsCropperOpen(false);
-    setSelectedFile(null);
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
-    }
-  };
-
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
-
-    // Hex color regex validation
-    const hexRegex = /^#[0-9A-Fa-f]{6}$/;
-    if (!hexRegex.test(agentColor)) {
-      toast.error("Accent Color must be a valid hex string starting with # (e.g. #4F46E5).");
-      return;
-    }
 
     try {
       setIsSaving(true);
       const updated = await updateMerchantSettings({
         display_name: agentName,
-        brand_color: agentColor,
         confirmation_limit: confirmationLimit,
-        logo_url: logoUrl,
         toggles: toggles,
       });
 
       const name = updated.display_name || "Acme Shopping Assistant";
-      const color = updated.brand_color || "#4338CA";
       const limit = updated.confirmation_limit ?? 5000;
-      const logo = updated.logo_url || "";
       const loadedToggles = {
         historyLookup: updated.toggles?.historyLookup ?? true,
         cartNegotiation: updated.toggles?.cartNegotiation ?? true,
@@ -212,16 +112,12 @@ export default function SettingsPage() {
       };
 
       setAgentName(name);
-      setAgentColor(color);
       setConfirmationLimit(limit);
-      setLogoUrl(logo);
       setToggles(loadedToggles);
 
       setInitialSettings({
         agentName: name,
-        agentColor: color,
         confirmationLimit: limit,
-        logoUrl: logo,
         toggles: loadedToggles,
       });
 
@@ -240,9 +136,7 @@ export default function SettingsPage() {
 
   const isDirty = initialSettings ? (
     agentName !== initialSettings.agentName ||
-    agentColor !== initialSettings.agentColor ||
     confirmationLimit !== initialSettings.confirmationLimit ||
-    logoUrl !== initialSettings.logoUrl ||
     toggles.historyLookup !== initialSettings.toggles.historyLookup ||
     toggles.cartNegotiation !== initialSettings.toggles.cartNegotiation ||
     toggles.autoCoupons !== initialSettings.toggles.autoCoupons ||
@@ -266,11 +160,31 @@ export default function SettingsPage() {
           Agent Settings
         </h1>
         <p className="text-sm text-text-secondary mt-1">
-          Configure branding, features, and risk limits for the customer-facing AI agent.
+          Configure features and risk limits for the customer-facing AI agent.
         </p>
       </div>
 
       <form onSubmit={handleSave} className="space-y-8">
+        {/* Domain Assigned Success Banner */}
+        {assignedDomain && !isBannerDismissed && (
+          <div className="p-4 bg-success/10 border border-success/20 text-success rounded-xl flex items-center justify-between text-sm font-semibold transition-all animate-in fade-in duration-200">
+            <div className="flex items-center gap-2">
+              <span role="img" aria-label="party">🎉</span>
+              <span>
+                Your domain has been assigned: <strong>{assignedDomain}</strong> — your AI shopping agent is live.
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setIsBannerDismissed(true)}
+              className="p-1 rounded-md hover:bg-success/20 text-success/80 hover:text-success transition-colors cursor-pointer"
+              aria-label="Dismiss banner"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+
         {/* Save success banner */}
         {saveSuccess && (
           <div className="p-4 bg-success/10 border border-success/20 text-success rounded-xl flex items-center gap-2 text-sm font-semibold transition-all">
@@ -287,122 +201,19 @@ export default function SettingsPage() {
           </div>
         )}
 
-        {/* 1. Branding Card */}
+        {/* 1. General Settings Card */}
         <Card
-          title="Agent Branding"
-          description="Customize the appearance and identity of your shopper widget."
+          title="General Settings"
+          description="Configure the primary identity details for the shopper widget."
         >
-          <div className="space-y-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              <Input
-                label="Agent Assistant Name"
-                value={agentName}
-                onChange={(e) => setAgentName(e.target.value)}
-                placeholder="e.g. Acme Helper"
-                required
-              />
-
-              {/* Custom Widget Color */}
-              <div>
-                <label className="block text-sm font-medium text-text-primary mb-1.5">
-                  Widget Primary Accent Color
-                </label>
-                <div className="flex items-center gap-3">
-                  <input
-                    type="color"
-                    value={agentColor}
-                    onChange={(e) => setAgentColor(e.target.value)}
-                    className="w-11 h-11 border border-border rounded-lg cursor-pointer bg-surface p-1"
-                  />
-                  <div className="flex-1">
-                    <Input
-                      value={agentColor.toUpperCase()}
-                      onChange={(e) => setAgentColor(e.target.value)}
-                      placeholder="#4338CA"
-                      maxLength={7}
-                    />
-                  </div>
-                </div>
-                <p className="text-xs text-text-secondary mt-1.5">
-                  Defines custom buttons and headers inside the conversational window.
-                </p>
-              </div>
-            </div>
-
-            {/* Avatar Logo Upload */}
-            <div>
-              <label className="block text-sm font-medium text-text-primary mb-1.5">
-                Agent Widget Logo
-              </label>
-              <input
-                type="file"
-                ref={fileInputRef}
-                onChange={handleLogoSelect}
-                accept="image/png, image/jpeg, image/webp, image/svg+xml"
-                className="hidden"
-              />
-              <div className="flex items-center gap-4">
-                <div
-                  onClick={() => !isUploading && fileInputRef.current?.click()}
-                  className={`relative w-16 h-16 rounded-xl border-2 border-dashed border-border bg-background flex flex-col items-center justify-center text-text-secondary hover:text-primary hover:border-primary transition-colors cursor-pointer overflow-hidden ${isUploading ? "opacity-50 cursor-not-allowed" : ""
-                    }`}
-                >
-                  {isUploading ? (
-                    <div className="animate-spin rounded-full h-5 w-5 border-b-2 border-primary" />
-                  ) : logoUrl ? (
-                    <>
-                      <img
-                        src={logoUrl}
-                        alt="Logo Preview"
-                        className="w-full h-full object-cover"
-                      />
-                      <div className="absolute inset-0 bg-black/40 opacity-0 hover:opacity-100 transition-opacity flex items-center justify-center text-white text-[10px] font-semibold">
-                        Change
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <UploadCloud className="w-6 h-6" />
-                      <span className="text-[10px] font-semibold mt-1">Upload</span>
-                    </>
-                  )}
-                </div>
-                <div>
-                  <p className="text-sm font-semibold text-text-primary">
-                    {logoUrl ? "Custom Logo Active" : "Default Avatar Active"}
-                  </p>
-                  <p className="text-xs text-text-secondary mt-0.5">
-                    Supports PNG, JPG, WEBP, or SVG. Max size 2MB.
-                  </p>
-                  {logoUrl && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setLogoUrl("");
-                        setCroppedBlob(null);
-                        setUploadError(null);
-                      }}
-                      className="text-xs text-red-500 hover:underline mt-1 font-medium block text-left"
-                    >
-                      Remove Logo
-                    </button>
-                  )}
-                  {croppedBlob && uploadError && (
-                    <div className="mt-1.5 flex items-center gap-2">
-                      <span className="text-xs text-red-500 font-medium">Upload failed.</span>
-                      <button
-                        type="button"
-                        onClick={() => uploadCroppedBlob(croppedBlob)}
-                        disabled={isUploading}
-                        className="text-xs text-primary hover:underline font-bold"
-                      >
-                        {isUploading ? "Uploading..." : "Retry Upload"}
-                      </button>
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
+          <div className="max-w-lg space-y-4">
+            <Input
+              label="Agent Assistant Name"
+              value={agentName}
+              onChange={(e) => setAgentName(e.target.value)}
+              placeholder="e.g. Acme Helper"
+              required
+            />
           </div>
         </Card>
 
@@ -506,7 +317,7 @@ export default function SettingsPage() {
           </div>
         </Card>
 
-        {/* 3. Transaction Threshold limits */}
+        {/* 3. Payment & Security Limits */}
         <Card
           title="Payment & Security Limits"
           description="Manage financial constraints and manual verification boundaries."
@@ -556,15 +367,6 @@ export default function SettingsPage() {
           </Button>
         </div>
       </form>
-
-      <ImageCropperModal
-        open={isCropperOpen}
-        file={selectedFile}
-        aspectRatio={1}
-        maxOutputSize={512}
-        onCancel={handleCropCancel}
-        onCropComplete={handleCropComplete}
-      />
     </div>
   );
 }

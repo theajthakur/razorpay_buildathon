@@ -8,6 +8,7 @@ export interface MerchantSettings {
   display_name?: string | null;
   confirmation_limit?: number | null;
   toggles?: Record<string, boolean> | null;
+  assigned_domain?: string | null;
 }
 
 export interface LogoPresignResponse {

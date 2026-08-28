@@ -11,7 +11,7 @@ from sqlalchemy.orm.attributes import flag_modified
 from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.security import get_current_approved_user, hash_api_key
-from app.system.models import User, APIKey, Onboarding
+from app.system.models import User, APIKey, Onboarding, DomainMapping
 from app.dashboard.schemas import (
     APIKeyCreateRequest,
     APIKeyCreateResponse,
@@ -282,13 +282,20 @@ def get_merchant_settings(
     brand_color = branding_config.get("brand_color")
     display_name = branding_config.get("display_name") or current_user.store_name
 
+    assigned_domain = None
+    if onboarding and onboarding.slug:
+        mapping = db.query(DomainMapping).filter(DomainMapping.slug == onboarding.slug).first()
+        if mapping:
+            assigned_domain = mapping.domain
+
     return MerchantSettingsResponse(
         logo_url=logo_url,
         brand_color=brand_color,
         accent_color=branding_config.get("accent_color"),
         display_name=display_name,
         confirmation_limit=branding_config.get("confirmation_limit"),
-        toggles=branding_config.get("toggles")
+        toggles=branding_config.get("toggles"),
+        assigned_domain=assigned_domain
     )
 
 @router.patch("/settings", response_model=MerchantSettingsResponse)
@@ -353,11 +360,18 @@ def update_merchant_settings(
     brand_color = branding_config.get("brand_color")
     display_name = branding_config.get("display_name") or current_user.store_name
 
+    assigned_domain = None
+    if onboarding and onboarding.slug:
+        mapping = db.query(DomainMapping).filter(DomainMapping.slug == onboarding.slug).first()
+        if mapping:
+            assigned_domain = mapping.domain
+
     return MerchantSettingsResponse(
         logo_url=logo_url,
         brand_color=brand_color,
         accent_color=branding_config.get("accent_color"),
         display_name=display_name,
         confirmation_limit=branding_config.get("confirmation_limit"),
-        toggles=branding_config.get("toggles")
+        toggles=branding_config.get("toggles"),
+        assigned_domain=assigned_domain
     )
