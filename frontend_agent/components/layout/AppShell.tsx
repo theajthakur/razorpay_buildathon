@@ -48,8 +48,8 @@ function AppShellContent({ children }: AppShellProps) {
     if (brandingLoading) {
       return (
         <div className="flex items-center gap-2.5 animate-pulse select-none" data-testid="branding-skeleton">
-          <div className="w-9 h-9 rounded-xl bg-secondary-200 dark:bg-secondary-800" />
-          <div className="h-4.5 w-24 bg-secondary-200 dark:bg-secondary-800 rounded-md" />
+          <div className="w-9 h-9 rounded-xl bg-secondary-200" />
+          <div className="h-4.5 w-24 bg-secondary-200 rounded-md" />
         </div>
       );
     }
@@ -58,7 +58,7 @@ function AppShellContent({ children }: AppShellProps) {
     return (
       <div className="flex items-center gap-2.5 select-none">
         {hasLogo ? (
-          <div className="relative w-9 h-9 rounded-xl overflow-hidden border border-secondary-200 dark:border-secondary-800 shrink-0">
+          <div className="relative w-9 h-9 rounded-xl overflow-hidden border border-secondary-200 shrink-0">
             <img
               src={logoUrl!}
               alt={branding?.display_name || "Merchant Logo"}
@@ -89,7 +89,7 @@ function AppShellContent({ children }: AppShellProps) {
             </svg>
           </div>
         )}
-        <span className="text-lg font-bold tracking-tight text-secondary-900 dark:text-background-50 font-sans truncate max-w-[160px]">
+        <span className="text-lg font-bold tracking-tight text-secondary-900 font-sans truncate max-w-[160px]">
           {branding?.display_name || (
             <>
               Pon<span className="text-primary-500" style={{ color: primaryColor }}>ion</span>
@@ -101,14 +101,14 @@ function AppShellContent({ children }: AppShellProps) {
   };
 
   const sidebarContent = (
-    <div className="flex flex-col h-full bg-white dark:bg-secondary-900 border-r border-secondary-200 dark:border-secondary-800/80">
+    <div className="flex flex-col h-full bg-white border-r border-secondary-200">
       {/* Top Section: Logo */}
-      <div className="flex items-center justify-between h-16 px-6 border-b border-secondary-100 dark:border-secondary-800/50 shrink-0">
+      <div className="flex items-center justify-between h-16 px-6 border-b border-secondary-100 shrink-0">
         {renderLogoSection()}
         {/* Mobile close button inside the drawer */}
         <button
           onClick={toggleMobileSidebar}
-          className="p-1 rounded-lg text-secondary-500 hover:bg-secondary-100 dark:hover:bg-secondary-800 md:hidden focus:outline-none cursor-pointer"
+          className="p-1 rounded-lg text-secondary-500 hover:bg-secondary-100 md:hidden focus:outline-none cursor-pointer"
           aria-label="Close sidebar"
         >
           <X className="w-5 h-5" />
@@ -129,7 +129,7 @@ function AppShellContent({ children }: AppShellProps) {
 
         {/* Scrollable list of chats */}
         <div className="flex-1 flex flex-col min-h-0 space-y-1.5">
-          <div className="flex items-center justify-between px-2 text-[11px] font-bold tracking-wider text-secondary-400 dark:text-secondary-500 uppercase select-none">
+          <div className="flex items-center justify-between px-2 text-[11px] font-bold tracking-wider text-secondary-400 uppercase select-none">
             <span>Recent Chats</span>
             <span>{MOCK_CHATS.length}</span>
           </div>
@@ -143,8 +143,8 @@ function AppShellContent({ children }: AppShellProps) {
                   onClick={() => handleSelectChat(chat.id)}
                   className={`flex flex-col items-start w-full p-3 rounded-xl transition-all duration-200 text-left cursor-pointer group focus:outline-none ${
                     isActive
-                      ? "bg-surface-200 dark:bg-secondary-800 text-secondary-900 dark:text-background-50 font-medium"
-                      : "hover:bg-background-100 dark:hover:bg-secondary-800/40 text-secondary-600 dark:text-secondary-400"
+                      ? "bg-surface-200 text-secondary-900 font-medium"
+                      : "hover:bg-background-100 text-secondary-600"
                   }`}
                 >
                   <div className="flex items-center justify-between w-full">
@@ -154,7 +154,7 @@ function AppShellContent({ children }: AppShellProps) {
                         className={`w-4 h-4 shrink-0 transition-colors ${
                           isActive
                             ? ""
-                            : "text-secondary-400 group-hover:text-secondary-500 dark:group-hover:text-secondary-300"
+                            : "text-secondary-400 group-hover:text-secondary-500"
                         }`}
                       />
                       <span className="text-xs font-semibold truncate w-full">
@@ -168,7 +168,7 @@ function AppShellContent({ children }: AppShellProps) {
                       }`}
                     />
                   </div>
-                  <div className="flex items-center gap-1 mt-1 text-[10px] text-secondary-400 dark:text-secondary-500 font-medium">
+                  <div className="flex items-center gap-1 mt-1 text-[10px] text-secondary-400 font-medium">
                     <Calendar className="w-3 h-3" />
                     <span>{chat.date}</span>
                   </div>
@@ -180,14 +180,14 @@ function AppShellContent({ children }: AppShellProps) {
       </div>
 
       {/* Bottom Section: Profile/Auth */}
-      <div className="p-4 border-t border-secondary-100 dark:border-secondary-800/50 shrink-0 bg-background-50/50 dark:bg-secondary-950/20">
+      <div className="p-4 border-t border-secondary-100 shrink-0 bg-background-50/50">
         <LoginButton />
       </div>
     </div>
   );
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-background-50 dark:bg-secondary-950 text-secondary-900 dark:text-background-100 font-sans">
+    <div className="flex h-screen w-screen overflow-hidden bg-background-50 text-secondary-900 font-sans">
       {/* 1. Backdrop for mobile sidebar drawer */}
       {isMobileSidebarOpen && (
         <div
@@ -208,10 +208,10 @@ function AppShellContent({ children }: AppShellProps) {
       {/* 3. Right Main Content Pane */}
       <div className="flex-1 flex flex-col min-w-0 h-full relative">
         {/* Mobile Header */}
-        <header className="flex items-center justify-between h-16 px-4 bg-white dark:bg-secondary-900 border-b border-secondary-200 dark:border-secondary-800/80 md:hidden shrink-0">
+        <header className="flex items-center justify-between h-16 px-4 bg-white border-b border-secondary-200 md:hidden shrink-0">
           <button
             onClick={toggleMobileSidebar}
-            className="p-2 rounded-xl text-secondary-600 hover:bg-secondary-100 dark:hover:bg-secondary-800 focus:outline-none cursor-pointer"
+            className="p-2 rounded-xl text-secondary-600 hover:bg-secondary-100 focus:outline-none cursor-pointer"
             aria-label="Open sidebar"
           >
             <Menu className="w-6 h-6" />
@@ -223,7 +223,7 @@ function AppShellContent({ children }: AppShellProps) {
         </header>
 
         {/* Content Viewport */}
-        <main className="flex-1 overflow-hidden relative flex flex-col min-w-0 bg-background-50 dark:bg-secondary-950">
+        <main className="flex-1 overflow-hidden relative flex flex-col min-w-0 bg-background-50">
           <ScrollArea className="flex-1 h-full w-full">
             {children}
           </ScrollArea>

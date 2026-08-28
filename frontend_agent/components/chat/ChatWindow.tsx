@@ -25,10 +25,10 @@ export function ChatWindow() {
           <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
         </svg>
       </div>
-      <h2 className="text-2xl font-bold text-secondary-900 dark:text-background-50 font-sans mb-3">
+      <h2 className="text-2xl font-bold text-secondary-900 font-sans mb-3">
         {branding?.display_name || "Ponion AI Assistant"}
       </h2>
-      <p className="text-secondary-500 dark:text-secondary-400 text-sm leading-relaxed">
+      <p className="text-secondary-500 text-sm leading-relaxed">
         Chat UI coming next. Soon you will be able to search menus, customize toppings, and order food through our intelligent AI conversational agent.
       </p>
     </div>

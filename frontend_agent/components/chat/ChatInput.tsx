@@ -2,17 +2,17 @@ import React from "react";
 
 export function ChatInput() {
   return (
-    <div className="w-full p-4 border-t border-secondary-200 dark:border-secondary-800 bg-background-50 dark:bg-secondary-900">
+    <div className="w-full p-4 border-t border-secondary-200 bg-background-50">
       <div className="relative flex items-center max-w-3xl mx-auto">
         <input
           type="text"
           placeholder="Ask Ponion to order food... (Coming soon)"
-          className="w-full pl-4 pr-12 py-3 rounded-xl border border-secondary-200 dark:border-secondary-800 bg-white dark:bg-secondary-850 text-secondary-900 dark:text-background-50 focus:outline-none focus:ring-2 focus:ring-primary-500/20 text-sm placeholder-secondary-400 dark:placeholder-secondary-500 cursor-not-allowed"
+          className="w-full pl-4 pr-12 py-3 rounded-xl border border-secondary-200 bg-white text-secondary-900 focus:outline-none focus:ring-2 focus:ring-primary-500/20 text-sm placeholder-secondary-400 cursor-not-allowed"
           disabled
         />
         <button
           disabled
-          className="absolute right-2.5 p-1.5 rounded-lg bg-primary-100 dark:bg-primary-950/20 text-primary-500 cursor-not-allowed opacity-50"
+          className="absolute right-2.5 p-1.5 rounded-lg bg-primary-100 text-primary-500 cursor-not-allowed opacity-50"
         >
           <svg
             xmlns="http://www.w3.org/2000/svg"

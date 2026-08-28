@@ -7,7 +7,7 @@ interface LogoProps {
 export function Logo({ className = "" }: LogoProps) {
   return (
     <div className={`flex items-center gap-2.5 select-none ${className}`}>
-      <div className="relative flex items-center justify-center w-9 h-9 rounded-xl bg-primary-50 dark:bg-primary-950/30 text-primary-500 transition-colors">
+      <div className="relative flex items-center justify-center w-9 h-9 rounded-xl bg-primary-50 text-primary-500 transition-colors">
         <svg
           xmlns="http://www.w3.org/2000/svg"
           viewBox="0 0 24 24"
@@ -25,7 +25,7 @@ export function Logo({ className = "" }: LogoProps) {
           <path d="M12 9.5c-.8 1.5-1.5 2.8-1.5 4a1.5 1.5 0 0 0 3 0c0-1.2-.7-2.5-1.5-4z" />
         </svg>
       </div>
-      <span className="text-xl font-bold tracking-tight text-secondary-900 dark:text-background-50 font-sans">
+      <span className="text-xl font-bold tracking-tight text-secondary-900 font-sans">
         Pon<span className="text-primary-500">ion</span>
       </span>
     </div>
