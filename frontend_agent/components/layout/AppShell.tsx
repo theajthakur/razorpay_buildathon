@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from "react";
 import { Menu, X, Plus, MessageSquare, Calendar, ChevronRight } from "lucide-react";
-import { fetchPublicBranding, BrandingConfig } from "@/lib/api/branding";
+import { BrandingProvider, useBranding } from "@/lib/context/BrandingContext";
 import { LoginButton } from "../common/LoginButton";
 import { ScrollArea } from "../common/ScrollArea";
 
@@ -19,31 +19,20 @@ const MOCK_CHATS = [
   { id: "6", title: "Sushi Combo Deluxe", date: "Aug 22, 2026" },
 ];
 
-export function AppShell({ children }: AppShellProps) {
+function AppShellContent({ children }: AppShellProps) {
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [activeChatId, setActiveChatId] = useState("1");
+  const { branding, brandingLoading, primaryColor } = useBranding();
+  const [logoUrl, setLogoUrl] = useState<string | null>(null);
 
-  // Dynamic branding state
-  const [branding, setBranding] = useState<BrandingConfig | null>(null);
-  const [brandingLoading, setBrandingLoading] = useState(true);
-
-  // Fetch public branding on load
+  // Sync logoUrl when branding loads or changes
   useEffect(() => {
-    async function getBranding() {
-      try {
-        setBrandingLoading(true);
-        const data = await fetchPublicBranding();
-        setBranding(data);
-      } catch (error) {
-        console.warn("Branding fetch failed, using default Ponion placeholders:", error);
-        // Fail silently and leave branding as null for fallback defaults
-        setBranding(null);
-      } finally {
-        setBrandingLoading(false);
-      }
+    if (branding) {
+      setLogoUrl(branding.logo_url ?? null);
+    } else {
+      setLogoUrl(null);
     }
-    getBranding();
-  }, []);
+  }, [branding]);
 
   const toggleMobileSidebar = () => {
     setIsMobileSidebarOpen(!isMobileSidebarOpen);
@@ -53,9 +42,6 @@ export function AppShell({ children }: AppShellProps) {
     setActiveChatId(id);
     setIsMobileSidebarOpen(false); // Close drawer on mobile
   };
-
-  // Branding Colors
-  const primaryColor = branding?.brand_color || "#E24A33"; // Custom brand color or Ponion warm-red
 
   // Reusable dynamic logo rendering block with skeletons
   const renderLogoSection = () => {
@@ -68,18 +54,18 @@ export function AppShell({ children }: AppShellProps) {
       );
     }
 
-    const hasLogo = !!branding?.logo_url;
+    const hasLogo = !!logoUrl;
     return (
       <div className="flex items-center gap-2.5 select-none">
         {hasLogo ? (
           <div className="relative w-9 h-9 rounded-xl overflow-hidden border border-secondary-200 dark:border-secondary-800 shrink-0">
             <img
-              src={branding.logo_url!}
-              alt={branding.display_name || "Merchant Logo"}
+              src={logoUrl!}
+              alt={branding?.display_name || "Merchant Logo"}
               className="w-full h-full object-cover"
               onError={() => {
                 // Remove broken logo image state to fallback to standard onion SVG
-                setBranding((prev) => prev ? { ...prev, logo_url: null } : null);
+                setLogoUrl(null);
               }}
             />
           </div>
@@ -244,5 +230,13 @@ export function AppShell({ children }: AppShellProps) {
         </main>
       </div>
     </div>
+  );
+}
+
+export function AppShell({ children }: AppShellProps) {
+  return (
+    <BrandingProvider>
+      <AppShellContent>{children}</AppShellContent>
+    </BrandingProvider>
   );
 }

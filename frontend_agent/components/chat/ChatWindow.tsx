@@ -1,9 +1,17 @@
+"use client";
+
 import React from "react";
+import { useBranding } from "@/lib/context/BrandingContext";
 
 export function ChatWindow() {
+  const { branding, primaryColor } = useBranding();
+
   return (
     <div className="flex flex-col items-center justify-center min-h-[50vh] text-center p-8 max-w-md mx-auto">
-      <div className="w-16 h-16 rounded-2xl bg-primary-50 dark:bg-primary-950/20 text-primary-500 flex items-center justify-center mb-6 animate-pulse">
+      <div 
+        style={{ backgroundColor: `${primaryColor}15`, color: primaryColor }}
+        className="w-16 h-16 rounded-2xl flex items-center justify-center mb-6 animate-pulse"
+      >
         <svg
           xmlns="http://www.w3.org/2000/svg"
           viewBox="0 0 24 24"
@@ -18,7 +26,7 @@ export function ChatWindow() {
         </svg>
       </div>
       <h2 className="text-2xl font-bold text-secondary-900 dark:text-background-50 font-sans mb-3">
-        Ponion AI Assistant
+        {branding?.display_name || "Ponion AI Assistant"}
       </h2>
       <p className="text-secondary-500 dark:text-secondary-400 text-sm leading-relaxed">
         Chat UI coming next. Soon you will be able to search menus, customize toppings, and order food through our intelligent AI conversational agent.
