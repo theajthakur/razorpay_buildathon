@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Menu, X, Plus, MessageSquare, Calendar, ChevronRight } from "lucide-react";
-import { Logo } from "../common/Logo";
+import { fetchPublicBranding, BrandingConfig } from "@/lib/api/branding";
 import { LoginButton } from "../common/LoginButton";
 import { ScrollArea } from "../common/ScrollArea";
 
@@ -11,7 +11,7 @@ interface AppShellProps {
 }
 
 const MOCK_CHATS = [
-  { id: "1", title: "Spicy Ramen & Gyoza", date: "Today, 1:24 PM", active: true },
+  { id: "1", title: "Spicy Ramen & Gyoza", date: "Today, 1:24 PM" },
   { id: "2", title: "Double Cheese Pepperoni", date: "Yesterday, 8:45 PM" },
   { id: "3", title: "Superfood Avocado Salad", date: "2 days ago" },
   { id: "4", title: "Acai Berry Power Bowl", date: "3 days ago" },
@@ -23,6 +23,28 @@ export function AppShell({ children }: AppShellProps) {
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [activeChatId, setActiveChatId] = useState("1");
 
+  // Dynamic branding state
+  const [branding, setBranding] = useState<BrandingConfig | null>(null);
+  const [brandingLoading, setBrandingLoading] = useState(true);
+
+  // Fetch public branding on load
+  useEffect(() => {
+    async function getBranding() {
+      try {
+        setBrandingLoading(true);
+        const data = await fetchPublicBranding();
+        setBranding(data);
+      } catch (error) {
+        console.warn("Branding fetch failed, using default Ponion placeholders:", error);
+        // Fail silently and leave branding as null for fallback defaults
+        setBranding(null);
+      } finally {
+        setBrandingLoading(false);
+      }
+    }
+    getBranding();
+  }, []);
+
   const toggleMobileSidebar = () => {
     setIsMobileSidebarOpen(!isMobileSidebarOpen);
   };
@@ -32,11 +54,71 @@ export function AppShell({ children }: AppShellProps) {
     setIsMobileSidebarOpen(false); // Close drawer on mobile
   };
 
+  // Branding Colors
+  const primaryColor = branding?.brand_color || "#E24A33"; // Custom brand color or Ponion warm-red
+
+  // Reusable dynamic logo rendering block with skeletons
+  const renderLogoSection = () => {
+    if (brandingLoading) {
+      return (
+        <div className="flex items-center gap-2.5 animate-pulse select-none" data-testid="branding-skeleton">
+          <div className="w-9 h-9 rounded-xl bg-secondary-200 dark:bg-secondary-800" />
+          <div className="h-4.5 w-24 bg-secondary-200 dark:bg-secondary-800 rounded-md" />
+        </div>
+      );
+    }
+
+    const hasLogo = !!branding?.logo_url;
+    return (
+      <div className="flex items-center gap-2.5 select-none">
+        {hasLogo ? (
+          <div className="relative w-9 h-9 rounded-xl overflow-hidden border border-secondary-200 dark:border-secondary-800 shrink-0">
+            <img
+              src={branding.logo_url!}
+              alt={branding.display_name || "Merchant Logo"}
+              className="w-full h-full object-cover"
+              onError={() => {
+                // Remove broken logo image state to fallback to standard onion SVG
+                setBranding((prev) => prev ? { ...prev, logo_url: null } : null);
+              }}
+            />
+          </div>
+        ) : (
+          <div 
+            style={{ backgroundColor: `${primaryColor}15`, color: primaryColor }}
+            className="relative flex items-center justify-center w-9 h-9 rounded-xl transition-colors shrink-0"
+          >
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2.2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="w-5 h-5"
+            >
+              <path d="M12 2C8.5 6.5 5.5 9.5 5.5 13.5a6.5 6.5 0 0 0 13 0c0-4-3-7-6.5-11.5z" />
+              <path d="M12 5.5c-2.2 3.2-3.8 5.8-3.8 8a3.8 3.8 0 0 0 7.6 0c0-2.2-1.6-4.8-3.8-8z" />
+            </svg>
+          </div>
+        )}
+        <span className="text-lg font-bold tracking-tight text-secondary-900 dark:text-background-50 font-sans truncate max-w-[160px]">
+          {branding?.display_name || (
+            <>
+              Pon<span className="text-primary-500" style={{ color: primaryColor }}>ion</span>
+            </>
+          )}
+        </span>
+      </div>
+    );
+  };
+
   const sidebarContent = (
     <div className="flex flex-col h-full bg-white dark:bg-secondary-900 border-r border-secondary-200 dark:border-secondary-800/80">
       {/* Top Section: Logo */}
       <div className="flex items-center justify-between h-16 px-6 border-b border-secondary-100 dark:border-secondary-800/50 shrink-0">
-        <Logo />
+        {renderLogoSection()}
         {/* Mobile close button inside the drawer */}
         <button
           onClick={toggleMobileSidebar}
@@ -51,7 +133,8 @@ export function AppShell({ children }: AppShellProps) {
       <div className="flex-1 flex flex-col min-h-0 p-4 space-y-4">
         {/* New Chat Button */}
         <button
-          className="flex items-center justify-center gap-2 w-full py-3 px-4 rounded-xl bg-primary-500 hover:bg-primary-600 active:bg-primary-700 text-white font-semibold text-sm shadow-sm hover:shadow-md transition-all duration-200 cursor-pointer select-none focus:outline-none focus:ring-2 focus:ring-primary-500/20"
+          style={{ backgroundColor: primaryColor }}
+          className="flex items-center justify-center gap-2 w-full py-3 px-4 rounded-xl text-white font-semibold text-sm shadow-sm hover:brightness-95 active:brightness-90 transition-all duration-200 cursor-pointer select-none focus:outline-none focus:ring-2 focus:ring-primary-500/20"
           onClick={() => alert("Creating a new chat session (coming soon!)")}
         >
           <Plus className="w-4 h-4 stroke-[2.5]" />
@@ -81,9 +164,10 @@ export function AppShell({ children }: AppShellProps) {
                   <div className="flex items-center justify-between w-full">
                     <div className="flex items-center gap-2 min-w-0">
                       <MessageSquare
+                        style={{ color: isActive ? primaryColor : undefined }}
                         className={`w-4 h-4 shrink-0 transition-colors ${
                           isActive
-                            ? "text-primary-500"
+                            ? ""
                             : "text-secondary-400 group-hover:text-secondary-500 dark:group-hover:text-secondary-300"
                         }`}
                       />
@@ -92,8 +176,9 @@ export function AppShell({ children }: AppShellProps) {
                       </span>
                     </div>
                     <ChevronRight
+                      style={{ color: isActive ? primaryColor : undefined }}
                       className={`w-3.5 h-3.5 shrink-0 opacity-0 group-hover:opacity-100 transition-all transform translate-x-1 group-hover:translate-x-0 ${
-                        isActive ? "text-primary-500" : "text-secondary-400"
+                        isActive ? "" : "text-secondary-400"
                       }`}
                     />
                   </div>
@@ -145,8 +230,10 @@ export function AppShell({ children }: AppShellProps) {
           >
             <Menu className="w-6 h-6" />
           </button>
-          <Logo />
-          <div className="w-10 h-10" /> {/* Spacer to center the logo */}
+          <div className="flex-1 flex justify-center">
+            {renderLogoSection()}
+          </div>
+          <div className="w-10 h-10" /> {/* Spacer to balance */}
         </header>
 
         {/* Content Viewport */}
