@@ -32,3 +32,32 @@ class APIKeyListResponse(BaseModel):
     active_count: int
     total_count: int
     max_keys: int
+
+
+class LogoPresignRequest(BaseModel):
+    fileName: str
+    fileType: str
+
+
+class LogoPresignResponse(BaseModel):
+    uploadUrl: str
+    publicUrl: str
+    key: str
+
+
+class MerchantSettingsSaveRequest(BaseModel):
+    logo_url: Optional[str] = None
+    brand_color: Optional[str] = None
+    accent_color: Optional[str] = None
+    display_name: Optional[str] = None
+    confirmation_limit: Optional[int] = None
+    toggles: Optional[dict] = None
+
+
+class MerchantSettingsResponse(BaseModel):
+    logo_url: Optional[str] = None
+    brand_color: Optional[str] = None
+    accent_color: Optional[str] = None
+    display_name: Optional[str] = None
+    confirmation_limit: Optional[int] = None
+    toggles: Optional[dict] = None

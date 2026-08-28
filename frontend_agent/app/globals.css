@@ -1,26 +1,191 @@
 @import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+@custom-variant dark (&:is(.dark *));
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
+  --font-sans: var(--font-sans);
   --font-mono: var(--font-geist-mono);
+  --font-heading: var(--font-sans);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar: var(--sidebar);
+  --color-chart-5: var(--chart-5);
+  --color-chart-4: var(--chart-4);
+  --color-chart-3: var(--chart-3);
+  --color-chart-2: var(--chart-2);
+  --color-chart-1: var(--chart-1);
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+
+  /* --- Ponion Brand Scales --- */
+  /* Primary: warm chili-red (base #E24A33) */
+  --color-primary-50: #fdf2f0;
+  --color-primary-100: #fde2dc;
+  --color-primary-200: #fbcac0;
+  --color-primary-300: #f8a698;
+  --color-primary-400: #f27562;
+  --color-primary-500: #e24a33;
+  --color-primary-600: #cb351f;
+  --color-primary-700: #aa2a17;
+  --color-primary-800: #8d2416;
+  --color-primary-900: #752217;
+
+  /* Secondary: deep charcoal-brown (base #231F1C) */
+  --color-secondary-50: #faf9f8;
+  --color-secondary-100: #f1efef;
+  --color-secondary-200: #e1ddda;
+  --color-secondary-300: #c2bbb6;
+  --color-secondary-400: #9f958d;
+  --color-secondary-500: #7f736a;
+  --color-secondary-600: #62574f;
+  --color-secondary-700: #4b423c;
+  --color-secondary-800: #352e2a;
+  --color-secondary-900: #231f1c;
+
+  /* Background: warm off-white (base #FBF7F1) */
+  --color-background-50: #fbf7f1;
+  --color-background-100: #faf4e8;
+  --color-background-200: #f6ecd8;
+  --color-background-300: #f0e0c4;
+  --color-background-400: #ead1ab;
+  --color-background-500: #ddbc8e;
+  --color-background-600: #c89e6e;
+  --color-background-700: #aa7f52;
+  --color-background-800: #8a6039;
+  --color-background-900: #614125;
+
+  /* Accent: muted olive (base #7A8450) */
+  --color-accent-50: #f5f6f2;
+  --color-accent-100: #e7ecdc;
+  --color-accent-200: #ced7b7;
+  --color-accent-300: #b2c192;
+  --color-accent-400: #95a66e;
+  --color-accent-500: #7a8450;
+  --color-accent-600: #626b3f;
+  --color-accent-700: #4c5330;
+  --color-accent-800: #363b22;
+  --color-accent-900: #202314;
+
+  /* Surface: soft peach (base #F3D4B8) */
+  --color-surface-55: #fefaf6;
+  --color-surface-100: #fcf1e6;
+  --color-surface-200: #f3d4b8;
+  --color-surface-300: #ecc39b;
+  --color-surface-400: #e4ac79;
+  --color-surface-500: #dc9253;
+  --color-surface-600: #c2773a;
+  --color-surface-700: #9d5e2a;
+  --color-surface-800: #7b481e;
+  --color-surface-900: #593214;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+:root {
+  --background: #fbf7f1;
+  --foreground: #231f1c;
+  --card: #fbf7f1;
+  --card-foreground: #231f1c;
+  --popover: #fbf7f1;
+  --popover-foreground: #231f1c;
+  --primary: #e24a33;
+  --primary-foreground: #faf9f8;
+  --secondary: #f3d4b8;
+  --secondary-foreground: #231f1c;
+  --muted: #f6ecd8;
+  --muted-foreground: #7f736a;
+  --accent: #7a8450;
+  --accent-foreground: #faf9f8;
+  --destructive: #cb351f;
+  --destructive-foreground: #faf9f8;
+  --border: #e1ddda;
+  --input: #e1ddda;
+  --ring: #e24a33;
+  --radius: 0.625rem;
+  --sidebar: #faf9f8;
+  --sidebar-foreground: #231f1c;
+  --sidebar-primary: #e24a33;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #f1efef;
+  --sidebar-accent-foreground: #231f1c;
+  --sidebar-border: #e1ddda;
+  --sidebar-ring: #e24a33;
+}
+
+.dark {
+  --background: #231f1c;
+  --foreground: #fbf7f1;
+  --card: #2d2824;
+  --card-foreground: #fbf7f1;
+  --popover: #2d2824;
+  --popover-foreground: #fbf7f1;
+  --primary: #e24a33;
+  --primary-foreground: #ffffff;
+  --secondary: #352e2a;
+  --secondary-foreground: #fbf7f1;
+  --muted: #352e2a;
+  --muted-foreground: #9f958d;
+  --accent: #7a8450;
+  --accent-foreground: #ffffff;
+  --destructive: #cb351f;
+  --destructive-foreground: #ffffff;
+  --border: #352e2a;
+  --input: #352e2a;
+  --ring: #e24a33;
+  --sidebar: #231f1c;
+  --sidebar-foreground: #fbf7f1;
+  --sidebar-primary: #e24a33;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #2d2824;
+  --sidebar-accent-foreground: #fbf7f1;
+  --sidebar-border: #352e2a;
+  --sidebar-ring: #e24a33;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  html {
+    @apply font-sans;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+@utility no-scrollbar {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
+  &::-webkit-scrollbar {
+    display: none;  /* Chrome, Safari and Opera */
+  }
 }

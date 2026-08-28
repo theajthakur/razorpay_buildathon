@@ -10,6 +10,12 @@ class Settings(BaseSettings):
     CLERK_JWKS_URL: str = "https://pumped-caiman-79.clerk.accounts.dev/.well-known/jwks.json"
     API_KEY_HMAC_SECRET: str = "default_development_hmac_secret_key_1234567890"
 
+    # AWS S3 Settings
+    AWS_ACCESS_KEY: str = ""
+    AWS_SECRET_KEY: str = ""
+    AWS_REGION: str = "us-east-1"
+    S3_BUCKET_NAME: str = "shopagent-razorpay"
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
