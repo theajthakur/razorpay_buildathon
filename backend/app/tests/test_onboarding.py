@@ -71,8 +71,8 @@ class TestOnboardingAPIs(unittest.TestCase):
             "ifsc": "HDFC0000261",
             "branch_name": "Test Branch HDFC",
             "branding_config": {
-                "colorTheme": "#FF5733",
-                "logoUrl": "https://teststore.com/images/logo.png"
+                "brand_color": "#FF5733",
+                "logo_url": "https://teststore.com/images/logo.png"
             },
             "webhook_url": "https://api.teststore.com/v1/webhook"
         }
@@ -85,8 +85,8 @@ class TestOnboardingAPIs(unittest.TestCase):
         self.assertEqual(data["base_url"], "https://api.teststore.com/v1")
         self.assertEqual(data["webhook_url"], "https://api.teststore.com/v1/webhook")
         self.assertIsNotNone(data["branding_config"])
-        self.assertEqual(data["branding_config"]["colorTheme"], "#FF5733")
-        self.assertEqual(data["branding_config"]["logoUrl"], "https://teststore.com/images/logo.png")
+        self.assertEqual(data["branding_config"]["brand_color"], "#FF5733")
+        self.assertEqual(data["branding_config"]["logo_url"], "https://teststore.com/images/logo.png")
 
         # 2. Fetch onboarding details
         get_response = self.client.get("/system/onboarding")
@@ -94,7 +94,7 @@ class TestOnboardingAPIs(unittest.TestCase):
         get_data = get_response.json()
         self.assertEqual(get_data["base_url"], "https://api.teststore.com/v1")
         self.assertEqual(get_data["webhook_url"], "https://api.teststore.com/v1/webhook")
-        self.assertEqual(get_data["branding_config"]["colorTheme"], "#FF5733")
+        self.assertEqual(get_data["branding_config"]["brand_color"], "#FF5733")
         
         # Verify the user status was transitioned to approved upon completing setup
         user_row = self.db.query(User).filter(User.id == self.test_user_id).first()

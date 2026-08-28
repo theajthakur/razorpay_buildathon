@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import get_settings
 from app.system.router import router as system_router
-from app.agentic.router import router as agentic_router
+from app.agentic.router import router as agentic_router, public_router
 from app.dashboard.router import router as dashboard_router
 
 settings = get_settings()
@@ -21,6 +21,7 @@ app.add_middleware(
 # Mount APIRouters
 app.include_router(system_router, prefix="/system", tags=["System"])
 app.include_router(agentic_router, prefix="/agentic", tags=["Agentic"])
+app.include_router(public_router, prefix="/api/public", tags=["Public"])
 app.include_router(dashboard_router, prefix="/api/dashboard", tags=["Dashboard"])
 
 @app.get("/")

@@ -278,8 +278,8 @@ def get_merchant_settings(
     if not branding_config:
         branding_config = {}
 
-    logo_url = branding_config.get("logo_url") or branding_config.get("logoUrl")
-    brand_color = branding_config.get("brand_color") or branding_config.get("colorTheme")
+    logo_url = branding_config.get("logo_url")
+    brand_color = branding_config.get("brand_color")
     display_name = branding_config.get("display_name") or current_user.store_name
 
     return MerchantSettingsResponse(
@@ -287,7 +287,7 @@ def get_merchant_settings(
         brand_color=brand_color,
         accent_color=branding_config.get("accent_color"),
         display_name=display_name,
-        confirmation_limit=branding_config.get("confirmation_limit") or branding_config.get("confirmationLimit"),
+        confirmation_limit=branding_config.get("confirmation_limit"),
         toggles=branding_config.get("toggles")
     )
 
@@ -332,17 +332,14 @@ def update_merchant_settings(
 
     if payload.logo_url is not None:
         branding_config["logo_url"] = payload.logo_url
-        branding_config["logoUrl"] = payload.logo_url
     if payload.brand_color is not None:
         branding_config["brand_color"] = payload.brand_color
-        branding_config["colorTheme"] = payload.brand_color
     if payload.accent_color is not None:
         branding_config["accent_color"] = payload.accent_color
     if payload.display_name is not None:
         branding_config["display_name"] = payload.display_name
     if payload.confirmation_limit is not None:
         branding_config["confirmation_limit"] = payload.confirmation_limit
-        branding_config["confirmationLimit"] = payload.confirmation_limit
     if payload.toggles is not None:
         branding_config["toggles"] = payload.toggles
 
@@ -352,8 +349,8 @@ def update_merchant_settings(
     db.commit()
     db.refresh(onboarding)
 
-    logo_url = branding_config.get("logo_url") or branding_config.get("logoUrl")
-    brand_color = branding_config.get("brand_color") or branding_config.get("colorTheme")
+    logo_url = branding_config.get("logo_url")
+    brand_color = branding_config.get("brand_color")
     display_name = branding_config.get("display_name") or current_user.store_name
 
     return MerchantSettingsResponse(
@@ -361,6 +358,6 @@ def update_merchant_settings(
         brand_color=brand_color,
         accent_color=branding_config.get("accent_color"),
         display_name=display_name,
-        confirmation_limit=branding_config.get("confirmation_limit") or branding_config.get("confirmationLimit"),
+        confirmation_limit=branding_config.get("confirmation_limit"),
         toggles=branding_config.get("toggles")
     )

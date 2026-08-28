@@ -74,8 +74,38 @@ class Onboarding(Base):
     ifsc = Column(String, nullable=True)
     branch_name = Column(String, nullable=True)
 
+    slug = Column(String, unique=True, index=True, nullable=True)
+
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
     # Relationship link back to User
     user = relationship("User", back_populates="onboarding")
+
+    # Relationship to Domain Mappings
+    domain_mappings = relationship(
+        "DomainMapping",
+        back_populates="onboarding",
+        cascade="all, delete-orphan"
+    )
+
+
+class DomainMapping(Base):
+    __tablename__ = "domain_mappings"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    domain = Column(String, unique=True, index=True, nullable=False)
+    slug = Column(String, ForeignKey("onboardings.slug", ondelete="CASCADE"), index=True, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    onboarding = relationship("Onboarding", back_populates="domain_mappings")
+
+
+class Conversation(Base):
+    __tablename__ = "conversations"
+
+    conversation_id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    title = Column(String, nullable=True)
+    date_created = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    user_auth_token = Column(String, nullable=False)

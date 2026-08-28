@@ -36,8 +36,8 @@ export interface AuthConfig {
 }
 
 export interface BrandingConfig {
-  colorTheme?: string | null;
-  logoUrl?: string | null;
+  brand_color?: string | null;
+  logo_url?: string | null;
 }
 
 export interface OnboardingData {

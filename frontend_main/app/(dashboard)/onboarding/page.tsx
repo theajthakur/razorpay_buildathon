@@ -233,8 +233,8 @@ export default function OnboardingPage() {
           setAuthDisabledAck(config.auth_disabled_ack);
 
           if (config.branding_config) {
-            setColorTheme(config.branding_config.colorTheme || "");
-            setLogoUrl(config.branding_config.logoUrl || "");
+            setColorTheme(config.branding_config.brand_color || "");
+            setLogoUrl(config.branding_config.logo_url || "");
           } else {
             setColorTheme("");
             setLogoUrl("");
@@ -400,8 +400,8 @@ export default function OnboardingPage() {
       setIfsc(originalConfig.ifsc || "");
 
       if (originalConfig.branding_config) {
-        setColorTheme(originalConfig.branding_config.colorTheme || "");
-        setLogoUrl(originalConfig.branding_config.logoUrl || "");
+        setColorTheme(originalConfig.branding_config.brand_color || "");
+        setLogoUrl(originalConfig.branding_config.logo_url || "");
       } else {
         setColorTheme("");
         setLogoUrl("");
@@ -494,8 +494,8 @@ export default function OnboardingPage() {
     if (webhookUrl !== (originalConfig.webhook_url || "")) return true;
 
     const oBrand = originalConfig.branding_config || {};
-    if (colorTheme !== (oBrand.colorTheme || "")) return true;
-    if (logoUrl !== (oBrand.logoUrl || "")) return true;
+    if (colorTheme !== (oBrand.brand_color || "")) return true;
+    if (logoUrl !== (oBrand.logo_url || "")) return true;
 
     const oAuth = originalConfig.auth_config || {};
     if (authUrl !== (oAuth.auth_url || "")) return true;
@@ -843,7 +843,7 @@ export default function OnboardingPage() {
         bank_account: bankAccount,
         ifsc,
         branch_name: resolvedBranch || resolvedBank,
-        branding_config: { colorTheme, logoUrl },
+        branding_config: { brand_color: colorTheme, logo_url: logoUrl },
         webhook_url: webhookUrl,
       });
 
@@ -1056,7 +1056,7 @@ export default function OnboardingPage() {
         bank_account: bankAccount,
         ifsc,
         branch_name: resolvedBranch || resolvedBank || "Verified Branch",
-        branding_config: { colorTheme, logoUrl },
+        branding_config: { brand_color: colorTheme, logo_url: logoUrl },
         webhook_url: webhookUrl,
       });
 

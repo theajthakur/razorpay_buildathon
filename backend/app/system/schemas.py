@@ -65,8 +65,8 @@ class CreateOrderConfigSchema(BaseModel):
     quantity_field: str
 
 class BrandingConfigSchema(BaseModel):
-    colorTheme: Optional[str] = None
-    logoUrl: Optional[str] = None
+    brand_color: Optional[str] = None
+    logo_url: Optional[str] = None
 
 class OnboardingUpsertRequest(BaseModel):
     base_url: str
