@@ -106,10 +106,17 @@ export function MessageBubble({ message }: MessageBubbleProps) {
           <ProductCardGrid products={message.products} />
         )}
 
-        {/* Timestamp */}
-        <span className="text-[10px] text-secondary-400 mt-1 self-start select-none font-medium px-1">
-          {new Date(message.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
-        </span>
+        {/* Timestamp & Error */}
+        <div className="flex items-center gap-2 mt-1 px-1 self-start">
+          <span className="text-[10px] text-secondary-400 select-none font-medium">
+            {new Date(message.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+          </span>
+          {message.error && (
+            <span className="text-[10px] font-bold text-red-500 flex items-center gap-0.5 select-none animate-pulse">
+              • Not saved
+            </span>
+          )}
+        </div>
       </div>
     </div>
   );

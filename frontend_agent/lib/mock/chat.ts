@@ -13,6 +13,7 @@ export interface ChatMessage {
   content: string;        // markdown
   products?: Product[];   // optional — assistant messages may embed product cards
   createdAt: string;      // ISO timestamp
+  error?: boolean;        // optional — flag indicating DB save failure
 }
 
 const MOCK_PRODUCTS: Product[] = [

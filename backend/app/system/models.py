@@ -1,5 +1,6 @@
 import uuid
-from sqlalchemy import Column, String, DateTime, func, ForeignKey, Boolean, JSON, UniqueConstraint, Index
+import enum
+from sqlalchemy import Column, String, DateTime, func, ForeignKey, Boolean, JSON, UniqueConstraint, Index, Text, Enum as SqlEnum
 from sqlalchemy.orm import relationship
 from app.core.database import Base
 
@@ -126,5 +127,24 @@ class MerchantUserSession(Base):
 
     __table_args__ = (
         Index("idx_merchant_customer", "merchant_id", "customer_ref"),
+    )
+
+
+class MessageSender(str, enum.Enum):
+    USER = "user"
+    AGENT = "agent"
+
+
+class ConversationMessage(Base):
+    __tablename__ = "conversation_messages"
+
+    message_id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    conversation_id = Column(String, ForeignKey("conversations.id", ondelete="CASCADE"), nullable=False, index=True)
+    sender = Column(SqlEnum(MessageSender), nullable=False)
+    message = Column(Text, nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    __table_args__ = (
+        Index("idx_convo_created", "conversation_id", "created_at"),
     )
 

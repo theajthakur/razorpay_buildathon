@@ -6,7 +6,7 @@ from fastapi.testclient import TestClient
 from app.main import app
 from app.core.database import SessionLocal
 from app.core.config import get_settings
-from app.system.models import User, Onboarding, MerchantUserSession
+from app.system.models import User, Onboarding, MerchantUserSession, Conversation
 from app.agentic.auth_utils import resolve_session_expiry
 from app.agentic.crypto import encrypt_merchant_token
 
@@ -424,5 +424,118 @@ class TestAgenticAuth(unittest.TestCase):
             self.onboarding.auth_config = old_config
             self.db.delete(db_session)
             self.db.commit()
+
+    def test_message_persistence_and_retrieval(self):
+        # 1. Create a Conversation in DB
+        convo_id = "test-convo-persist-123"
+        convo = Conversation(
+            id=convo_id,
+            merchant_id=self.test_user_id,
+            user_email="customer_persist@test.com"
+        )
+        self.db.add(convo)
+        self.db.commit()
+
+        # 2. Setup JWT for Owner (A) and Non-Owner (B)
+        expiry = datetime.now(timezone.utc) + timedelta(minutes=30)
+        
+        # Customer A JWT
+        token_owner = jwt.encode(
+            {
+                "sub": "owner-session-id",
+                "merchant_id": self.test_user_id,
+                "customer_ref": "customer_persist@test.com",
+                "exp": int(expiry.timestamp()),
+            },
+            self.settings.JWT_SECRET,
+            algorithm="HS256"
+        )
+
+        # Customer B JWT
+        token_intruder = jwt.encode(
+            {
+                "sub": "intruder-session-id",
+                "merchant_id": self.test_user_id,
+                "customer_ref": "other_cust@test.com",
+                "exp": int(expiry.timestamp()),
+            },
+            self.settings.JWT_SECRET,
+            algorithm="HS256"
+        )
+
+        try:
+            # Save original updated_at timestamp
+            original_updated_at = convo.updated_at
+
+            # 3. Post user message using Owner JWT
+            response = self.client.post(
+                f"/agentic/conversations/{convo_id}/messages",
+                json={
+                    "sender": "user",
+                    "message": "Hello, do you have running shoes?"
+                },
+                headers={"Authorization": f"Bearer {token_owner}"}
+            )
+            self.assertEqual(response.status_code, 200)
+            data = response.json()
+            self.assertEqual(data["sender"], "user")
+            self.assertEqual(data["message"], "Hello, do you have running shoes?")
+            self.assertIn("message_id", data)
+
+            # 4. Post agent reply using Owner JWT
+            response = self.client.post(
+                f"/agentic/conversations/{convo_id}/messages",
+                json={
+                    "sender": "agent",
+                    "message": "Yes, we do!"
+                },
+                headers={"Authorization": f"Bearer {token_owner}"}
+            )
+            self.assertEqual(response.status_code, 200)
+            data = response.json()
+            self.assertEqual(data["sender"], "agent")
+            self.assertEqual(data["message"], "Yes, we do!")
+
+            # Refresh conversation to verify updated_at has bumped
+            self.db.refresh(convo)
+            self.assertNotEqual(convo.updated_at, original_updated_at)
+
+            # 5. Fetch messages as Owner (Should yield 2 messages in ASC order)
+            response = self.client.get(
+                f"/agentic/conversations/{convo_id}/messages",
+                headers={"Authorization": f"Bearer {token_owner}"}
+            )
+            self.assertEqual(response.status_code, 200)
+            msg_list = response.json()["messages"]
+            self.assertEqual(len(msg_list), 2)
+            self.assertEqual(msg_list[0]["sender"], "user")
+            self.assertEqual(msg_list[1]["sender"], "agent")
+
+            # 6. Verify 404 security checks for Non-Owner (Intruder)
+            # Try to fetch
+            response = self.client.get(
+                f"/agentic/conversations/{convo_id}/messages",
+                headers={"Authorization": f"Bearer {token_intruder}"}
+            )
+            self.assertEqual(response.status_code, 404)
+
+            # Try to post
+            response = self.client.post(
+                f"/agentic/conversations/{convo_id}/messages",
+                json={
+                    "sender": "user",
+                    "message": "I want to steal this session"
+                },
+                headers={"Authorization": f"Bearer {token_intruder}"}
+            )
+            self.assertEqual(response.status_code, 404)
+
+        finally:
+            # Clean up all created messages and conversation
+            from app.system.models import ConversationMessage
+            self.db.query(ConversationMessage).filter(ConversationMessage.conversation_id == convo_id).delete()
+            self.db.delete(convo)
+            self.db.commit()
+
 
 

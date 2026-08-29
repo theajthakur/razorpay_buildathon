@@ -3,14 +3,14 @@
 import React, { useState, useEffect } from "react";
 import { 
   ChatMessage, 
-  mockSendMessage, 
-  mockGetConversationHistory 
+  mockSendMessage 
 } from "@/lib/mock/chat";
 import MessageList from "./MessageList";
 import ChatInput from "./ChatInput";
 import { AlertCircle } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/context/AuthContext";
+import apiClient from "@/lib/api/client";
 
 interface ChatWindowProps {
   conversationId: string;
@@ -59,13 +59,51 @@ export function ChatWindow({ conversationId }: ChatWindowProps) {
           setIsLoading(true);
           setIsHistoryLoading(false);
 
+          // Save user message in DB
+          try {
+            const userMsgPost = await apiClient.post(`/agentic/conversations/${conversationId}/messages`, {
+              sender: "user",
+              message: pendingMessageText
+            });
+            userMsg.id = userMsgPost.data.message_id;
+          } catch (err) {
+            console.error("Failed to persist pending user message:", err);
+            userMsg.error = true;
+            setMessages([userMsg]);
+          }
+
           // Call mock assistant reply
           const assistantReply = await mockSendMessage(conversationId, pendingMessageText);
-          setMessages(prev => [...prev, assistantReply]);
+          
+          // Save assistant reply in DB
+          try {
+            const replyPost = await apiClient.post(`/agentic/conversations/${conversationId}/messages`, {
+              sender: "agent",
+              message: assistantReply.content
+            });
+            assistantReply.id = replyPost.data.message_id;
+          } catch (err) {
+            console.error("Failed to persist assistant reply:", err);
+            assistantReply.error = true;
+          }
+
+          setMessages(prev => {
+            const updated = [...prev];
+            if (userMsg.error) {
+              updated[0] = { ...userMsg };
+            }
+            return [...updated, assistantReply];
+          });
           setIsLoading(false);
         } else {
-          // 2. Otherwise load history
-          const history = await mockGetConversationHistory(conversationId);
+          // 2. Otherwise load history from backend
+          const response = await apiClient.get<{ messages: any[] }>(`/agentic/conversations/${conversationId}/messages`);
+          const history: ChatMessage[] = response.data.messages.map((m: any) => ({
+            id: m.message_id,
+            role: m.sender === "agent" ? "assistant" : "user",
+            content: m.message,
+            createdAt: m.created_at
+          }));
           setMessages(history);
           setIsHistoryLoading(false);
         }
@@ -85,9 +123,10 @@ export function ChatWindow({ conversationId }: ChatWindowProps) {
     const userText = inputValue.trim();
     setInputValue("");
 
-    // Create and append user message
+    // Create and append user message optimistically
+    const userMsgId = Math.random().toString(36).substring(2, 15);
     const userMsg: ChatMessage = {
-      id: Math.random().toString(36).substring(2, 15),
+      id: userMsgId,
       role: "user",
       content: userText,
       createdAt: new Date().toISOString()
@@ -96,11 +135,38 @@ export function ChatWindow({ conversationId }: ChatWindowProps) {
     setMessages(prev => [...prev, userMsg]);
     setIsLoading(true);
 
+    let userMsgSaved = false;
+    try {
+      const userMsgPost = await apiClient.post(`/agentic/conversations/${conversationId}/messages`, {
+        sender: "user",
+        message: userText
+      });
+      setMessages(prev =>
+        prev.map(m => m.id === userMsgId ? { ...m, id: userMsgPost.data.message_id } : m)
+      );
+      userMsgSaved = true;
+    } catch (err) {
+      console.error("Failed to persist user message:", err);
+      setMessages(prev =>
+        prev.map(m => m.id === userMsgId ? { ...m, error: true } : m)
+      );
+    }
+
     try {
       const assistantReply = await mockSendMessage(conversationId, userText);
+      try {
+        const replyPost = await apiClient.post(`/agentic/conversations/${conversationId}/messages`, {
+          sender: "agent",
+          message: assistantReply.content
+        });
+        assistantReply.id = replyPost.data.message_id;
+      } catch (err) {
+        console.error("Failed to persist assistant reply:", err);
+        assistantReply.error = true;
+      }
       setMessages(prev => [...prev, assistantReply]);
     } catch (err) {
-      console.error("Failed to send message:", err);
+      console.error("Failed to generate assistant reply:", err);
     } finally {
       setIsLoading(false);
     }

@@ -1,12 +1,14 @@
 from datetime import datetime, timezone
+from enum import Enum as PyEnum
 import httpx
 import jwt
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
+from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.config import get_settings
-from app.system.models import Onboarding, MerchantUserSession, Conversation
+from app.system.models import Onboarding, MerchantUserSession, Conversation, ConversationMessage, MessageSender
 from app.agentic.dependencies import resolve_merchant_by_host
 from app.agentic.crypto import encrypt_merchant_token
 from app.agentic.auth_utils import resolve_session_expiry, get_value_by_path
@@ -23,6 +25,30 @@ class LoginRequest(BaseModel):
 class LoginResponse(BaseModel):
     token: str
     expires_at: datetime
+
+
+class MessageSenderEnum(str, PyEnum):
+    USER = "user"
+    AGENT = "agent"
+
+
+class MessageCreateRequest(BaseModel):
+    sender: MessageSenderEnum
+    message: str
+
+
+class MessageResponse(BaseModel):
+    message_id: str
+    conversation_id: str
+    sender: MessageSenderEnum
+    message: str
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class MessageListResponse(BaseModel):
+    messages: List[MessageResponse]
 
 @public_router.get("/branding")
 def get_public_branding(
@@ -215,5 +241,69 @@ def logout(
         db.delete(row)
         db.commit()
     return {"status": "success"}
+
+
+@router.get("/conversations/{conversation_id}/messages", response_model=MessageListResponse)
+def get_conversation_messages(
+    conversation_id: str,
+    session: dict = Depends(get_current_session),
+    db: Session = Depends(get_db)
+):
+    """
+    Fetches the history of messages for a conversation, ordered chronologically.
+    Verifies that the conversation belongs to the authenticated customer session.
+    """
+    convo = db.query(Conversation).filter(
+        Conversation.id == conversation_id
+    ).first()
+    
+    if not convo:
+        raise HTTPException(status_code=404, detail="conversation_not_found")
+        
+    if convo.user_email != session["customer_ref"] or convo.merchant_id != session["merchant_id"]:
+        raise HTTPException(status_code=404, detail="conversation_not_found")
+
+    messages = db.query(ConversationMessage).filter(
+        ConversationMessage.conversation_id == conversation_id
+    ).order_by(ConversationMessage.created_at.asc()).all()
+
+    return {"messages": messages}
+
+
+@router.post("/conversations/{conversation_id}/messages", response_model=MessageResponse)
+def persist_message(
+    conversation_id: str,
+    payload: MessageCreateRequest,
+    session: dict = Depends(get_current_session),
+    db: Session = Depends(get_db)
+):
+    """
+    Persists a new message in the conversation, and updates the conversation's timestamp.
+    Verifies ownership.
+    """
+    convo = db.query(Conversation).filter(
+        Conversation.id == conversation_id
+    ).first()
+    
+    if not convo:
+        raise HTTPException(status_code=404, detail="conversation_not_found")
+        
+    if convo.user_email != session["customer_ref"] or convo.merchant_id != session["merchant_id"]:
+        raise HTTPException(status_code=404, detail="conversation_not_found")
+
+    db_msg = ConversationMessage(
+        conversation_id=conversation_id,
+        sender=payload.sender,
+        message=payload.message
+    )
+    db.add(db_msg)
+    
+    # Update conversations.updated_at to now
+    convo.updated_at = datetime.now(timezone.utc)
+    
+    db.commit()
+    db.refresh(db_msg)
+    
+    return db_msg
 
 
