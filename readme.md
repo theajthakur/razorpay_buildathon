@@ -142,6 +142,7 @@ The project includes an automated test suite (**37 unit & integration tests**) c
 - Cart CRUD tools (`add_to_cart`, `get_cart_items`, `update_cart_item`, `remove_from_cart`), 5-item distinct cap enforcement, session isolation, and REST endpoints (`test_cart_tools.py`)
 - Tool-to-stage status message mappings and fallback handling
 
+
 Run tests locally:
 ```bash
 cd backend
