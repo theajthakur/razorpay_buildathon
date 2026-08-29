@@ -4,11 +4,14 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     DATABASE_URL: str
+    API_KEY_HMAC_SECRET: str
+    JWT_SECRET: str
+    MERCHANT_TOKEN_ENCRYPTION_KEY: str
+
     CORS_ORIGINS: str = "http://localhost:3000,http://localhost:3001"
     RAZORPAY_SECRET_KEY: str = ""
     CLERK_WEBHOOK_SECRET: str = ""
     CLERK_JWKS_URL: str = "https://pumped-caiman-79.clerk.accounts.dev/.well-known/jwks.json"
-    API_KEY_HMAC_SECRET: str = "default_development_hmac_secret_key_1234567890"
 
     # AWS S3 Settings
     AWS_ACCESS_KEY: str = ""
@@ -16,9 +19,6 @@ class Settings(BaseSettings):
     AWS_REGION: str = "us-east-1"
     S3_BUCKET_NAME: str = "shopagent-razorpay"
 
-    # Agent Auth & Encryption Settings
-    JWT_SECRET: str = "default_jwt_secret_change_me_in_production"
-    MERCHANT_TOKEN_ENCRYPTION_KEY: str = "AXkCY4yKn_YEyqts-4QaHHUxN85kVLFix20rHxC_k1I="
 
 
     model_config = SettingsConfigDict(

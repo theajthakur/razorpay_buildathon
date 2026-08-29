@@ -160,24 +160,16 @@ class TestAgenticAuth(unittest.TestCase):
             algorithm="HS256"
         )
 
-        # 3. Test Depends(get_current_session) route
-        response = self.client.get(
-            "/agentic/session-check",
-            headers={"Authorization": f"Bearer {client_jwt}"}
-        )
-        self.assertEqual(response.status_code, 200)
-        data = response.json()
-        self.assertEqual(data["session_id"], session_id)
-        self.assertEqual(data["merchant_id"], self.test_user_id)
-        self.assertEqual(data["customer_ref"], "customer_555")
+        # 3. Test get_current_session directly in Python
+        from app.agentic.deps import get_current_session, get_merchant_token
+        session_info = get_current_session(authorization=f"Bearer {client_jwt}")
+        self.assertEqual(session_info["session_id"], session_id)
+        self.assertEqual(session_info["merchant_id"], self.test_user_id)
+        self.assertEqual(session_info["customer_ref"], "customer_555")
 
-        # 4. Test Depends(get_merchant_token) route
-        response = self.client.get(
-            "/agentic/merchant-token-check",
-            headers={"Authorization": f"Bearer {client_jwt}"}
-        )
-        self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["token"], raw_token)
+        # 4. Test get_merchant_token directly in Python
+        token = get_merchant_token(session=session_info, db=self.db)
+        self.assertEqual(token, raw_token)
 
     def test_early_expired_session_fails(self):
         # 1. Create a session in DB that is already expired
@@ -205,13 +197,16 @@ class TestAgenticAuth(unittest.TestCase):
             algorithm="HS256"
         )
 
-        # 2. Call DB-lookup route, should raise 401 and remove session from DB
-        response = self.client.get(
-            "/agentic/merchant-token-check",
-            headers={"Authorization": f"Bearer {client_jwt}"}
-        )
-        self.assertEqual(response.status_code, 401)
-        self.assertEqual(response.json()["detail"], "merchant_session_expired")
+        # 2. Call dependency directly, should raise 401 and remove session from DB
+        from fastapi import HTTPException
+        from app.agentic.deps import get_current_session, get_merchant_token
+        session_info = get_current_session(authorization=f"Bearer {client_jwt}")
+
+        with self.assertRaises(HTTPException) as ctx:
+            get_merchant_token(session=session_info, db=self.db)
+
+        self.assertEqual(ctx.exception.status_code, 401)
+        self.assertEqual(ctx.exception.detail, "merchant_session_expired")
 
         # Verify deleted
         deleted_row = self.db.query(MerchantUserSession).filter(MerchantUserSession.id == session_id).first()
@@ -416,13 +411,10 @@ class TestAgenticAuth(unittest.TestCase):
         )
 
         try:
-            # 4. Call check route
-            response = self.client.get(
-                "/agentic/merchant-headers-check",
-                headers={"Authorization": f"Bearer {client_jwt}"}
-            )
-            self.assertEqual(response.status_code, 200)
-            headers = response.json()
+            # 4. Call get_merchant_auth_headers directly in Python
+            from app.agentic.deps import get_current_session, get_merchant_auth_headers
+            session_info = get_current_session(authorization=f"Bearer {client_jwt}")
+            headers = get_merchant_auth_headers(session=session_info, db=self.db)
             
             # Should have X-Auth-Token as key, and no "Bearer " prefix!
             self.assertIn("X-Auth-Token", headers)

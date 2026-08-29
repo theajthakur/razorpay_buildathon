@@ -176,33 +176,7 @@ async def login(
 
     return LoginResponse(token=our_jwt, expires_at=expires_at)
 
-@router.get("/session-check")
-def session_check(
-    session: dict = Depends(get_current_session)
-):
-    """
-    Protected route helper to verify get_current_session (no DB query).
-    """
-    return session
 
-@router.get("/merchant-token-check")
-def merchant_token_check(
-    token: str = Depends(get_merchant_token)
-):
-    """
-    Protected route helper to verify get_merchant_token (decrypts token).
-    """
-    return {"token": token}
-
-
-@router.get("/merchant-headers-check")
-def merchant_headers_check(
-    headers: dict = Depends(get_merchant_auth_headers)
-):
-    """
-    Protected route helper to verify get_merchant_auth_headers resolution.
-    """
-    return headers
 
 
 @router.post("/conversations")
