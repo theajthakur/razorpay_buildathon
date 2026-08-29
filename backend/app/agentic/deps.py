@@ -4,7 +4,7 @@ from fastapi import Header, HTTPException, Depends
 from sqlalchemy.orm import Session
 from app.core.config import get_settings
 from app.core.database import get_db
-from app.system.models import MerchantUserSession
+from app.system.models import MerchantUserSession, Onboarding
 from app.agentic.crypto import decrypt_merchant_token
 
 settings = get_settings()
@@ -57,3 +57,49 @@ def get_merchant_token(
         raise HTTPException(status_code=401, detail="merchant_session_expired")
 
     return decrypt_merchant_token(row.merchant_token_encrypted)
+
+
+def get_merchant_auth_headers(
+    session: dict = Depends(get_current_session),
+    db: Session = Depends(get_db),
+) -> dict:
+    """
+    Looks up the merchant's custom token delivery preferences (header name,
+    whether to attach standard Bearer prefix, etc.) and returns formatted headers.
+    """
+    row = db.query(MerchantUserSession).filter(MerchantUserSession.id == session["session_id"]).first()
+    if not row:
+        raise HTTPException(status_code=401, detail="merchant_session_expired")
+
+    now = datetime.now(timezone.utc)
+    row_exp = row.expires_at
+    if row_exp.tzinfo is None:
+        row_exp = row_exp.replace(tzinfo=timezone.utc)
+
+    if row_exp < now:
+        db.delete(row)
+        db.commit()
+        raise HTTPException(status_code=401, detail="merchant_session_expired")
+
+    token = decrypt_merchant_token(row.merchant_token_encrypted)
+
+    onboarding = db.query(Onboarding).filter(Onboarding.user_id == row.merchant_id).first()
+    if not onboarding or not onboarding.auth_config:
+        # Standard fallback delivery
+        return {"Authorization": f"Bearer {token}"}
+
+    token_delivery = onboarding.auth_config.get("token_delivery") or {}
+    delivery_method = token_delivery.get("method") or "header"
+    header_name = token_delivery.get("header_name") or "Authorization"
+    bearer_prefix = token_delivery.get("bearer_prefix")
+    if bearer_prefix is None:
+        bearer_prefix = True
+
+    if delivery_method == "header":
+        if bearer_prefix:
+            return {header_name: f"Bearer {token}"}
+        else:
+            return {header_name: token}
+
+    return {}
+

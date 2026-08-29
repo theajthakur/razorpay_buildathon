@@ -70,6 +70,22 @@ function normalizeError(error: any): ApiError {
   };
 }
 
+// Request interceptor to manage dynamic authorization headers
+apiClient.interceptors.request.use(
+  (config) => {
+    if (typeof window !== "undefined") {
+      const token = localStorage.getItem("shop_agent_token");
+      if (token) {
+        config.headers.Authorization = `Bearer ${token}`;
+      }
+    }
+    return config;
+  },
+  (error) => {
+    return Promise.reject(error);
+  }
+);
+
 // Response interceptor to manage automatic retries and error normalization
 apiClient.interceptors.response.use(
   (response: AxiosResponse) => response,

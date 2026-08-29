@@ -2,8 +2,11 @@
 
 import React, { useState, useEffect } from "react";
 import { Menu, X, Plus, MessageSquare, Calendar, ChevronRight } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { BrandingProvider, useBranding } from "@/lib/context/BrandingContext";
+import { AuthProvider } from "@/lib/context/AuthContext";
 import { LoginButton } from "../common/LoginButton";
+import { LoginModal } from "../chat/LoginModal";
 import { ScrollArea } from "../common/ScrollArea";
 
 interface AppShellProps {
@@ -11,12 +14,9 @@ interface AppShellProps {
 }
 
 const MOCK_CHATS = [
-  { id: "1", title: "Spicy Ramen & Gyoza", date: "Today, 1:24 PM" },
-  { id: "2", title: "Double Cheese Pepperoni", date: "Yesterday, 8:45 PM" },
-  { id: "3", title: "Superfood Avocado Salad", date: "2 days ago" },
-  { id: "4", title: "Acai Berry Power Bowl", date: "3 days ago" },
-  { id: "5", title: "Paneer Tikka Roll & Lassi", date: "Aug 24, 2026" },
-  { id: "6", title: "Sushi Combo Deluxe", date: "Aug 22, 2026" },
+  { id: "returning-user", title: "Spicy Paneer Tikka Wrap Combo", date: "Today, 1:24 PM" },
+  { id: "2a73e99b-859f-477d-5736-d01fa3829bf2", title: "Double Cheese Margherita Pizza", date: "Yesterday, 8:45 PM" },
+  { id: "3f829bf2-d01f-477d-859f-2a73e99b859f", title: "Superfood Avocado Salad", date: "2 days ago" },
 ];
 
 function AppShellContent({ children }: AppShellProps) {
@@ -24,6 +24,8 @@ function AppShellContent({ children }: AppShellProps) {
   const [activeChatId, setActiveChatId] = useState("1");
   const { branding, brandingLoading, primaryColor } = useBranding();
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  const [isLoginOpen, setIsLoginOpen] = useState(false);
+  const router = useRouter();
 
   // Sync logoUrl when branding loads or changes
   useEffect(() => {
@@ -41,6 +43,7 @@ function AppShellContent({ children }: AppShellProps) {
   const handleSelectChat = (id: string) => {
     setActiveChatId(id);
     setIsMobileSidebarOpen(false); // Close drawer on mobile
+    router.push(`/chats/${id}`);
   };
 
   // Reusable dynamic logo rendering block with skeletons
@@ -121,7 +124,10 @@ function AppShellContent({ children }: AppShellProps) {
         <button
           style={{ backgroundColor: primaryColor }}
           className="flex items-center justify-center gap-2 w-full py-3 px-4 rounded-xl text-white font-semibold text-sm shadow-sm hover:brightness-95 active:brightness-90 transition-all duration-200 cursor-pointer select-none focus:outline-none focus:ring-2 focus:ring-primary-500/20"
-          onClick={() => alert("Creating a new chat session (coming soon!)")}
+          onClick={() => {
+            router.push("/");
+            setIsMobileSidebarOpen(false);
+          }}
         >
           <Plus className="w-4 h-4 stroke-[2.5]" />
           <span>New Chat</span>
@@ -178,7 +184,7 @@ function AppShellContent({ children }: AppShellProps) {
 
       {/* Bottom Section: Profile/Auth */}
       <div className="p-4 border-t border-secondary-100 shrink-0 bg-background-50/50">
-        <LoginButton />
+        <LoginButton onOpenLogin={() => setIsLoginOpen(true)} />
       </div>
     </div>
   );
@@ -218,13 +224,13 @@ function AppShellContent({ children }: AppShellProps) {
           <div className="w-10 h-10" /> {/* Spacer to balance */}
         </header>
 
-        {/* Content Viewport */}
         <main className="flex-1 overflow-hidden relative flex flex-col min-w-0 bg-background-50">
-          <ScrollArea className="flex-1 h-full w-full">
+          <div className="flex-1 h-full w-full relative flex flex-col overflow-hidden">
             {children}
-          </ScrollArea>
+          </div>
         </main>
       </div>
+      <LoginModal isOpen={isLoginOpen} onClose={() => setIsLoginOpen(false)} />
     </div>
   );
 }
@@ -232,7 +238,9 @@ function AppShellContent({ children }: AppShellProps) {
 export function AppShell({ children }: AppShellProps) {
   return (
     <BrandingProvider>
-      <AppShellContent>{children}</AppShellContent>
+      <AuthProvider>
+        <AppShellContent>{children}</AppShellContent>
+      </AuthProvider>
     </BrandingProvider>
   );
 }

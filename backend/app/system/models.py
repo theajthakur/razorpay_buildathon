@@ -105,10 +105,12 @@ class DomainMapping(Base):
 class Conversation(Base):
     __tablename__ = "conversations"
 
-    conversation_id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
-    title = Column(String, nullable=True)
-    date_created = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
-    user_auth_token = Column(String, nullable=False)
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    merchant_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_email = Column(String, nullable=False, index=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=True)
+
 
 
 class MerchantUserSession(Base):

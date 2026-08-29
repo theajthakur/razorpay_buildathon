@@ -6,11 +6,11 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.config import get_settings
-from app.system.models import Onboarding, MerchantUserSession
+from app.system.models import Onboarding, MerchantUserSession, Conversation
 from app.agentic.dependencies import resolve_merchant_by_host
 from app.agentic.crypto import encrypt_merchant_token
 from app.agentic.auth_utils import resolve_session_expiry, get_value_by_path
-from app.agentic.deps import get_current_session, get_merchant_token
+from app.agentic.deps import get_current_session, get_merchant_token, get_merchant_auth_headers
 
 router = APIRouter()
 public_router = APIRouter()
@@ -38,7 +38,23 @@ def get_public_branding(
             status_code=404,
             detail="Branding configuration not found for this merchant."
         )
-    return branding_config
+    return {
+        **branding_config,
+        "merchant_id": onboarding.user_id
+    }
+
+
+def extract_by_path(data: dict, path: str):
+    """Resolve a dot-notation path like 'data.token' against a JSON response."""
+    if not path:
+        raise HTTPException(status_code=502, detail="merchant_response_shape_mismatch")
+    current = data
+    for part in path.split("."):
+        if not isinstance(current, dict) or part not in current:
+            raise HTTPException(status_code=502, detail="merchant_response_shape_mismatch")
+        current = current[part]
+    return current
+
 
 @public_router.post("/auth/login", response_model=LoginResponse)
 async def login(
@@ -47,24 +63,21 @@ async def login(
 ):
     """
     Customer Login for the Agentic module.
-    Authenticates against the merchant's login API and returns a ShopAgent JWT.
+    Authenticates against the merchant's login API dynamically and returns a ShopAgent JWT.
     """
     settings = get_settings()
 
     # 1. Fetch onboarding configuration
     onboarding = db.query(Onboarding).filter(Onboarding.user_id == payload.merchant_id).first()
-    if not onboarding:
-        raise HTTPException(status_code=401, detail="invalid_credentials")
-
-    if not onboarding.auth_enabled or not onboarding.auth_config:
-        raise HTTPException(status_code=401, detail="invalid_credentials")
+    if not onboarding or not onboarding.auth_config:
+        raise HTTPException(status_code=404, detail="merchant_not_found")
 
     auth_config = onboarding.auth_config
 
     # 2. Extract mappings and prepare endpoint URL
     auth_url = auth_config.get("auth_url")
     if not auth_url:
-        raise HTTPException(status_code=401, detail="invalid_credentials")
+        raise HTTPException(status_code=404, detail="merchant_not_found")
 
     # Resolve relative URL
     if not auth_url.startswith(("http://", "https://")):
@@ -72,6 +85,7 @@ async def login(
         path = auth_url.lstrip("/")
         auth_url = f"{base}/{path}"
 
+    method = (auth_config.get("method") or "POST").upper()
     identifier_field = auth_config.get("identifier_field") or "email"
     password_field = auth_config.get("password_field") or "password"
     token_path = auth_config.get("token_path") or "token"
@@ -84,11 +98,19 @@ async def login(
 
     try:
         async with httpx.AsyncClient() as client:
-            resp = await client.post(
-                auth_url,
-                json=request_body,
-                timeout=10.0
-            )
+            if method == "GET":
+                resp = await client.get(
+                    auth_url,
+                    params=request_body,
+                    timeout=10.0
+                )
+            else:
+                resp = await client.request(
+                    method,
+                    auth_url,
+                    json=request_body,
+                    timeout=10.0
+                )
     except Exception:
         # Generic 401 on connection failure
         raise HTTPException(status_code=401, detail="invalid_credentials")
@@ -99,12 +121,16 @@ async def login(
     merchant_data = resp.json()
 
     # Extract token
-    merchant_token = get_value_by_path(merchant_data, token_path)
-    if not merchant_token:
-        merchant_token = merchant_data.get("token") or merchant_data.get("access_token")
+    try:
+        merchant_token = extract_by_path(merchant_data, token_path)
+    except HTTPException:
+        # Pass 502 straight through
+        raise
+    except Exception:
+        raise HTTPException(status_code=502, detail="merchant_response_shape_mismatch")
 
     if not merchant_token:
-        raise HTTPException(status_code=401, detail="invalid_credentials")
+        raise HTTPException(status_code=502, detail="merchant_response_shape_mismatch")
 
     # Extract customer reference
     customer_ref = (
@@ -167,3 +193,53 @@ def merchant_token_check(
     Protected route helper to verify get_merchant_token (decrypts token).
     """
     return {"token": token}
+
+
+@router.get("/merchant-headers-check")
+def merchant_headers_check(
+    headers: dict = Depends(get_merchant_auth_headers)
+):
+    """
+    Protected route helper to verify get_merchant_auth_headers resolution.
+    """
+    return headers
+
+
+@router.post("/conversations")
+def create_conversation(
+    session: dict = Depends(get_current_session),
+    db: Session = Depends(get_db)
+):
+    """
+    Creates a new conversation for the authenticated customer.
+    """
+    merchant_id = session["merchant_id"]
+    user_email = session["customer_ref"]
+
+    convo = Conversation(
+        merchant_id=merchant_id,
+        user_email=user_email
+    )
+    db.add(convo)
+    db.commit()
+    db.refresh(convo)
+
+    return {"conversation_id": convo.id}
+
+
+@router.post("/auth/logout")
+def logout(
+    session: dict = Depends(get_current_session),
+    db: Session = Depends(get_db)
+):
+    """
+    Customer Logout for the Agentic module.
+    Deletes the customer's session row in the database, invalidating it server-side.
+    """
+    row = db.query(MerchantUserSession).filter(MerchantUserSession.id == session["session_id"]).first()
+    if row:
+        db.delete(row)
+        db.commit()
+    return {"status": "success"}
+
+

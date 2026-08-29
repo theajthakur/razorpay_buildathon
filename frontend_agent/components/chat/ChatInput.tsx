@@ -1,34 +1,85 @@
-import React from "react";
+"use client";
 
-export function ChatInput() {
+import React, { useRef, useEffect } from "react";
+import { Send, Loader2 } from "lucide-react";
+import { useBranding } from "@/lib/context/BrandingContext";
+
+interface ChatInputProps {
+  value: string;
+  onChange: (value: string) => void;
+  onSubmit: () => void;
+  isLoading?: boolean;
+  placeholder?: string;
+}
+
+export function ChatInput({
+  value,
+  onChange,
+  onSubmit,
+  isLoading = false,
+  placeholder = "Message the assistant..."
+}: ChatInputProps) {
+  const { primaryColor } = useBranding();
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Auto-resize the textarea height based on typing content
+  useEffect(() => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+
+    textarea.style.height = "auto";
+    const newHeight = Math.min(textarea.scrollHeight, 150);
+    textarea.style.height = `${newHeight}px`;
+  }, [value]);
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      if (value.trim() && !isLoading) {
+        onSubmit();
+      }
+    }
+  };
+
+  const handleSend = () => {
+    if (value.trim() && !isLoading) {
+      onSubmit();
+    }
+  };
+
   return (
-    <div className="w-full p-4 border-t border-secondary-200 bg-background-50">
-      <div className="relative flex items-center max-w-3xl mx-auto">
-        <input
-          type="text"
-          placeholder="Ask Ponion to order food... (Coming soon)"
-          className="w-full pl-4 pr-12 py-3 rounded-xl border border-secondary-200 bg-white text-secondary-900 focus:outline-none focus:ring-2 focus:ring-primary-500/20 text-sm placeholder-secondary-400 cursor-not-allowed"
-          disabled
+    <div className="w-full max-w-3xl mx-auto px-4 pb-6 pt-2">
+      <div className="relative flex items-end w-full rounded-2xl border border-secondary-200 bg-white shadow-xs focus-within:shadow-md focus-within:border-secondary-300 transition-all">
+        <textarea
+          ref={textareaRef}
+          rows={1}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder={placeholder}
+          disabled={isLoading}
+          className="flex-1 w-full pl-4 pr-14 py-3.5 bg-transparent text-secondary-900 text-sm focus:outline-none placeholder-secondary-400 resize-none max-h-[150px] overflow-y-auto leading-relaxed"
         />
+        
         <button
-          disabled
-          className="absolute right-2.5 p-1.5 rounded-lg bg-primary-100 text-primary-500 cursor-not-allowed opacity-50"
+          onClick={handleSend}
+          disabled={!value.trim() || isLoading}
+          style={value.trim() && !isLoading ? { backgroundColor: primaryColor, color: "#ffffff" } : undefined}
+          className={`absolute right-3 bottom-3 p-2 rounded-xl transition-all duration-200 active:scale-95 ${
+            value.trim() && !isLoading
+              ? "text-white cursor-pointer"
+              : "bg-secondary-100 text-secondary-400 cursor-not-allowed"
+          }`}
         >
-          <svg
-            xmlns="http://www.w3.org/2000/svg"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            className="w-4 h-4"
-          >
-            <line x1="22" y1="2" x2="11" y2="13" />
-            <polygon points="22 2 15 22 11 13 2 9 22 2" />
-          </svg>
+          {isLoading ? (
+            <Loader2 className="w-4 h-4 animate-spin" />
+          ) : (
+            <Send className="w-4 h-4" />
+          )}
         </button>
       </div>
     </div>
   );
 }
+
+export default ChatInput;

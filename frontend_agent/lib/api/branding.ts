@@ -4,6 +4,7 @@ export interface BrandingConfig {
   brand_color?: string | null;
   logo_url?: string | null;
   display_name?: string | null;
+  merchant_id?: string;
 }
 
 /**
