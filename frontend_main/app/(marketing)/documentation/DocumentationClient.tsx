@@ -123,36 +123,36 @@ export default function DocumentationClient({ rawMarkdown }: DocumentationClient
     setTimeout(() => setCopiedAll(false), 2000);
   };
 
-  // ScrollSpy logic to highlight active section
+  // ScrollSpy logic to highlight active section on scroll
   useEffect(() => {
-    const headingElements = headings
-      .map((h) => document.getElementById(h.id))
-      .filter(Boolean) as HTMLElement[];
-
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const visibleEntry = entries.find((entry) => entry.isIntersecting);
-        if (visibleEntry) {
-          setActiveId(visibleEntry.target.id);
-        }
-      },
-      {
-        rootMargin: "-15% 0px -75% 0px",
-        threshold: 0.1,
-      }
-    );
-
-    headingElements.forEach((el) => observer.observe(el));
-
     const handleScroll = () => {
+      const scrollPosition = window.scrollY + 140;
+
       if (window.scrollY < 100) {
         setActiveId("overview");
+        return;
+      }
+
+      if (window.innerHeight + window.scrollY >= document.body.offsetHeight - 50) {
+        setActiveId(headings[headings.length - 1].id);
+        return;
+      }
+
+      for (let i = headings.length - 1; i >= 0; i--) {
+        const element = document.getElementById(headings[i].id);
+        if (element) {
+          if (scrollPosition >= element.offsetTop) {
+            setActiveId(headings[i].id);
+            break;
+          }
+        }
       }
     };
-    window.addEventListener("scroll", handleScroll);
+
+    window.addEventListener("scroll", handleScroll, { passive: true });
+    handleScroll();
 
     return () => {
-      headingElements.forEach((el) => observer.unobserve(el));
       window.removeEventListener("scroll", handleScroll);
     };
   }, []);

@@ -31,6 +31,16 @@ export default function DocumentationLayout({
               Onboarding Guide
             </Link>
             <Link
+              href="/documentation/dashboard"
+              className={`flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg transition-all shrink-0 ${
+                pathname === "/documentation/dashboard"
+                  ? "bg-primary/10 text-primary font-bold"
+                  : "text-text-secondary hover:text-text-primary hover:bg-background"
+              }`}
+            >
+              Dashboard Reference
+            </Link>
+            <Link
               href="/documentation"
               className={`flex items-center gap-2 px-3 py-2 text-sm font-medium rounded-lg transition-all shrink-0 ${
                 pathname === "/documentation"
