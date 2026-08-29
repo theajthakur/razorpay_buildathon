@@ -58,7 +58,7 @@ function AppShellContent({ children }: AppShellProps) {
     return (
       <div className="flex items-center gap-2.5 select-none">
         {hasLogo ? (
-          <div className="relative w-9 h-9 rounded-xl overflow-hidden border border-secondary-200 shrink-0">
+          <div className="relative w-9 h-9 rounded-xl overflow-hidden shrink-0">
             <img
               src={logoUrl!}
               alt={branding?.display_name || "Merchant Logo"}
@@ -70,7 +70,7 @@ function AppShellContent({ children }: AppShellProps) {
             />
           </div>
         ) : (
-          <div 
+          <div
             style={{ backgroundColor: `${primaryColor}15`, color: primaryColor }}
             className="relative flex items-center justify-center w-9 h-9 rounded-xl transition-colors shrink-0"
           >
@@ -141,21 +141,19 @@ function AppShellContent({ children }: AppShellProps) {
                 <button
                   key={chat.id}
                   onClick={() => handleSelectChat(chat.id)}
-                  className={`flex flex-col items-start w-full p-3 rounded-xl transition-all duration-200 text-left cursor-pointer group focus:outline-none ${
-                    isActive
+                  className={`flex flex-col items-start w-full p-3 rounded-xl transition-all duration-200 text-left cursor-pointer group focus:outline-none ${isActive
                       ? "bg-surface-200 text-secondary-900 font-medium"
                       : "hover:bg-background-100 text-secondary-600"
-                  }`}
+                    }`}
                 >
                   <div className="flex items-center justify-between w-full">
                     <div className="flex items-center gap-2 min-w-0">
                       <MessageSquare
                         style={{ color: isActive ? primaryColor : undefined }}
-                        className={`w-4 h-4 shrink-0 transition-colors ${
-                          isActive
+                        className={`w-4 h-4 shrink-0 transition-colors ${isActive
                             ? ""
                             : "text-secondary-400 group-hover:text-secondary-500"
-                        }`}
+                          }`}
                       />
                       <span className="text-xs font-semibold truncate w-full">
                         {chat.title}
@@ -163,9 +161,8 @@ function AppShellContent({ children }: AppShellProps) {
                     </div>
                     <ChevronRight
                       style={{ color: isActive ? primaryColor : undefined }}
-                      className={`w-3.5 h-3.5 shrink-0 opacity-0 group-hover:opacity-100 transition-all transform translate-x-1 group-hover:translate-x-0 ${
-                        isActive ? "" : "text-secondary-400"
-                      }`}
+                      className={`w-3.5 h-3.5 shrink-0 opacity-0 group-hover:opacity-100 transition-all transform translate-x-1 group-hover:translate-x-0 ${isActive ? "" : "text-secondary-400"
+                        }`}
                     />
                   </div>
                   <div className="flex items-center gap-1 mt-1 text-[10px] text-secondary-400 font-medium">
@@ -198,9 +195,8 @@ function AppShellContent({ children }: AppShellProps) {
 
       {/* 2. Left Sidebar (Drawer on mobile, static on desktop) */}
       <aside
-        className={`fixed inset-y-0 left-0 z-50 w-72 md:w-80 shrink-0 transform transition-transform duration-300 ease-in-out md:static md:translate-x-0 ${
-          isMobileSidebarOpen ? "translate-x-0" : "-translate-x-full"
-        }`}
+        className={`fixed inset-y-0 left-0 z-50 w-72 md:w-80 shrink-0 transform transition-transform duration-300 ease-in-out md:static md:translate-x-0 ${isMobileSidebarOpen ? "translate-x-0" : "-translate-x-full"
+          }`}
       >
         {sidebarContent}
       </aside>

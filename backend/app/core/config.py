@@ -16,6 +16,11 @@ class Settings(BaseSettings):
     AWS_REGION: str = "us-east-1"
     S3_BUCKET_NAME: str = "shopagent-razorpay"
 
+    # Agent Auth & Encryption Settings
+    JWT_SECRET: str = "default_jwt_secret_change_me_in_production"
+    MERCHANT_TOKEN_ENCRYPTION_KEY: str = "AXkCY4yKn_YEyqts-4QaHHUxN85kVLFix20rHxC_k1I="
+
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",

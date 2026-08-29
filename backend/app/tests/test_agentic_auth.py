@@ -1,0 +1,218 @@
+import unittest
+from datetime import datetime, timezone, timedelta
+from unittest.mock import AsyncMock, patch, MagicMock
+import jwt
+from fastapi.testclient import TestClient
+from app.main import app
+from app.core.database import SessionLocal
+from app.core.config import get_settings
+from app.system.models import User, Onboarding, MerchantUserSession
+from app.agentic.auth_utils import resolve_session_expiry
+from app.agentic.crypto import encrypt_merchant_token
+
+class TestAgenticAuth(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.db = SessionLocal()
+        cls.client = TestClient(app)
+        cls.settings = get_settings()
+
+        # Proactively clean up from dirty previous runs
+        cls.test_user_id = "user_test_agentic_auth_888"
+        cls.db.query(MerchantUserSession).filter(MerchantUserSession.merchant_id == cls.test_user_id).delete()
+        cls.db.query(Onboarding).filter(Onboarding.user_id == cls.test_user_id).delete()
+        cls.db.query(User).filter(User.id == cls.test_user_id).delete()
+        cls.db.commit()
+
+        # Create a test merchant user
+        cls.test_user = User(
+            id=cls.test_user_id,
+            email="merchant_auth_test@razorpay.com",
+            store_name="Test Auth Store",
+            status="approved"
+        )
+        cls.db.add(cls.test_user)
+        
+        # Create onboarding config with auth configured
+        cls.onboarding = Onboarding(
+            user_id=cls.test_user_id,
+            base_url="https://api.merchantstore.com/v1",
+            auth_enabled=True,
+            slug="test-auth-slug",
+            auth_config={
+                "auth_url": "/api/login",
+                "identifier_field": "email",
+                "password_field": "password",
+                "token_path": "data.token"
+            }
+        )
+        cls.db.add(cls.onboarding)
+        cls.db.commit()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.db.query(MerchantUserSession).filter(MerchantUserSession.merchant_id == cls.test_user_id).delete()
+        cls.db.query(Onboarding).filter(Onboarding.user_id == cls.test_user_id).delete()
+        cls.db.query(User).filter(User.id == cls.test_user_id).delete()
+        cls.db.commit()
+        cls.db.close()
+
+    def setUp(self):
+        # Clear sessions before each test
+        self.db.query(MerchantUserSession).filter(MerchantUserSession.merchant_id == self.test_user_id).delete()
+        self.db.commit()
+
+    def test_resolve_session_expiry(self):
+        # Case A: JWT merchant token with exp
+        exp_time = int((datetime.now(timezone.utc) + timedelta(minutes=30)).timestamp())
+        jwt_token = jwt.encode({"exp": exp_time}, "some-secret", algorithm="HS256")
+        expiry = resolve_session_expiry(jwt_token, {})
+        self.assertAlmostEqual(expiry.timestamp(), exp_time, delta=5)
+
+        # Case B: Opaque token with expires_in in the response
+        expiry = resolve_session_expiry("opaque_token", {"expires_in": 1200})
+        expected = (datetime.now(timezone.utc) + timedelta(seconds=1200)).timestamp()
+        self.assertAlmostEqual(expiry.timestamp(), expected, delta=5)
+
+        # Case C: Opaque token with no expiry info -> MAX_SESSION_TTL (1 hour)
+        expiry = resolve_session_expiry("opaque_token", {})
+        expected = (datetime.now(timezone.utc) + timedelta(hours=1)).timestamp()
+        self.assertAlmostEqual(expiry.timestamp(), expected, delta=5)
+
+    @patch("httpx.AsyncClient.post")
+    def test_login_success(self, mock_post):
+        # Mock merchant auth server response
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "data": {
+                "token": "merchant_api_token_12345"
+            },
+            "user_id": "customer_999"
+        }
+        mock_post.return_value = mock_response
+
+        # Call endpoint
+        response = self.client.post(
+            "/api/public/auth/login",
+            json={
+                "merchant_id": self.test_user_id,
+                "email": "customer@gmail.com",
+                "password": "secretpassword"
+            }
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertIn("token", data)
+        self.assertIn("expires_at", data)
+
+        # Verify database record
+        session_row = self.db.query(MerchantUserSession).filter(
+            MerchantUserSession.merchant_id == self.test_user_id
+        ).first()
+        self.assertIsNotNone(session_row)
+        self.assertEqual(session_row.customer_ref, "customer_999")
+        self.assertEqual(session_row.email, "customer@gmail.com")
+
+    @patch("httpx.AsyncClient.post")
+    def test_login_invalid_credentials_401(self, mock_post):
+        # Mock 401 response from merchant auth server
+        mock_response = MagicMock()
+        mock_response.status_code = 401
+        mock_post.return_value = mock_response
+
+        response = self.client.post(
+            "/api/public/auth/login",
+            json={
+                "merchant_id": self.test_user_id,
+                "email": "customer@gmail.com",
+                "password": "wrongpassword"
+            }
+        )
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.json()["detail"], "invalid_credentials")
+
+    def test_auth_dependencies(self):
+        # 1. Create a dummy session in DB
+        session_id = "test-session-id-555"
+        expiry = datetime.now(timezone.utc) + timedelta(minutes=45)
+        raw_token = "some-merchant-raw-token"
+        db_session = MerchantUserSession(
+            id=session_id,
+            merchant_id=self.test_user_id,
+            customer_ref="customer_555",
+            email="cust555@test.com",
+            merchant_token_encrypted=encrypt_merchant_token(raw_token),
+            expires_at=expiry
+        )
+        self.db.add(db_session)
+        self.db.commit()
+
+        # 2. Encode local JWT
+        client_jwt = jwt.encode(
+            {
+                "sub": session_id,
+                "merchant_id": self.test_user_id,
+                "customer_ref": "customer_555",
+                "exp": int(expiry.timestamp()),
+            },
+            self.settings.JWT_SECRET,
+            algorithm="HS256"
+        )
+
+        # 3. Test Depends(get_current_session) route
+        response = self.client.get(
+            "/agentic/session-check",
+            headers={"Authorization": f"Bearer {client_jwt}"}
+        )
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+        self.assertEqual(data["session_id"], session_id)
+        self.assertEqual(data["merchant_id"], self.test_user_id)
+        self.assertEqual(data["customer_ref"], "customer_555")
+
+        # 4. Test Depends(get_merchant_token) route
+        response = self.client.get(
+            "/agentic/merchant-token-check",
+            headers={"Authorization": f"Bearer {client_jwt}"}
+        )
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["token"], raw_token)
+
+    def test_early_expired_session_fails(self):
+        # 1. Create a session in DB that is already expired
+        session_id = "test-session-id-expired"
+        expiry = datetime.now(timezone.utc) - timedelta(minutes=10)  # Expired 10m ago
+        db_session = MerchantUserSession(
+            id=session_id,
+            merchant_id=self.test_user_id,
+            customer_ref="customer_exp",
+            email="cust_exp@test.com",
+            merchant_token_encrypted=encrypt_merchant_token("exp_token"),
+            expires_at=expiry
+        )
+        self.db.add(db_session)
+        self.db.commit()
+
+        client_jwt = jwt.encode(
+            {
+                "sub": session_id,
+                "merchant_id": self.test_user_id,
+                "customer_ref": "customer_exp",
+                "exp": int((datetime.now(timezone.utc) + timedelta(minutes=30)).timestamp()),  # Client token not expired yet
+            },
+            self.settings.JWT_SECRET,
+            algorithm="HS256"
+        )
+
+        # 2. Call DB-lookup route, should raise 401 and remove session from DB
+        response = self.client.get(
+            "/agentic/merchant-token-check",
+            headers={"Authorization": f"Bearer {client_jwt}"}
+        )
+        self.assertEqual(response.status_code, 401)
+        self.assertEqual(response.json()["detail"], "merchant_session_expired")
+
+        # Verify deleted
+        deleted_row = self.db.query(MerchantUserSession).filter(MerchantUserSession.id == session_id).first()
+        self.assertIsNone(deleted_row)

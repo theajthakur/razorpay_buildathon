@@ -109,3 +109,20 @@ class Conversation(Base):
     title = Column(String, nullable=True)
     date_created = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     user_auth_token = Column(String, nullable=False)
+
+
+class MerchantUserSession(Base):
+    __tablename__ = "merchant_user_sessions"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    merchant_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    customer_ref = Column(String, nullable=False)
+    email = Column(String, nullable=False)
+    merchant_token_encrypted = Column(String, nullable=False)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    __table_args__ = (
+        Index("idx_merchant_customer", "merchant_id", "customer_ref"),
+    )
+
