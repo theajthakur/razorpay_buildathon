@@ -9,9 +9,10 @@ interface MessageListProps {
   messages: ChatMessage[];
   isLoading?: boolean;
   streamingStage?: string | null;
+  streamingLabel?: string;
 }
 
-export default function MessageList({ messages, isLoading, streamingStage }: MessageListProps) {
+export default function MessageList({ messages, isLoading, streamingStage, streamingLabel }: MessageListProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -29,7 +30,7 @@ export default function MessageList({ messages, isLoading, streamingStage }: Mes
         <div className="flex items-start gap-3 w-full animate-fade-in">
           {/* Avatar offset */}
           <div className="w-8 h-8 shrink-0" />
-          <TypingIndicator stage={streamingStage || undefined} />
+          <TypingIndicator stage={streamingStage || undefined} label={streamingLabel} />
         </div>
       )}
       

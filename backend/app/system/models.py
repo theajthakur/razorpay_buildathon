@@ -1,6 +1,6 @@
 import uuid
 import enum
-from sqlalchemy import Column, String, DateTime, func, ForeignKey, Boolean, JSON, UniqueConstraint, Index, Text, Enum as SqlEnum
+from sqlalchemy import Column, String, DateTime, func, ForeignKey, Boolean, JSON, UniqueConstraint, Index, Text, Numeric, Integer, Enum as SqlEnum
 from sqlalchemy.orm import relationship
 from app.core.database import Base
 
@@ -149,4 +149,25 @@ class ConversationMessage(Base):
     __table_args__ = (
         Index("idx_convo_created", "conversation_id", "created_at"),
     )
+
+
+class CartItem(Base):
+    __tablename__ = "cart_items"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    merchant_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    customer_email = Column(String, nullable=False, index=True)
+    product_id = Column(String, nullable=False)
+    name = Column(String, nullable=False)
+    thumbnail_url = Column(String, nullable=True)
+    price = Column(Numeric(10, 2), nullable=False)
+    quantity = Column(Integer, nullable=False, default=1)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    __table_args__ = (
+        UniqueConstraint("merchant_id", "customer_email", "product_id", name="uq_cart_merchant_customer_product"),
+        Index("idx_cart_merchant_customer", "merchant_id", "customer_email"),
+    )
+
 

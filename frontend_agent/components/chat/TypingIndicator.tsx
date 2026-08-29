@@ -4,20 +4,32 @@ import React from "react";
 
 interface TypingIndicatorProps {
   stage?: string;
+  label?: string;
 }
 
-export default function TypingIndicator({ stage }: TypingIndicatorProps) {
-  const getStageLabel = (currentStage?: string) => {
-    if (!currentStage) return "Working on it...";
+export default function TypingIndicator({ stage, label }: TypingIndicatorProps) {
+  const getStageLabel = (currentStage?: string, backendLabel?: string) => {
+    if (backendLabel) return backendLabel;
+    if (!currentStage) return "Working on it…";
     switch (currentStage) {
       case "thinking":
-        return "Thinking...";
+        return "Thinking…";
       case "searching_products":
-        return "Searching products...";
+        return "Searching products…";
+      case "adding_to_cart":
+        return "Adding to your cart…";
+      case "checking_cart":
+        return "Checking your cart…";
+      case "updating_cart":
+        return "Updating your cart…";
+      case "removing_from_cart":
+        return "Removing item…";
+      case "setting_title":
+        return "Naming this chat…";
       case "final_touches":
-        return "Putting it together...";
+        return "Putting it together…";
       default:
-        return "Working on it...";
+        return "Working on it…";
     }
   };
 
@@ -28,7 +40,7 @@ export default function TypingIndicator({ stage }: TypingIndicatorProps) {
         <span className="w-1.5 h-1.5 rounded-full bg-secondary-400 animate-bounce [animation-delay:-0.15s]"></span>
         <span className="w-1.5 h-1.5 rounded-full bg-secondary-400 animate-bounce"></span>
       </div>
-      <span className="font-medium animate-pulse">{getStageLabel(stage)}</span>
+      <span className="font-medium animate-pulse">{getStageLabel(stage, label)}</span>
     </div>
   );
 }

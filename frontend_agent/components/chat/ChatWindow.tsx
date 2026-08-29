@@ -24,6 +24,7 @@ export function ChatWindow({ conversationId }: ChatWindowProps) {
   const [isHistoryLoading, setIsHistoryLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [streamingStage, setStreamingStage] = useState<string | null>(null);
+  const [streamingLabel, setStreamingLabel] = useState<string | undefined>(undefined);
   const [conversationTitle, setConversationTitle] = useState("Untitled");
   const router = useRouter();
 
@@ -34,6 +35,7 @@ export function ChatWindow({ conversationId }: ChatWindowProps) {
   const consumeMessageStream = useCallback(async (messageText: string, optimisticUserMsgId: string) => {
     setIsLoading(true);
     setStreamingStage("thinking");
+    setStreamingLabel("Thinking…");
 
     let userMsgId = optimisticUserMsgId;
     let streamReader: ReadableStreamDefaultReader<Uint8Array> | null = null;
@@ -74,6 +76,7 @@ export function ChatWindow({ conversationId }: ChatWindowProps) {
           const event = JSON.parse(line);
           if (event.type === "status") {
             setStreamingStage(event.stage);
+            setStreamingLabel(event.label);
           } else if (event.type === "title") {
             setConversationTitle(event.title);
             window.dispatchEvent(
@@ -245,7 +248,7 @@ export function ChatWindow({ conversationId }: ChatWindowProps) {
       </div>
 
       {/* Scrollable messages container */}
-      <MessageList messages={messages} isLoading={isLoading} streamingStage={streamingStage} />
+      <MessageList messages={messages} isLoading={isLoading} streamingStage={streamingStage} streamingLabel={streamingLabel} />
       
       {/* Fixed input container */}
       <div className="shrink-0 bg-background-50 border-t border-secondary-100">

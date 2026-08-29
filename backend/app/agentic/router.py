@@ -12,7 +12,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.config import get_settings
-from app.system.models import User, Onboarding, MerchantUserSession, Conversation, ConversationMessage, MessageSender
+from app.system.models import User, Onboarding, MerchantUserSession, Conversation, ConversationMessage, MessageSender, CartItem
 import vertexai
 from vertexai.generative_models import GenerativeModel, Part, Content, FunctionDeclaration, Tool
 from app.agentic.dependencies import resolve_merchant_by_host
@@ -94,6 +94,34 @@ class AgentStage(str, enum.Enum):
     FINAL_TOUCHES = "final_touches"
 
 
+TOOL_TO_STAGE = {
+    "search_products": "searching_products",
+    "add_to_cart": "adding_to_cart",
+    "get_cart_items": "checking_cart",
+    "update_cart_item": "updating_cart",
+    "remove_from_cart": "removing_from_cart",
+    "create_conversation_title": "setting_title",
+}
+
+STAGE_LABELS = {
+    "thinking": "Thinking…",
+    "searching_products": "Searching products…",
+    "adding_to_cart": "Adding to your cart…",
+    "checking_cart": "Checking your cart…",
+    "updating_cart": "Updating your cart…",
+    "removing_from_cart": "Removing item…",
+    "setting_title": "Naming this chat…",
+    "final_touches": "Putting it together…",
+}
+
+def get_status_payload(stage_id: str) -> dict:
+    return {
+        "type": "status",
+        "stage": stage_id,
+        "label": STAGE_LABELS.get(stage_id, "Working on it…")
+    }
+
+
 search_products_func = FunctionDeclaration(
     name="search_products",
     description=(
@@ -142,7 +170,65 @@ create_conversation_title_func = FunctionDeclaration(
     },
 )
 
-product_search_tool = Tool(function_declarations=[search_products_func, create_conversation_title_func])
+add_to_cart_func = FunctionDeclaration(
+    name="add_to_cart",
+    description=(
+        "Add a product to the customer's cart, or increase its quantity if it's "
+        "already in the cart. Use the product details (id, name, thumbnail, price) "
+        "exactly as returned by a prior search_products call — never invent these values."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "product_id": {"type": "string"},
+            "name": {"type": "string"},
+            "thumbnail_url": {"type": "string"},
+            "price": {"type": "number"},
+            "quantity": {"type": "integer", "description": "Defaults to 1 if not specified."},
+        },
+        "required": ["product_id", "name", "price"],
+    },
+)
+
+get_cart_func = FunctionDeclaration(
+    name="get_cart_items",
+    description="Fetch the customer's current cart contents. Use this whenever the customer asks what's in their cart, or before confirming a checkout.",
+    parameters={"type": "object", "properties": {}},
+)
+
+update_cart_item_func = FunctionDeclaration(
+    name="update_cart_item",
+    description="Set the quantity of a product already in the cart to an exact value. Setting quantity to 0 removes it.",
+    parameters={
+        "type": "object",
+        "properties": {
+            "product_id": {"type": "string"},
+            "quantity": {"type": "integer"},
+        },
+        "required": ["product_id", "quantity"],
+    },
+)
+
+remove_from_cart_func = FunctionDeclaration(
+    name="remove_from_cart",
+    description="Remove a product from the cart entirely.",
+    parameters={
+        "type": "object",
+        "properties": {"product_id": {"type": "string"}},
+        "required": ["product_id"],
+    },
+)
+
+agent_tool = Tool(
+    function_declarations=[
+        search_products_func,
+        create_conversation_title_func,
+        add_to_cart_func,
+        get_cart_func,
+        update_cart_item_func,
+        remove_from_cart_func,
+    ]
+)
 
 FIELD_CANDIDATES = {
     "id": ["id", "_id", "product_id"],
@@ -251,6 +337,136 @@ async def execute_search_products(merchant_id: str, args: dict, session: dict, d
 
     return {"products": products, "count": len(products)}
 
+MAX_CART_ITEMS = 5
+MAX_LINE_QUANTITY = 20
+
+async def execute_add_to_cart(merchant_id: str, customer_email: str, args: dict, db: Session) -> dict:
+    product_id = str(args.get("product_id", "")).strip()
+    name = str(args.get("name", "")).strip()
+    thumbnail_url = args.get("thumbnail_url")
+
+    try:
+        price = float(args.get("price", 0.0))
+    except (TypeError, ValueError):
+        price = 0.0
+
+    try:
+        quantity = int(args.get("quantity", 1))
+    except (TypeError, ValueError):
+        quantity = 1
+
+    if not product_id or not name:
+        return {"error": "invalid_product_data", "message": "product_id and name are required."}
+
+    if quantity < 1:
+        return {"error": "quantity_must_be_positive"}
+
+    existing = db.query(CartItem).filter(
+        CartItem.merchant_id == merchant_id,
+        CartItem.customer_email == customer_email,
+        CartItem.product_id == product_id
+    ).first()
+
+    if existing:
+        new_quantity = existing.quantity + quantity
+        if new_quantity > MAX_LINE_QUANTITY:
+            return {"error": "max_line_quantity_exceeded", "message": f"Maximum quantity per item is {MAX_LINE_QUANTITY}."}
+        existing.quantity = new_quantity
+        existing.updated_at = datetime.now(timezone.utc)
+        db.commit()
+        return {"status": "updated", "product_id": product_id, "quantity": new_quantity}
+
+    current_count = db.query(CartItem).filter(
+        CartItem.merchant_id == merchant_id,
+        CartItem.customer_email == customer_email
+    ).count()
+
+    if current_count >= MAX_CART_ITEMS:
+        return {"error": "cart_full", "message": f"Cart is full (max {MAX_CART_ITEMS} items). Remove something before adding more."}
+
+    if quantity > MAX_LINE_QUANTITY:
+        return {"error": "max_line_quantity_exceeded", "message": f"Maximum quantity per item is {MAX_LINE_QUANTITY}."}
+
+    new_item = CartItem(
+        merchant_id=merchant_id,
+        customer_email=customer_email,
+        product_id=product_id,
+        name=name,
+        thumbnail_url=thumbnail_url,
+        price=price,
+        quantity=quantity
+    )
+    db.add(new_item)
+    db.commit()
+    return {"status": "added", "product_id": product_id, "quantity": quantity}
+
+
+async def execute_get_cart_items(merchant_id: str, customer_email: str, db: Session) -> dict:
+    rows = db.query(CartItem).filter(
+        CartItem.merchant_id == merchant_id,
+        CartItem.customer_email == customer_email
+    ).order_by(CartItem.created_at.asc()).all()
+
+    items = [
+        {
+            "product_id": r.product_id,
+            "name": r.name,
+            "thumbnail_url": r.thumbnail_url,
+            "price": float(r.price),
+            "quantity": r.quantity,
+        }
+        for r in rows
+    ]
+    subtotal = sum(float(r.price) * r.quantity for r in rows)
+    return {"items": items, "count": len(items), "subtotal": round(subtotal, 2)}
+
+
+async def execute_update_cart_item(merchant_id: str, customer_email: str, args: dict, db: Session) -> dict:
+    product_id = str(args.get("product_id", "")).strip()
+    try:
+        quantity = int(args.get("quantity", 0))
+    except (TypeError, ValueError):
+        quantity = 0
+
+    existing = db.query(CartItem).filter(
+        CartItem.merchant_id == merchant_id,
+        CartItem.customer_email == customer_email,
+        CartItem.product_id == product_id
+    ).first()
+
+    if not existing:
+        return {"error": "not_in_cart"}
+
+    if quantity <= 0:
+        db.delete(existing)
+        db.commit()
+        return {"status": "removed", "product_id": product_id}
+
+    if quantity > MAX_LINE_QUANTITY:
+        return {"error": "max_line_quantity_exceeded", "message": f"Maximum quantity per item is {MAX_LINE_QUANTITY}."}
+
+    existing.quantity = quantity
+    existing.updated_at = datetime.now(timezone.utc)
+    db.commit()
+    return {"status": "updated", "product_id": product_id, "quantity": quantity}
+
+
+async def execute_remove_from_cart(merchant_id: str, customer_email: str, args: dict, db: Session) -> dict:
+    product_id = str(args.get("product_id", "")).strip()
+
+    existing = db.query(CartItem).filter(
+        CartItem.merchant_id == merchant_id,
+        CartItem.customer_email == customer_email,
+        CartItem.product_id == product_id
+    ).first()
+
+    if not existing:
+        return {"error": "not_in_cart"}
+
+    db.delete(existing)
+    db.commit()
+    return {"status": "removed", "product_id": product_id}
+
 def build_system_instruction(merchant_name: str) -> str:
     return f"""You are the sales representative and shopping assistant for {merchant_name}. 
 
@@ -259,6 +475,7 @@ Your primary goal is to help customers find products, enthusiastically promote o
 Rules:
 - Act like a passionate salesperson: if a customer asks if a product is "worth it" or is good, speak highly of its qualities, describe its taste/appeal/utility enthusiastically, and encourage them to try it!
 - Always use the search_products function to find real products — never invent product names, prices, or descriptions.
+- When customers ask to add, check, update, or remove items in their cart, call the appropriate cart function (add_to_cart, get_cart_items, update_cart_item, remove_from_cart).
 - When you mention specific products in your reply, don't repeat their full details in text (name, price, description) — the product cards render separately below your message. Just reference them naturally, e.g. "You'll love these options:".
 - If a search returns no results, say so plainly and suggest the customer try different terms — don't fabricate alternatives.
 - Keep replies conversational, persuasive, and short. A sentence or two of high-energy framing is usually enough; let the product cards do the rest.
@@ -335,6 +552,29 @@ def list_conversations(
     }
 
 
+class CartItemResponse(BaseModel):
+    product_id: str
+    name: str
+    thumbnail_url: Optional[str] = None
+    price: float
+    quantity: int
+
+class CartResponse(BaseModel):
+    items: List[CartItemResponse]
+    count: int
+    subtotal: float
+
+@router.get("/cart", response_model=CartResponse)
+async def get_cart(
+    session: dict = Depends(get_current_session),
+    db: Session = Depends(get_db)
+):
+    """
+    Fetch the customer's current cart contents for the current merchant session.
+    """
+    return await execute_get_cart_items(session["merchant_id"], session["customer_ref"], db)
+
+
 async def message_event_stream(conversation_id: str, user_message: str, session: dict, db: Session):
     # 1. Fetch previous history messages from DB for the model (before inserting the new user message)
     previous_messages = db.query(ConversationMessage).filter(
@@ -372,7 +612,7 @@ async def message_event_stream(conversation_id: str, user_message: str, session:
         )
 
     # Yield Thinking state
-    yield json.dumps({"type": "status", "stage": "thinking"}) + "\n"
+    yield json.dumps(get_status_payload("thinking")) + "\n"
     await asyncio.sleep(0.1)
 
     # Await and yield the auto-generated title if available
@@ -393,7 +633,7 @@ async def message_event_stream(conversation_id: str, user_message: str, session:
     model = GenerativeModel(
         settings.GEMINI_MODEL,
         system_instruction=build_system_instruction(merchant_name),
-        tools=[product_search_tool],
+        tools=[agent_tool],
     )
 
     chat = model.start_chat(history=history)
@@ -414,8 +654,10 @@ async def message_event_stream(conversation_id: str, user_message: str, session:
         if not function_call:
             break
 
+        stage = TOOL_TO_STAGE.get(function_call.name, "thinking")
+        yield json.dumps(get_status_payload(stage)) + "\n"
+
         if function_call.name == "search_products":
-            yield json.dumps({"type": "status", "stage": "searching_products"}) + "\n"
             
             try:
                 args = dict(function_call.args)
@@ -453,7 +695,45 @@ async def message_event_stream(conversation_id: str, user_message: str, session:
                 response = None
                 break
 
-    yield json.dumps({"type": "status", "stage": "final_touches"}) + "\n"
+        elif function_call.name in ("add_to_cart", "get_cart_items", "update_cart_item", "remove_from_cart"):
+            try:
+                args = dict(function_call.args) if function_call.args else {}
+                m_id = session["merchant_id"]
+                c_email = session["customer_ref"]
+
+                if function_call.name == "add_to_cart":
+                    result = await execute_add_to_cart(m_id, c_email, args, db)
+                elif function_call.name == "get_cart_items":
+                    result = await execute_get_cart_items(m_id, c_email, db)
+                elif function_call.name == "update_cart_item":
+                    result = await execute_update_cart_item(m_id, c_email, args, db)
+                elif function_call.name == "remove_from_cart":
+                    result = await execute_remove_from_cart(m_id, c_email, args, db)
+
+                # Stream event when cart is modified (add/update/remove, NOT plain get_cart_items fetch)
+                if function_call.name != "get_cart_items":
+                    cart_state = await execute_get_cart_items(m_id, c_email, db)
+                    yield json.dumps({
+                        "type": "cart_updated",
+                        "items": cart_state["items"],
+                        "count": cart_state["count"],
+                        "subtotal": cart_state["subtotal"]
+                    }) + "\n"
+
+            except Exception as e:
+                print(f"Cart tool {function_call.name} failed: {e}")
+                result = {"error": "cart_operation_failed", "message": str(e)}
+
+            try:
+                response = await chat.send_message_async(
+                    Part.from_function_response(name=function_call.name, response=result)
+                )
+            except Exception as e:
+                print(f"Error calling Gemini with cart tool response: {e}")
+                response = None
+                break
+
+    yield json.dumps(get_status_payload("final_touches")) + "\n"
     await asyncio.sleep(0.2)
 
     if response:
