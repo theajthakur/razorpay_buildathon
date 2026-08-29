@@ -19,7 +19,7 @@ export default function MessageList({ messages, isLoading }: MessageListProps) {
   }, [messages, isLoading]);
 
   return (
-    <div className="flex-1 overflow-y-auto px-4 py-6 space-y-6 w-full max-w-3xl mx-auto flex flex-col scrollbar-thin">
+    <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6 w-full max-w-full flex flex-col no-scrollbar">
       {messages.map((message) => (
         <MessageBubble key={message.id} message={message} />
       ))}

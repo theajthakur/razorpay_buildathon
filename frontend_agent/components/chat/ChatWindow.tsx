@@ -10,12 +10,14 @@ import MessageList from "./MessageList";
 import ChatInput from "./ChatInput";
 import { AlertCircle } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { useAuth } from "@/lib/context/AuthContext";
 
 interface ChatWindowProps {
   conversationId: string;
 }
 
 export function ChatWindow({ conversationId }: ChatWindowProps) {
+  const { isAuthenticated } = useAuth();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputValue, setInputValue] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -145,7 +147,8 @@ export function ChatWindow({ conversationId }: ChatWindowProps) {
           onChange={setInputValue}
           onSubmit={handleSendMessage}
           isLoading={isLoading}
-          placeholder="Ask anything..."
+          disabled={!isAuthenticated}
+          placeholder={isAuthenticated ? "Ask anything..." : "Please sign in to reply..."}
         />
       </div>
     </div>

@@ -10,6 +10,7 @@ interface ChatInputProps {
   onSubmit: () => void;
   isLoading?: boolean;
   placeholder?: string;
+  disabled?: boolean;
 }
 
 export function ChatInput({
@@ -17,7 +18,8 @@ export function ChatInput({
   onChange,
   onSubmit,
   isLoading = false,
-  placeholder = "Message the assistant..."
+  placeholder = "Message the assistant...",
+  disabled = false
 }: ChatInputProps) {
   const { primaryColor } = useBranding();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -35,20 +37,22 @@ export function ChatInput({
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      if (value.trim() && !isLoading) {
+      if (value.trim() && !isLoading && !disabled) {
         onSubmit();
       }
     }
   };
 
   const handleSend = () => {
-    if (value.trim() && !isLoading) {
+    if (value.trim() && !isLoading && !disabled) {
       onSubmit();
     }
   };
 
+  const isDisabled = disabled || isLoading;
+
   return (
-    <div className="w-full max-w-3xl mx-auto px-4 pb-6 pt-2">
+    <div className="w-full max-w-full px-6 pb-6 pt-2">
       <div className="relative flex items-end w-full rounded-2xl border border-secondary-200 bg-white shadow-xs focus-within:shadow-md focus-within:border-secondary-300 transition-all">
         <textarea
           ref={textareaRef}
@@ -57,16 +61,16 @@ export function ChatInput({
           onChange={(e) => onChange(e.target.value)}
           onKeyDown={handleKeyDown}
           placeholder={placeholder}
-          disabled={isLoading}
-          className="flex-1 w-full pl-4 pr-14 py-3.5 bg-transparent text-secondary-900 text-sm focus:outline-none placeholder-secondary-400 resize-none max-h-[150px] overflow-y-auto leading-relaxed"
+          disabled={isDisabled}
+          className="flex-1 w-full pl-4 pr-14 py-3.5 bg-transparent text-secondary-900 text-sm focus:outline-none placeholder-secondary-400 resize-none max-h-[150px] overflow-y-auto leading-relaxed disabled:cursor-not-allowed"
         />
         
         <button
           onClick={handleSend}
-          disabled={!value.trim() || isLoading}
-          style={value.trim() && !isLoading ? { backgroundColor: primaryColor, color: "#ffffff" } : undefined}
+          disabled={!value.trim() || isDisabled}
+          style={value.trim() && !isDisabled ? { backgroundColor: primaryColor, color: "#ffffff" } : undefined}
           className={`absolute right-3 bottom-3 p-2 rounded-xl transition-all duration-200 active:scale-95 ${
-            value.trim() && !isLoading
+            value.trim() && !isDisabled
               ? "text-white cursor-pointer"
               : "bg-secondary-100 text-secondary-400 cursor-not-allowed"
           }`}

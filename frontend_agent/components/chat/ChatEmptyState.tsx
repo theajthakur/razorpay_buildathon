@@ -5,9 +5,11 @@ import { useRouter } from "next/navigation";
 import { useBranding } from "@/lib/context/BrandingContext";
 import { ChatInput } from "./ChatInput";
 import apiClient from "@/lib/api/client";
+import { useAuth } from "@/lib/context/AuthContext";
 
 export default function ChatEmptyState() {
   const { branding, primaryColor } = useBranding();
+  const { isAuthenticated } = useAuth();
   const [inputValue, setInputValue] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
@@ -92,7 +94,12 @@ export default function ChatEmptyState() {
           onChange={setInputValue}
           onSubmit={handleStartConversation}
           isLoading={isLoading}
-          placeholder="Ask something to start a new chat..."
+          disabled={!isAuthenticated}
+          placeholder={
+            isAuthenticated
+              ? "Ask something to start a new chat..."
+              : "Please sign in to start a conversation..."
+          }
         />
       </div>
     </div>
