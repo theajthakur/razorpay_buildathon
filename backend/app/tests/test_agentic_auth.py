@@ -425,7 +425,75 @@ class TestAgenticAuth(unittest.TestCase):
             self.db.delete(db_session)
             self.db.commit()
 
-    def test_message_persistence_and_retrieval(self):
+    @patch("httpx.AsyncClient.request")
+    @patch("app.agentic.router.vertexai.init")
+    @patch("app.agentic.router.GenerativeModel")
+    def test_message_persistence_and_retrieval(self, mock_gen_model, mock_init, mock_httpx_request):
+        # Setup products config in DB
+        self.onboarding.products_config = {
+            "path": "products",
+            "method": "GET",
+            "payload_key": "query",
+            "response_key": "products"
+        }
+        self.db.commit()
+
+        # Setup mock behavior for httpx request
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {
+            "products": [
+                {
+                    "id": "p1",
+                    "name": "Pizza Margherita",
+                    "description": "Delicious pizza",
+                    "price": 250.0,
+                    "thumbnailUrl": "http://img.com"
+                }
+            ]
+        }
+        from unittest.mock import AsyncMock
+        mock_httpx_request.side_effect = AsyncMock(return_value=mock_resp)
+
+        # Setup mock behavior for GenerativeModel
+        mock_chat = MagicMock()
+        
+        # 1. Response carrying function call
+        mock_resp_fc = MagicMock()
+        mock_part_fc = MagicMock()
+        mock_part_fc.function_call.name = "search_products"
+        mock_part_fc.function_call.args = {"query": "pizza"}
+        mock_resp_fc.candidates = [MagicMock()]
+        mock_resp_fc.candidates[0].content.parts = [mock_part_fc]
+        
+        # 2. Response carrying final text
+        mock_resp_final = MagicMock()
+        mock_part_text = MagicMock()
+        mock_part_text.function_call = None
+        mock_resp_final.candidates = [MagicMock()]
+        mock_resp_final.candidates[0].content.parts = [mock_part_text]
+        mock_resp_final.text = "Here is what I found for pizza."
+        
+        mock_chat.send_message_async = AsyncMock(side_effect=[mock_resp_fc, mock_resp_final])
+        
+        mock_model_instance = MagicMock()
+        mock_model_instance.start_chat.return_value = mock_chat
+        mock_title_resp = MagicMock()
+        mock_title_resp.text = "Pizza Search Discussion"
+        mock_model_instance.generate_content_async = AsyncMock(return_value=mock_title_resp)
+        mock_gen_model.return_value = mock_model_instance
+
+        # Create a Merchant User Session for header validation
+        db_session = MerchantUserSession(
+            id="owner-session-id",
+            merchant_id=self.test_user_id,
+            customer_ref="customer_persist@test.com",
+            email="customer_persist@test.com",
+            merchant_token_encrypted=encrypt_merchant_token("test-merchant-raw-token"),
+            expires_at=datetime.now(timezone.utc) + timedelta(minutes=30)
+        )
+        self.db.add(db_session)
+
         # 1. Create a Conversation in DB
         convo_id = "test-convo-persist-123"
         convo = Conversation(
@@ -467,49 +535,71 @@ class TestAgenticAuth(unittest.TestCase):
             # Save original updated_at timestamp
             original_updated_at = convo.updated_at
 
-            # 3. Post user message using Owner JWT
+            # 3. Post user message using Owner JWT (Streams status events and final result)
             response = self.client.post(
                 f"/agentic/conversations/{convo_id}/messages",
                 json={
-                    "sender": "user",
-                    "message": "Hello, do you have running shoes?"
+                    "message": "Hello, do you have pizza?"
                 },
                 headers={"Authorization": f"Bearer {token_owner}"}
             )
             self.assertEqual(response.status_code, 200)
-            data = response.json()
-            self.assertEqual(data["sender"], "user")
-            self.assertEqual(data["message"], "Hello, do you have running shoes?")
-            self.assertIn("message_id", data)
-
-            # 4. Post agent reply using Owner JWT
-            response = self.client.post(
-                f"/agentic/conversations/{convo_id}/messages",
-                json={
-                    "sender": "agent",
-                    "message": "Yes, we do!"
-                },
-                headers={"Authorization": f"Bearer {token_owner}"}
-            )
-            self.assertEqual(response.status_code, 200)
-            data = response.json()
-            self.assertEqual(data["sender"], "agent")
-            self.assertEqual(data["message"], "Yes, we do!")
+            
+            # Parse NDJSON response lines
+            import json as py_json
+            lines = [py_json.loads(line) for line in response.text.split("\n") if line.strip()]
+            
+            # Expecting: 3 status stages and 1 final payload
+            # Expecting: 1 status, 1 title, 2 status, 1 final payload
+            self.assertEqual(len(lines), 5)
+            self.assertEqual(lines[0]["type"], "status")
+            self.assertEqual(lines[0]["stage"], "thinking")
+            self.assertEqual(lines[1]["type"], "title")
+            self.assertEqual(lines[1]["title"], "Pizza Search Discussion")
+            self.assertEqual(lines[2]["type"], "status")
+            self.assertEqual(lines[2]["stage"], "searching_products")
+            self.assertEqual(lines[3]["type"], "status")
+            self.assertEqual(lines[3]["stage"], "final_touches")
+            
+            self.assertEqual(lines[4]["type"], "final")
+            user_msg = lines[4]["user_message"]
+            agent_msg = lines[4]["agent_message"]
+            
+            self.assertEqual(user_msg["sender"], "user")
+            self.assertEqual(user_msg["message"], "Hello, do you have pizza?")
+            self.assertIn("message_id", user_msg)
+            
+            self.assertEqual(agent_msg["sender"], "agent")
+            self.assertTrue(len(agent_msg["products"]) > 0)
 
             # Refresh conversation to verify updated_at has bumped
             self.db.refresh(convo)
             self.assertNotEqual(convo.updated_at, original_updated_at)
 
-            # 5. Fetch messages as Owner (Should yield 2 messages in ASC order)
+            # 5. Fetch messages as Owner (Should yield 2 messages in ASC order + title)
             response = self.client.get(
                 f"/agentic/conversations/{convo_id}/messages",
                 headers={"Authorization": f"Bearer {token_owner}"}
             )
             self.assertEqual(response.status_code, 200)
-            msg_list = response.json()["messages"]
+            res_json = response.json()
+            self.assertEqual(res_json["title"], "Pizza Search Discussion")
+            msg_list = res_json["messages"]
             self.assertEqual(len(msg_list), 2)
             self.assertEqual(msg_list[0]["sender"], "user")
             self.assertEqual(msg_list[1]["sender"], "agent")
+            self.assertTrue(len(msg_list[1]["products"]) > 0)
+
+            # 5b. Fetch conversations list for this user (Should yield 1 conversation)
+            response = self.client.get(
+                "/agentic/conversations",
+                headers={"Authorization": f"Bearer {token_owner}"}
+            )
+            self.assertEqual(response.status_code, 200)
+            convo_list = response.json()["conversations"]
+            self.assertEqual(len(convo_list), 1)
+            self.assertEqual(convo_list[0]["id"], convo_id)
+            self.assertEqual(convo_list[0]["title"], "Pizza Search Discussion")
 
             # 6. Verify 404 security checks for Non-Owner (Intruder)
             # Try to fetch
@@ -523,7 +613,6 @@ class TestAgenticAuth(unittest.TestCase):
             response = self.client.post(
                 f"/agentic/conversations/{convo_id}/messages",
                 json={
-                    "sender": "user",
                     "message": "I want to steal this session"
                 },
                 headers={"Authorization": f"Bearer {token_intruder}"}
@@ -531,10 +620,12 @@ class TestAgenticAuth(unittest.TestCase):
             self.assertEqual(response.status_code, 404)
 
         finally:
+            self.onboarding.products_config = None
             # Clean up all created messages and conversation
             from app.system.models import ConversationMessage
             self.db.query(ConversationMessage).filter(ConversationMessage.conversation_id == convo_id).delete()
             self.db.delete(convo)
+            self.db.delete(db_session)
             self.db.commit()
 
 

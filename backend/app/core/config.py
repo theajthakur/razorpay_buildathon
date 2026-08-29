@@ -19,6 +19,11 @@ class Settings(BaseSettings):
     AWS_REGION: str = "us-east-1"
     S3_BUCKET_NAME: str = "shopagent-razorpay"
 
+    # GCP and Gemini SDK Settings
+    GCP_PROJECT_ID: str = "learncloud-501101"
+    GCP_LOCATION: str = "us-central1"
+    GEMINI_MODEL: str = "gemini-2.5-flash"
+
 
 
     model_config = SettingsConfigDict(

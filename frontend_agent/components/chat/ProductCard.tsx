@@ -39,11 +39,11 @@ export default function ProductCard({ product, onAddToCart }: ProductCardProps) 
   const firstLetter = product.name ? product.name.charAt(0).toUpperCase() : "?";
 
   return (
-    <div className="group flex flex-col w-56 h-76 shrink-0 rounded-xl bg-white border border-secondary-200 overflow-hidden shadow-xs transition-all duration-300 hover:shadow-md hover:border-secondary-300 select-none">
+    <div className="group flex flex-col w-[180px] h-[220px] shrink-0 rounded-xl bg-white border border-secondary-100 overflow-hidden shadow-[0_2px_8px_rgba(0,0,0,0.03)] transition-all duration-300 hover:shadow-[0_8px_20px_rgba(0,0,0,0.06)] hover:border-secondary-200 select-none">
       {/* Thumbnail Container */}
-      <div className="relative w-full h-32 bg-secondary-100 flex items-center justify-center shrink-0 overflow-hidden">
+      <div className="relative w-full h-[96px] bg-secondary-50 flex items-center justify-center shrink-0 overflow-hidden">
         {imgError ? (
-          <div className="flex items-center justify-center w-full h-full bg-secondary-50 text-secondary-400 font-semibold text-3xl font-sans">
+          <div className="flex items-center justify-center w-full h-full bg-secondary-50 text-secondary-300 font-bold text-xl font-sans">
             {firstLetter}
           </div>
         ) : (
@@ -51,39 +51,45 @@ export default function ProductCard({ product, onAddToCart }: ProductCardProps) 
             src={product.thumbnailUrl}
             alt={product.name}
             onError={() => setImgError(true)}
-            className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-105"
+            className="w-full h-full object-cover transition-transform duration-500 group-hover:scale-103"
           />
         )}
       </div>
 
       {/* Product Information */}
-      <div className="flex flex-col flex-1 p-3.5 justify-between">
-        <div>
+      <div className="flex flex-col justify-between flex-grow p-2.5">
+        <div className="flex flex-col gap-0.5">
           <h4 
             title={product.name}
-            className="text-sm font-bold text-secondary-900 line-clamp-1 group-hover:text-primary-600 transition-colors"
+            className="text-[12px] font-semibold text-secondary-900 line-clamp-1 group-hover:text-primary-600 transition-colors leading-tight"
           >
             {product.name}
           </h4>
-          <p 
-            title={product.description}
-            className="text-xs text-secondary-500 mt-1 line-clamp-2 leading-relaxed"
-          >
-            {product.description}
-          </p>
+          {product.description ? (
+            <p 
+              title={product.description}
+              className="text-[10px] text-secondary-400 line-clamp-2 leading-normal"
+            >
+              {product.description}
+            </p>
+          ) : (
+            <p className="text-[10px] text-secondary-300 italic line-clamp-1">
+              Freshly prepared
+            </p>
+          )}
         </div>
 
         {/* Pricing and Action */}
-        <div className="flex items-center justify-between mt-3 pt-2 border-t border-secondary-100">
-          <span className="text-sm font-bold text-secondary-900 font-mono">
+        <div className="flex items-center justify-between mt-1">
+          <span className="text-[12px] font-bold text-secondary-900 font-mono">
             {getCurrencySymbol(product.currency)}
             {product.price}
           </span>
           <button
             onClick={handleAddToCart}
-            className="flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-secondary-900 text-white font-sans text-[11px] font-semibold transition-all hover:bg-secondary-800 active:scale-95 cursor-pointer"
+            className="flex items-center justify-center gap-1 px-2.5 py-1.5 rounded-lg bg-secondary-955 text-white font-sans text-[9px] font-semibold transition-all hover:bg-secondary-800 active:scale-95 cursor-pointer"
           >
-            <ShoppingCart className="w-3.5 h-3.5" />
+            <ShoppingCart className="w-3 h-3" />
             Add
           </button>
         </div>

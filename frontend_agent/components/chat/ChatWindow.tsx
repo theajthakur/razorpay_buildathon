@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { 
   ChatMessage, 
   mockSendMessage 
@@ -23,11 +23,110 @@ export function ChatWindow({ conversationId }: ChatWindowProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [isHistoryLoading, setIsHistoryLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
+  const [streamingStage, setStreamingStage] = useState<string | null>(null);
+  const [conversationTitle, setConversationTitle] = useState("Untitled");
   const router = useRouter();
 
   // Validate conversation UUID format or mock string for testing
   const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
   const isValidUuid = uuidRegex.test(conversationId) || conversationId === "returning-user";
+
+  const consumeMessageStream = useCallback(async (messageText: string, optimisticUserMsgId: string) => {
+    setIsLoading(true);
+    setStreamingStage("thinking");
+
+    let userMsgId = optimisticUserMsgId;
+    let streamReader: ReadableStreamDefaultReader<Uint8Array> | null = null;
+
+    try {
+      const token = localStorage.getItem("shop_agent_token");
+      const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
+      
+      const response = await fetch(`${apiBaseUrl}/agentic/conversations/${conversationId}/messages`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${token}`
+        },
+        body: JSON.stringify({ message: messageText })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Failed to send message: ${response.statusText}`);
+      }
+
+      streamReader = response.body!.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { done, value } = await streamReader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        let newlineIndex;
+
+        while ((newlineIndex = buffer.indexOf("\n")) >= 0) {
+          const line = buffer.slice(0, newlineIndex).trim();
+          buffer = buffer.slice(newlineIndex + 1);
+          if (!line) continue;
+
+          const event = JSON.parse(line);
+          if (event.type === "status") {
+            setStreamingStage(event.stage);
+          } else if (event.type === "title") {
+            setConversationTitle(event.title);
+            window.dispatchEvent(
+              new CustomEvent("conversation_title_updated", {
+                detail: { id: conversationId, title: event.title }
+              })
+            );
+          } else if (event.type === "final") {
+            const userMsgData = event.user_message;
+            const agentMsgData = event.agent_message;
+
+            const finalUserMsg: ChatMessage = {
+              id: userMsgData.message_id,
+              role: "user",
+              content: userMsgData.message,
+              createdAt: userMsgData.created_at
+            };
+
+            const finalAgentMsg: ChatMessage = {
+              id: agentMsgData.message_id,
+              role: "assistant",
+              content: agentMsgData.message,
+              products: agentMsgData.products,
+              createdAt: agentMsgData.created_at
+            };
+
+            setMessages(prev => {
+              const updated = prev.map(m => m.id === userMsgId ? finalUserMsg : m);
+              if (updated.some(m => m.id === finalAgentMsg.id)) {
+                return updated;
+              }
+              return [...updated, finalAgentMsg];
+            });
+            userMsgId = finalUserMsg.id;
+          }
+        }
+      }
+    } catch (err) {
+      console.error("Message stream error:", err);
+      // Mark bubble with error tag
+      setMessages(prev => 
+        prev.map(m => m.id === userMsgId ? { ...m, error: true } : m)
+      );
+    } finally {
+      setIsLoading(false);
+      setStreamingStage(null);
+      if (streamReader) {
+        try {
+          streamReader.releaseLock();
+        } catch (_) {}
+      }
+    }
+  }, [conversationId]);
 
   useEffect(() => {
     if (!isValidUuid) {
@@ -48,60 +147,28 @@ export function ChatWindow({ conversationId }: ChatWindowProps) {
           sessionStorage.removeItem(pendingKey);
 
           // Add user message optimistically
+          const userMsgId = Math.random().toString(36).substring(2, 15);
           const userMsg: ChatMessage = {
-            id: Math.random().toString(36).substring(2, 15),
+            id: userMsgId,
             role: "user",
             content: pendingMessageText,
             createdAt: new Date().toISOString()
           };
 
           setMessages([userMsg]);
-          setIsLoading(true);
           setIsHistoryLoading(false);
 
-          // Save user message in DB
-          try {
-            const userMsgPost = await apiClient.post(`/agentic/conversations/${conversationId}/messages`, {
-              sender: "user",
-              message: pendingMessageText
-            });
-            userMsg.id = userMsgPost.data.message_id;
-          } catch (err) {
-            console.error("Failed to persist pending user message:", err);
-            userMsg.error = true;
-            setMessages([userMsg]);
-          }
-
-          // Call mock assistant reply
-          const assistantReply = await mockSendMessage(conversationId, pendingMessageText);
-          
-          // Save assistant reply in DB
-          try {
-            const replyPost = await apiClient.post(`/agentic/conversations/${conversationId}/messages`, {
-              sender: "agent",
-              message: assistantReply.content
-            });
-            assistantReply.id = replyPost.data.message_id;
-          } catch (err) {
-            console.error("Failed to persist assistant reply:", err);
-            assistantReply.error = true;
-          }
-
-          setMessages(prev => {
-            const updated = [...prev];
-            if (userMsg.error) {
-              updated[0] = { ...userMsg };
-            }
-            return [...updated, assistantReply];
-          });
-          setIsLoading(false);
+          // Consume stream to trigger and persist both
+          await consumeMessageStream(pendingMessageText, userMsgId);
         } else {
-          // 2. Otherwise load history from backend
-          const response = await apiClient.get<{ messages: any[] }>(`/agentic/conversations/${conversationId}/messages`);
+          // 2. Otherwise load history exactly once on mount
+          const response = await apiClient.get<{ title: string; messages: any[] }>(`/agentic/conversations/${conversationId}/messages`);
+          setConversationTitle(response.data.title || "Untitled");
           const history: ChatMessage[] = response.data.messages.map((m: any) => ({
             id: m.message_id,
             role: m.sender === "agent" ? "assistant" : "user",
             content: m.message,
+            products: m.products,
             createdAt: m.created_at
           }));
           setMessages(history);
@@ -115,7 +182,7 @@ export function ChatWindow({ conversationId }: ChatWindowProps) {
     };
 
     loadConversation();
-  }, [conversationId, isValidUuid]);
+  }, [conversationId, isValidUuid, consumeMessageStream]);
 
   const handleSendMessage = async () => {
     if (!inputValue.trim() || isLoading) return;
@@ -133,43 +200,7 @@ export function ChatWindow({ conversationId }: ChatWindowProps) {
     };
 
     setMessages(prev => [...prev, userMsg]);
-    setIsLoading(true);
-
-    let userMsgSaved = false;
-    try {
-      const userMsgPost = await apiClient.post(`/agentic/conversations/${conversationId}/messages`, {
-        sender: "user",
-        message: userText
-      });
-      setMessages(prev =>
-        prev.map(m => m.id === userMsgId ? { ...m, id: userMsgPost.data.message_id } : m)
-      );
-      userMsgSaved = true;
-    } catch (err) {
-      console.error("Failed to persist user message:", err);
-      setMessages(prev =>
-        prev.map(m => m.id === userMsgId ? { ...m, error: true } : m)
-      );
-    }
-
-    try {
-      const assistantReply = await mockSendMessage(conversationId, userText);
-      try {
-        const replyPost = await apiClient.post(`/agentic/conversations/${conversationId}/messages`, {
-          sender: "agent",
-          message: assistantReply.content
-        });
-        assistantReply.id = replyPost.data.message_id;
-      } catch (err) {
-        console.error("Failed to persist assistant reply:", err);
-        assistantReply.error = true;
-      }
-      setMessages(prev => [...prev, assistantReply]);
-    } catch (err) {
-      console.error("Failed to generate assistant reply:", err);
-    } finally {
-      setIsLoading(false);
-    }
+    await consumeMessageStream(userText, userMsgId);
   };
 
   if (notFound) {
@@ -203,8 +234,18 @@ export function ChatWindow({ conversationId }: ChatWindowProps) {
 
   return (
     <div className="flex flex-col flex-1 h-full max-h-full overflow-hidden w-full relative">
+      {/* Dynamic Header showing conversation title */}
+      <div className="flex items-center justify-between h-14 px-6 border-b border-secondary-100 bg-white shrink-0 select-none">
+        <div className="flex items-center gap-2.5 min-w-0">
+          <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+          <span className="text-sm font-bold text-secondary-900 truncate">
+            {conversationTitle}
+          </span>
+        </div>
+      </div>
+
       {/* Scrollable messages container */}
-      <MessageList messages={messages} isLoading={isLoading} />
+      <MessageList messages={messages} isLoading={isLoading} streamingStage={streamingStage} />
       
       {/* Fixed input container */}
       <div className="shrink-0 bg-background-50 border-t border-secondary-100">

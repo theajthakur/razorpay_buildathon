@@ -1,10 +1,11 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 import { Menu, X, Plus, MessageSquare, Calendar, ChevronRight } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { BrandingProvider, useBranding } from "@/lib/context/BrandingContext";
-import { AuthProvider } from "@/lib/context/AuthContext";
+import { AuthProvider, useAuth } from "@/lib/context/AuthContext";
+import apiClient from "@/lib/api/client";
 import { LoginButton } from "../common/LoginButton";
 import { LoginModal } from "../chat/LoginModal";
 import { ScrollArea } from "../common/ScrollArea";
@@ -19,13 +20,89 @@ const MOCK_CHATS = [
   { id: "3f829bf2-d01f-477d-859f-2a73e99b859f", title: "Superfood Avocado Salad", date: "2 days ago" },
 ];
 
+function formatConvoDate(dateStr: string): string {
+  try {
+    const d = new Date(dateStr);
+    const now = new Date();
+    const diffMs = now.getTime() - d.getTime();
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    
+    if (diffDays === 0) {
+      return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    } else if (diffDays === 1) {
+      return "Yesterday";
+    } else {
+      return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+    }
+  } catch (_) {
+    return "";
+  }
+}
+
 function AppShellContent({ children }: AppShellProps) {
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
-  const [activeChatId, setActiveChatId] = useState("1");
+  const [activeChatId, setActiveChatId] = useState("");
   const { branding, brandingLoading, primaryColor } = useBranding();
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [isLoginOpen, setIsLoginOpen] = useState(false);
+  const { isAuthenticated } = useAuth();
+  const [conversations, setConversations] = useState<{ id: string; title: string; date: string }[]>([]);
   const router = useRouter();
+  const pathname = usePathname();
+
+  // Synchronize activeChatId automatically with URL path changes
+  useEffect(() => {
+    if (pathname) {
+      const match = pathname.match(/^\/chats\/([^\/]+)/);
+      if (match) {
+        setActiveChatId(match[1]);
+      } else {
+        setActiveChatId("");
+      }
+    }
+  }, [pathname]);
+
+  const fetchConversations = useCallback(async () => {
+    if (!isAuthenticated) {
+      setConversations(MOCK_CHATS);
+      return;
+    }
+    try {
+      const resp = await apiClient.get<{ conversations: any[] }>("/agentic/conversations");
+      const list = resp.data.conversations.map((c: any) => ({
+        id: c.id,
+        title: c.title || "Untitled",
+        date: formatConvoDate(c.created_at)
+      }));
+      setConversations(list);
+    } catch (err) {
+      console.error("Failed to load conversations list:", err);
+      setConversations(MOCK_CHATS);
+    }
+  }, [isAuthenticated]);
+
+  useEffect(() => {
+    fetchConversations();
+  }, [fetchConversations]);
+
+  useEffect(() => {
+    const handleTitleUpdate = (e: Event) => {
+      const { id, title } = (e as CustomEvent).detail;
+      setConversations(prev => {
+        const exists = prev.some(c => c.id === id);
+        if (exists) {
+          return prev.map(c => c.id === id ? { ...c, title } : c);
+        } else {
+          return [
+            { id, title, date: "Just now" },
+            ...prev
+          ];
+        }
+      });
+    };
+    window.addEventListener("conversation_title_updated", handleTitleUpdate);
+    return () => window.removeEventListener("conversation_title_updated", handleTitleUpdate);
+  }, []);
 
   // Sync logoUrl when branding loads or changes
   useEffect(() => {
@@ -137,11 +214,11 @@ function AppShellContent({ children }: AppShellProps) {
         <div className="flex-1 flex flex-col min-h-0 space-y-1.5">
           <div className="flex items-center justify-between px-2 text-[11px] font-bold tracking-wider text-secondary-400 uppercase select-none">
             <span>Recent Chats</span>
-            <span>{MOCK_CHATS.length}</span>
+            <span>{conversations.length}</span>
           </div>
 
           <ScrollArea className="flex-1 -mx-2 px-2 py-1 space-y-1">
-            {MOCK_CHATS.map((chat) => {
+            {conversations.map((chat) => {
               const isActive = chat.id === activeChatId;
               return (
                 <button

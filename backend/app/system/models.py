@@ -109,6 +109,7 @@ class Conversation(Base):
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     merchant_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     user_email = Column(String, nullable=False, index=True)
+    title = Column(String, nullable=False, server_default="Untitled", default="Untitled")
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=True)
 
@@ -143,6 +144,7 @@ class ConversationMessage(Base):
     sender = Column(SqlEnum(MessageSender), nullable=False)
     message = Column(Text, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    msg_metadata = Column("metadata", JSON, nullable=True, default=dict)
 
     __table_args__ = (
         Index("idx_convo_created", "conversation_id", "created_at"),

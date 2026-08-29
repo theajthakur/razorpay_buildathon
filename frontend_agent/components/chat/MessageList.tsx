@@ -8,9 +8,10 @@ import TypingIndicator from "./TypingIndicator";
 interface MessageListProps {
   messages: ChatMessage[];
   isLoading?: boolean;
+  streamingStage?: string | null;
 }
 
-export default function MessageList({ messages, isLoading }: MessageListProps) {
+export default function MessageList({ messages, isLoading, streamingStage }: MessageListProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -28,7 +29,7 @@ export default function MessageList({ messages, isLoading }: MessageListProps) {
         <div className="flex items-start gap-3 w-full animate-fade-in">
           {/* Avatar offset */}
           <div className="w-8 h-8 shrink-0" />
-          <TypingIndicator />
+          <TypingIndicator stage={streamingStage || undefined} />
         </div>
       )}
       
