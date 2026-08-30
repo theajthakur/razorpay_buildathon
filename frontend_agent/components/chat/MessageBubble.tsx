@@ -5,10 +5,26 @@ import ReactMarkdown from "react-markdown";
 import { ChatMessage } from "@/lib/mock/chat";
 import { useBranding } from "@/lib/context/BrandingContext";
 import ProductCardGrid from "./ProductCardGrid";
+import ProfileCard from "./ProfileCard";
+import OrderHistoryCard from "./OrderHistoryCard";
 import { User } from "lucide-react";
 
 interface MessageBubbleProps {
   message: ChatMessage;
+}
+
+function renderMessageExtra(message: ChatMessage) {
+  const action = message.metadata?.action;
+  switch (action) {
+    case "profile_card":
+      return <ProfileCard profile={message.metadata?.profile} />;
+    case "order_history_card":
+      return <OrderHistoryCard orders={message.metadata?.orders} count={message.metadata?.count} />;
+    default:
+      return message.products && message.products.length > 0 ? (
+        <ProductCardGrid products={message.products} />
+      ) : null;
+  }
 }
 
 export function MessageBubble({ message }: MessageBubbleProps) {
@@ -101,10 +117,8 @@ export function MessageBubble({ message }: MessageBubbleProps) {
           </div>
         </div>
 
-        {/* Product Recommendations */}
-        {message.products && message.products.length > 0 && (
-          <ProductCardGrid products={message.products} />
-        )}
+        {/* Dynamic Chat Cards / Extra Content */}
+        {renderMessageExtra(message)}
 
         {/* Timestamp & Error */}
         <div className="flex items-center gap-2 mt-1 px-1 self-start">

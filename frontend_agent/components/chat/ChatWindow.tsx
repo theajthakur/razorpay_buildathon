@@ -100,6 +100,7 @@ export function ChatWindow({ conversationId }: ChatWindowProps) {
               role: "assistant",
               content: agentMsgData.message,
               products: agentMsgData.products,
+              metadata: agentMsgData.metadata,
               createdAt: agentMsgData.created_at
             };
 
@@ -172,6 +173,7 @@ export function ChatWindow({ conversationId }: ChatWindowProps) {
             role: m.sender === "agent" ? "assistant" : "user",
             content: m.message,
             products: m.products,
+            metadata: m.metadata,
             createdAt: m.created_at
           }));
           setMessages(history);

@@ -142,6 +142,54 @@ class TestAddressOrderTools(unittest.TestCase):
         self.assertEqual(addr["pincode"], "560001")
 
     @patch("httpx.AsyncClient.request")
+    def test_execute_fetch_addresses_explicit_id_field_and_skipping(self, mock_request):
+        onboarding = Onboarding(
+            user_id=self.test_user_id,
+            base_url="https://api.teststore.com/v1",
+            auth_enabled=False,
+            addresses_config={
+                "supports_creation": False,
+                "fetch": {
+                    "path": "user/addresses",
+                    "method": "GET",
+                    "response_key": "data.addresses",
+                    "id_field": "_id"
+                }
+            }
+        )
+        self.db.add(onboarding)
+        self.db.commit()
+
+        # Mock response: Item 1 has "_id", Item 2 lacks "_id" (only has "id")
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "data": {
+                "addresses": [
+                    {
+                        "_id": "507f1f77bcf86cd799439011",
+                        "line1": "Suite 500",
+                        "city": "Mumbai",
+                        "pincode": "400001"
+                    },
+                    {
+                        "id": "guessed_wrong_id",
+                        "line1": "No mongo _id field",
+                        "city": "Pune"
+                    }
+                ]
+            }
+        }
+        mock_request.return_value = mock_response
+
+        import asyncio
+        res = asyncio.run(execute_fetch_addresses(self.test_user_id, self.session_data, self.db))
+        # Item 2 should be skipped because it lacks configured _id
+        self.assertEqual(res["count"], 1)
+        self.assertEqual(res["addresses"][0]["id"], "507f1f77bcf86cd799439011")
+        self.assertEqual(res["addresses"][0]["flat_no"], "Suite 500")
+
+    @patch("httpx.AsyncClient.request")
     def test_execute_create_address(self, mock_request):
         onboarding = Onboarding(
             user_id=self.test_user_id,

@@ -19,6 +19,13 @@ from app.agentic.dependencies import resolve_merchant_by_host
 from app.agentic.crypto import encrypt_merchant_token
 from app.agentic.auth_utils import resolve_session_expiry, get_value_by_path, extract_by_path
 from app.agentic.deps import get_current_session, get_merchant_token, get_merchant_auth_headers
+from app.agentic.merchant_api import call_merchant_api
+from app.core.logging_config import get_logger
+
+agent_logger = get_logger("agent")
+cart_logger = get_logger("cart")
+orders_logger = get_logger("orders")
+auth_logger = get_logger("auth")
 
 router = APIRouter()
 public_router = APIRouter()
@@ -64,6 +71,7 @@ class MessageResponse(BaseModel):
     message: str
     created_at: datetime
     products: Optional[List[ProductSchema]] = None
+    metadata: Optional[dict] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -104,6 +112,8 @@ TOOL_TO_STAGE = {
     "fetch_addresses": "fetching_addresses",
     "create_address": "saving_address",
     "create_order": "creating_order",
+    "get_order_history": "checking_orders",
+    "get_customer_profile": "fetching_profile",
 }
 
 STAGE_LABELS = {
@@ -117,6 +127,8 @@ STAGE_LABELS = {
     "fetching_addresses": "Fetching addresses…",
     "saving_address": "Saving address…",
     "creating_order": "Processing checkout…",
+    "checking_orders": "Looking up your orders…",
+    "fetching_profile": "Retrieving account details…",
     "final_touches": "Putting it together…",
 }
 
@@ -265,6 +277,18 @@ create_order_func = FunctionDeclaration(
     },
 )
 
+get_order_history_func = FunctionDeclaration(
+    name="get_order_history",
+    description="Fetch the customer's past and active orders. Use this when the customer asks about order status, tracking, or their order history.",
+    parameters={"type": "object", "properties": {}},
+)
+
+get_customer_profile_func = FunctionDeclaration(
+    name="get_customer_profile",
+    description="Fetch the customer's profile details (such as name, loyalty tier, or membership status). Use this when the customer asks about their account details or profile.",
+    parameters={"type": "object", "properties": {}},
+)
+
 async def build_tools_for_merchant(merchant_id: str, db: Session) -> Tool:
     onboarding = db.query(Onboarding).filter(Onboarding.user_id == merchant_id).first()
     
@@ -283,6 +307,12 @@ async def build_tools_for_merchant(merchant_id: str, db: Session) -> Tool:
         if onboarding.addresses_config.get("supports_creation"):
             function_declarations.append(create_address_func)
 
+    if onboarding and onboarding.order_history_config and isinstance(onboarding.order_history_config, dict) and onboarding.order_history_config.get("path"):
+        function_declarations.append(get_order_history_func)
+
+    if onboarding and onboarding.customer_profile_config and isinstance(onboarding.customer_profile_config, dict) and onboarding.customer_profile_config.get("path"):
+        function_declarations.append(get_customer_profile_func)
+
     return Tool(function_declarations=function_declarations)
 
 FIELD_CANDIDATES = {
@@ -300,8 +330,10 @@ def _pick(item: dict, candidates: list[str], field_label: str):
     raise KeyError(f"none of {candidates} found for '{field_label}' in product item: {item!r}")
 
 async def execute_search_products(merchant_id: str, args: dict, session: dict, db: Session) -> dict:
+    agent_logger.info(f"Product search requested: merchant={merchant_id}, query='{args.get('query')}'")
     onboarding = db.query(Onboarding).filter(Onboarding.user_id == merchant_id).first()
     if not onboarding or not onboarding.products_config:
+        agent_logger.warning(f"Product search aborted: onboarding config missing for merchant={merchant_id}")
         return {"error": "onboarding_config_not_found", "products": [], "count": 0}
 
     config = onboarding.products_config  # {"path": "products", "method": "GET", "payload_key": "query", "response_key": "products"}
@@ -315,10 +347,14 @@ async def execute_search_products(merchant_id: str, args: dict, session: dict, d
             from app.agentic.deps import get_merchant_auth_headers
             headers = get_merchant_auth_headers(session=session, db=db)
         except Exception as e:
-            print(f"Failed to resolve auth headers for product search: {e}")
+            agent_logger.warning(f"Failed to resolve auth headers for product search: {e}")
 
-    async with httpx.AsyncClient() as client:
-        resp = await client.request(config["method"], url, params=params, headers=headers)
+    resp = await call_merchant_api(
+        config["method"], url,
+        params=params,
+        headers=headers,
+        context="search_products",
+    )
     resp.raise_for_status()
 
     json_data = resp.json()
@@ -364,7 +400,7 @@ async def execute_search_products(merchant_id: str, args: dict, session: dict, d
                 "currency": "INR",  # default
             })
         except KeyError as e:
-            print(f"Skipping malformed product item: {e}")
+            agent_logger.debug(f"Skipping malformed product item: {e}")
             continue
 
     # Client-side filters
@@ -374,6 +410,8 @@ async def execute_search_products(merchant_id: str, args: dict, session: dict, d
             products = [p for p in products if p["price"] <= max_price]
         except Exception:
             pass
+
+    agent_logger.info(f"Product search completed: merchant={merchant_id}, count={len(products)}")
 
     return {"products": products, "count": len(products)}
 
@@ -396,9 +434,11 @@ async def execute_add_to_cart(merchant_id: str, customer_email: str, args: dict,
         quantity = 1
 
     if not product_id or not name:
+        cart_logger.warning(f"Cart add rejected (invalid data): customer={customer_email}")
         return {"error": "invalid_product_data", "message": "product_id and name are required."}
 
     if quantity < 1:
+        cart_logger.warning(f"Cart add rejected (non-positive quantity): customer={customer_email}")
         return {"error": "quantity_must_be_positive"}
 
     existing = db.query(CartItem).filter(
@@ -410,10 +450,12 @@ async def execute_add_to_cart(merchant_id: str, customer_email: str, args: dict,
     if existing:
         new_quantity = existing.quantity + quantity
         if new_quantity > MAX_LINE_QUANTITY:
+            cart_logger.warning(f"Cart add rejected (limit reached): product={product_id}, customer={customer_email}")
             return {"error": "max_line_quantity_exceeded", "message": f"Maximum quantity per item is {MAX_LINE_QUANTITY}."}
         existing.quantity = new_quantity
         existing.updated_at = datetime.now(timezone.utc)
         db.commit()
+        cart_logger.info(f"Item quantity updated in cart: product={product_id}, new_quantity={new_quantity}, customer={customer_email}")
         return {"status": "updated", "product_id": product_id, "quantity": new_quantity}
 
     current_count = db.query(CartItem).filter(
@@ -422,9 +464,11 @@ async def execute_add_to_cart(merchant_id: str, customer_email: str, args: dict,
     ).count()
 
     if current_count >= MAX_CART_ITEMS:
+        cart_logger.warning(f"Cart add rejected (cart full): customer={customer_email}")
         return {"error": "cart_full", "message": f"Cart is full (max {MAX_CART_ITEMS} items). Remove something before adding more."}
 
     if quantity > MAX_LINE_QUANTITY:
+        cart_logger.warning(f"Cart add rejected (limit reached): product={product_id}, customer={customer_email}")
         return {"error": "max_line_quantity_exceeded", "message": f"Maximum quantity per item is {MAX_LINE_QUANTITY}."}
 
     new_item = CartItem(
@@ -438,6 +482,7 @@ async def execute_add_to_cart(merchant_id: str, customer_email: str, args: dict,
     )
     db.add(new_item)
     db.commit()
+    cart_logger.info(f"Item added to cart: product={product_id}, quantity={quantity}, customer={customer_email}")
     return {"status": "added", "product_id": product_id, "quantity": quantity}
 
 
@@ -458,6 +503,7 @@ async def execute_get_cart_items(merchant_id: str, customer_email: str, db: Sess
         for r in rows
     ]
     subtotal = sum(float(r.price) * r.quantity for r in rows)
+    cart_logger.debug(f"Cart fetched: items={len(items)}, subtotal={subtotal}, customer={customer_email}")
     return {"items": items, "count": len(items), "subtotal": round(subtotal, 2)}
 
 
@@ -480,14 +526,17 @@ async def execute_update_cart_item(merchant_id: str, customer_email: str, args: 
     if quantity <= 0:
         db.delete(existing)
         db.commit()
+        cart_logger.info(f"Item removed from cart via update (quantity 0): product={product_id}, customer={customer_email}")
         return {"status": "removed", "product_id": product_id}
 
     if quantity > MAX_LINE_QUANTITY:
+        cart_logger.warning(f"Cart update rejected (limit reached): product={product_id}, customer={customer_email}")
         return {"error": "max_line_quantity_exceeded", "message": f"Maximum quantity per item is {MAX_LINE_QUANTITY}."}
 
     existing.quantity = quantity
     existing.updated_at = datetime.now(timezone.utc)
     db.commit()
+    cart_logger.info(f"Cart item updated: product={product_id}, quantity={quantity}, customer={customer_email}")
     return {"status": "updated", "product_id": product_id, "quantity": quantity}
 
 
@@ -505,10 +554,10 @@ async def execute_remove_from_cart(merchant_id: str, customer_email: str, args: 
 
     db.delete(existing)
     db.commit()
+    cart_logger.info(f"Cart item removed: product={product_id}, customer={customer_email}")
     return {"status": "removed", "product_id": product_id}
 
 ADDRESS_FIELD_CANDIDATES = {
-    "id": ["id", "_id", "address_id"],
     "flat_no": ["flatNo", "flat_no", "houseNo", "house_no", "line1"],
     "street": ["street", "address_line1", "line2"],
     "city": ["city"],
@@ -518,8 +567,10 @@ ADDRESS_FIELD_CANDIDATES = {
 }
 
 async def execute_fetch_addresses(merchant_id: str, session: dict, db: Session) -> dict:
+    agent_logger.info(f"Fetching addresses: merchant={merchant_id}, customer={session.get('customer_ref')}")
     onboarding = db.query(Onboarding).filter(Onboarding.user_id == merchant_id).first()
     if not onboarding or not onboarding.addresses_config:
+        agent_logger.warning(f"Address fetch aborted: onboarding config missing for merchant={merchant_id}")
         return {"error": "onboarding_config_not_found", "addresses": [], "count": 0}
 
     cfg = onboarding.addresses_config
@@ -528,11 +579,13 @@ async def execute_fetch_addresses(merchant_id: str, session: dict, db: Session) 
     elif isinstance(cfg, dict) and "fetch_path" in cfg:
         fetch_cfg = {"path": cfg.get("fetch_path"), "method": cfg.get("fetch_method", "GET"), "response_key": cfg.get("fetch_response_key")}
     else:
+        agent_logger.warning(f"Address fetch aborted: fetch config missing for merchant={merchant_id}")
         return {"error": "addresses_fetch_config_missing", "addresses": [], "count": 0}
 
     path = fetch_cfg.get("path", "")
     method = fetch_cfg.get("method", "GET")
     response_key = fetch_cfg.get("response_key", "addresses")
+    id_field = fetch_cfg.get("id_field")
 
     url = f"{onboarding.base_url.rstrip('/')}/{path.lstrip('/')}"
     headers = {}
@@ -540,10 +593,13 @@ async def execute_fetch_addresses(merchant_id: str, session: dict, db: Session) 
         try:
             headers = get_merchant_auth_headers(session=session, db=db)
         except Exception as e:
-            print(f"Failed to resolve auth headers for fetch_addresses: {e}")
+            agent_logger.warning(f"Failed to resolve auth headers for fetch_addresses: {e}")
 
-    async with httpx.AsyncClient() as client:
-        resp = await client.request(method, url, headers=headers)
+    resp = await call_merchant_api(
+        method, url,
+        headers=headers,
+        context="fetch_addresses",
+    )
     resp.raise_for_status()
 
     json_data = resp.json()
@@ -558,33 +614,51 @@ async def execute_fetch_addresses(merchant_id: str, session: dict, db: Session) 
     for item in raw_items:
         if not isinstance(item, dict):
             continue
+
+        raw_id = None
+        if id_field:
+            if id_field in item and item[id_field] is not None:
+                raw_id = item[id_field]
+        else:
+            for cand in ["id", "_id", "address_id"]:
+                if cand in item and item[cand] is not None:
+                    raw_id = item[cand]
+                    break
+
+        if raw_id is None:
+            agent_logger.warning(f"fetch_addresses: item missing configured id_field '{id_field or 'id/_id/address_id'}', skipping: {item!r}")
+            continue
+
         try:
-            addr = {}
+            addr = {"id": str(raw_id)}
             for field, candidates in ADDRESS_FIELD_CANDIDATES.items():
                 try:
                     addr[field] = _pick(item, candidates, field)
                 except KeyError:
-                    addr[field] = "" if field != "id" else "unknown"
-            if addr["id"] != "unknown" or addr["flat_no"] or addr["street"]:
-                addresses.append(addr)
+                    addr[field] = ""
+            addresses.append(addr)
         except Exception as e:
-            print(f"Skipping malformed address item: {e}")
+            agent_logger.debug(f"Skipping malformed address item: {e}")
             continue
 
+    agent_logger.info(f"Addresses fetched: merchant={merchant_id}, count={len(addresses)}")
     return {"addresses": addresses, "count": len(addresses)}
 
 
 ADDRESS_CONCEPT_ORDER = ["flat_no", "street", "city", "district", "state", "pincode"]
 
 async def execute_create_address(merchant_id: str, session: dict, args: dict, db: Session) -> dict:
+    agent_logger.info(f"Creating address: merchant={merchant_id}, customer={session.get('customer_ref')}")
     onboarding = db.query(Onboarding).filter(Onboarding.user_id == merchant_id).first()
     if not onboarding or not onboarding.addresses_config:
+        agent_logger.warning(f"Address creation aborted: onboarding config missing for merchant={merchant_id}")
         return {"error": "onboarding_config_not_found"}
 
     cfg = onboarding.addresses_config
     if isinstance(cfg, dict) and "create" in cfg and isinstance(cfg["create"], dict):
         create_cfg = cfg["create"]
     else:
+        agent_logger.warning(f"Address creation rejected: merchant={merchant_id} does not support creation")
         return {"error": "address_creation_not_supported", "message": "This merchant does not support agent address creation."}
 
     path = create_cfg.get("path", "")
@@ -604,18 +678,25 @@ async def execute_create_address(merchant_id: str, session: dict, args: dict, db
         try:
             headers = get_merchant_auth_headers(session=session, db=db)
         except Exception as e:
-            print(f"Failed to resolve auth headers for create_address: {e}")
+            agent_logger.warning(f"Failed to resolve auth headers for create_address: {e}")
 
-    async with httpx.AsyncClient() as client:
-        resp = await client.request(method, url, json=body, headers=headers)
+    resp = await call_merchant_api(
+        method, url,
+        json_body=body,
+        headers=headers,
+        context="create_address",
+    )
     resp.raise_for_status()
 
+    agent_logger.info(f"Address created successfully for merchant={merchant_id}")
     return {"status": "created", "response": resp.json()}
 
 
 async def execute_create_order(merchant_id: str, session: dict, conversation_id: str, args: dict, db: Session) -> dict:
     customer_email = session["customer_ref"]
     address_id = str(args.get("address_id", "")).strip()
+
+    orders_logger.info(f"Checkout initiated: merchant={merchant_id}, customer={customer_email}, address_id={address_id}")
 
     # 1. Load cart items
     cart_items = db.query(CartItem).filter(
@@ -624,10 +705,12 @@ async def execute_create_order(merchant_id: str, session: dict, conversation_id:
     ).order_by(CartItem.created_at.asc()).all()
 
     if not cart_items:
+        orders_logger.warning(f"Checkout aborted (cart empty): merchant={merchant_id}, customer={customer_email}")
         return {"error": "cart_empty", "message": "Your cart is empty. Please add products before checking out."}
 
     onboarding = db.query(Onboarding).filter(Onboarding.user_id == merchant_id).first()
     if not onboarding or not onboarding.create_order_config:
+        orders_logger.error(f"Checkout failed (config missing): merchant={merchant_id}")
         return {"error": "create_order_config_not_found"}
 
     config = onboarding.create_order_config
@@ -660,6 +743,7 @@ async def execute_create_order(merchant_id: str, session: dict, conversation_id:
     db.add(agent_order)
     db.commit()
     db.refresh(agent_order)
+    orders_logger.info(f"Agent order row created: agent_order_id={agent_order.id}, items_count={len(cart_items)}")
 
     # Step 2 — Construct merchant payload & call merchant API
     payload = {
@@ -686,16 +770,21 @@ async def execute_create_order(merchant_id: str, session: dict, conversation_id:
         try:
             headers = get_merchant_auth_headers(session=session, db=db)
         except Exception as e:
-            print(f"Failed to resolve auth headers for create_order: {e}")
+            orders_logger.warning(f"Failed to resolve auth headers for create_order: {e}")
 
     try:
-        async with httpx.AsyncClient() as client:
-            resp = await client.request(method, url, json=payload, headers=headers)
+        resp = await call_merchant_api(
+            method, url,
+            json_body=payload,
+            headers=headers,
+            context="create_order",
+        )
         
         if resp.status_code >= 400:
             agent_order.status = AgentOrderStatus.FAILED.value
             agent_order.failure_reason = f"merchant_api_error_{resp.status_code}: {resp.text[:200]}"
             db.commit()
+            orders_logger.error(f"Order failed (merchant API {resp.status_code}): agent_order_id={agent_order.id}")
             return {
                 "error": "merchant_order_failed",
                 "message": "The merchant's checkout service returned an error. Your cart remains intact."
@@ -706,6 +795,7 @@ async def execute_create_order(merchant_id: str, session: dict, conversation_id:
         agent_order.status = AgentOrderStatus.FAILED.value
         agent_order.failure_reason = f"merchant_api_exception: {str(e)[:200]}"
         db.commit()
+        orders_logger.error(f"Order failed (merchant API exception): agent_order_id={agent_order.id}, error={e}")
         return {
             "error": "merchant_api_exception",
             "message": "Failed to connect to the merchant's checkout service. Your cart remains intact."
@@ -725,6 +815,7 @@ async def execute_create_order(merchant_id: str, session: dict, conversation_id:
     agent_order.currency = currency
     agent_order.status = AgentOrderStatus.MERCHANT_ORDER_CREATED.value
     db.commit()
+    orders_logger.info(f"Merchant order API succeeded: merchant_order_id={merchant_order_id}, order_total={order_total}")
 
     # Step 3 — Create Razorpay Order
     settings = get_settings()
@@ -745,7 +836,7 @@ async def execute_create_order(merchant_id: str, session: dict, conversation_id:
             })
             razorpay_order_id = rzp_order.get("id")
         except Exception as e:
-            print(f"Error creating Razorpay order: {e}")
+            orders_logger.warning(f"Razorpay order creation fallback: {e}")
             razorpay_order_id = f"order_mock_{agent_order.id[:12]}"
     else:
         razorpay_order_id = f"order_mock_{agent_order.id[:12]}"
@@ -753,6 +844,7 @@ async def execute_create_order(merchant_id: str, session: dict, conversation_id:
     agent_order.razorpay_order_id = razorpay_order_id
     agent_order.status = AgentOrderStatus.AWAITING_PAYMENT.value
     db.commit()
+    orders_logger.info(f"Razorpay order created: razorpay_order_id={razorpay_order_id}, amount={order_total}")
 
     # Step 4 — Clear customer's cart
     db.query(CartItem).filter(
@@ -760,6 +852,7 @@ async def execute_create_order(merchant_id: str, session: dict, conversation_id:
         CartItem.customer_email == customer_email
     ).delete()
     db.commit()
+    orders_logger.info(f"Checkout completed awaiting payment: agent_order_id={agent_order.id}, merchant_order_id={merchant_order_id}")
 
     payment_metadata = {
         "action": "initiate_payment",
@@ -782,6 +875,134 @@ async def execute_create_order(merchant_id: str, session: dict, conversation_id:
         "message": "Order successfully created! Please proceed to payment to complete your order."
     }
 
+ORDER_FIELD_CANDIDATES = {
+    "order_id": ["order_id", "id", "_id"],
+    "status": ["status", "order_status"],
+    "total": ["total", "amount", "order_total"],
+    "created_at": ["created_at", "date", "placed_at"],
+    "items": ["items", "products", "line_items"],
+}
+
+async def execute_get_order_history(merchant_id: str, session: dict, db: Session) -> dict:
+    agent_logger.info(f"Fetching order history: merchant={merchant_id}, customer={session.get('customer_ref')}")
+    onboarding = db.query(Onboarding).filter(Onboarding.user_id == merchant_id).first()
+    if not onboarding or not onboarding.order_history_config:
+        agent_logger.warning(f"Order history fetch aborted: onboarding config missing for merchant={merchant_id}")
+        return {"error": "onboarding_config_not_found", "orders": [], "count": 0}
+
+    config = onboarding.order_history_config
+    path = config.get("path", "")
+    method = (config.get("method") or "GET").upper()
+    response_key = config.get("response_key", "orders")
+
+    if not path:
+        return {"error": "order_history_config_invalid", "orders": [], "count": 0}
+
+    url = f"{onboarding.base_url.rstrip('/')}/{path.lstrip('/')}"
+    headers = {}
+    if onboarding.auth_enabled:
+        try:
+            headers = get_merchant_auth_headers(session=session, db=db)
+        except Exception as e:
+            agent_logger.warning(f"Failed to resolve auth headers for get_order_history: {e}")
+
+    resp = await call_merchant_api(
+        method, url,
+        headers=headers,
+        context="get_order_history",
+    )
+    resp.raise_for_status()
+
+    json_data = resp.json()
+    raw_orders = extract_by_path(json_data, response_key, default=[])
+    if not isinstance(raw_orders, list):
+        if isinstance(json_data, list):
+            raw_orders = json_data
+        else:
+            raw_orders = []
+
+    orders = []
+    for item in raw_orders:
+        if not isinstance(item, dict):
+            continue
+        try:
+            order_data = {}
+            for field, candidates in ORDER_FIELD_CANDIDATES.items():
+                try:
+                    order_data[field] = _pick(item, candidates, field)
+                except KeyError:
+                    if field == "items":
+                        order_data[field] = []
+                    elif field == "total":
+                        order_data[field] = 0.0
+                    else:
+                        order_data[field] = "N/A" if field != "order_id" else f"ord_{len(orders)+1}"
+            orders.append(order_data)
+        except Exception as e:
+            agent_logger.debug(f"Skipping malformed order item: {e}")
+            continue
+
+    agent_logger.info(f"Order history fetched: merchant={merchant_id}, count={len(orders)}")
+    return {"orders": orders, "count": len(orders)}
+
+
+PROFILE_FIELD_CANDIDATES = {
+    "name": ["name", "full_name", "user_name", "customer_name"],
+    "email": ["email", "customer_email"],
+    "loyalty_tier": ["loyalty_tier", "tier", "membership_tier", "level"],
+    "member_since": ["member_since", "created_at", "joined_at", "registration_date"],
+}
+
+async def execute_get_customer_profile(merchant_id: str, session: dict, db: Session) -> dict:
+    agent_logger.info(f"Fetching customer profile: merchant={merchant_id}, customer={session.get('customer_ref')}")
+    onboarding = db.query(Onboarding).filter(Onboarding.user_id == merchant_id).first()
+    if not onboarding or not onboarding.customer_profile_config:
+        agent_logger.warning(f"Customer profile fetch aborted: onboarding config missing for merchant={merchant_id}")
+        return {"error": "onboarding_config_not_found", "profile": None}
+
+    config = onboarding.customer_profile_config
+    path = config.get("path", "")
+    method = (config.get("method") or "GET").upper()
+    response_key = config.get("response_key", "profile")
+
+    if not path:
+        return {"error": "customer_profile_config_invalid", "profile": None}
+
+    url = f"{onboarding.base_url.rstrip('/')}/{path.lstrip('/')}"
+    headers = {}
+    if onboarding.auth_enabled:
+        try:
+            headers = get_merchant_auth_headers(session=session, db=db)
+        except Exception as e:
+            agent_logger.warning(f"Failed to resolve auth headers for get_customer_profile: {e}")
+
+    resp = await call_merchant_api(
+        method, url,
+        headers=headers,
+        context="get_customer_profile",
+    )
+    resp.raise_for_status()
+
+    json_data = resp.json()
+    raw_profile = extract_by_path(json_data, response_key, default=json_data)
+    if not isinstance(raw_profile, dict):
+        raw_profile = json_data if isinstance(json_data, dict) else {}
+
+    profile = {}
+    for field, candidates in PROFILE_FIELD_CANDIDATES.items():
+        try:
+            val = _pick(raw_profile, candidates, field)
+            if val is not None and str(val).strip():
+                profile[field] = val
+        except KeyError:
+            pass
+
+    if "email" not in profile and session.get("customer_ref"):
+        profile["email"] = session.get("customer_ref")
+
+    agent_logger.info(f"Customer profile fetched: merchant={merchant_id}")
+    return {"profile": profile}
+
 def build_system_instruction(merchant_name: str) -> str:
     return f"""You are the sales representative and shopping assistant for {merchant_name}. 
 
@@ -791,6 +1012,8 @@ Rules:
 - Act like a passionate salesperson: if a customer asks if a product is "worth it" or is good, speak highly of its qualities, describe its taste/appeal/utility enthusiastically, and encourage them to try it!
 - Always use the search_products function to find real products — never invent product names, prices, or descriptions.
 - When customers ask to add, check, update, or remove items in their cart, call the appropriate cart function (add_to_cart, get_cart_items, update_cart_item, remove_from_cart).
+- When customers ask about their past or active orders, order status, or tracking, call get_order_history.
+- When customers ask about their account details, membership, or profile, call get_customer_profile.
 - When you mention specific products in your reply, don't repeat their full details in text (name, price, description) — the product cards render separately below your message. Just reference them naturally, e.g. "You'll love these options:".
 - If a search returns no results, say so plainly and suggest the customer try different terms — don't fabricate alternatives.
 - ADDRESS & CHECKOUT RULES:
@@ -895,6 +1118,10 @@ async def get_cart(
 
 
 async def message_event_stream(conversation_id: str, user_message: str, session: dict, db: Session):
+    agent_logger.info(f"Agent loop started: conversation_id={conversation_id}, customer={session.get('customer_ref')}")
+    start_time = datetime.now(timezone.utc)
+    tool_call_count = 0
+
     # 1. Fetch previous history messages from DB for the model (before inserting the new user message)
     previous_messages = db.query(ConversationMessage).filter(
         ConversationMessage.conversation_id == conversation_id
@@ -941,7 +1168,7 @@ async def message_event_stream(conversation_id: str, user_message: str, session:
             if new_title:
                 yield json.dumps({"type": "title", "title": new_title}) + "\n"
         except Exception as e:
-            print(f"Error generating initial title: {e}")
+            agent_logger.warning(f"Error generating initial title: {e}")
 
     settings = get_settings()
     vertexai.init(project=settings.GCP_PROJECT_ID, location=settings.GCP_LOCATION)
@@ -962,9 +1189,10 @@ async def message_event_stream(conversation_id: str, user_message: str, session:
     payment_metadata_to_attach = None
     
     try:
+        agent_logger.debug(f"Calling Gemini model {settings.GEMINI_MODEL} for conversation={conversation_id}")
         response = await chat.send_message_async(user_message)
     except Exception as e:
-        print(f"Error calling Gemini: {e}")
+        agent_logger.error(f"Error calling Gemini: {e}")
         response = None
 
     max_iterations = 4
@@ -976,6 +1204,8 @@ async def message_event_stream(conversation_id: str, user_message: str, session:
         if not function_call:
             break
 
+        tool_call_count += 1
+        agent_logger.info(f"Tool call dispatched: function={function_call.name}, conversation_id={conversation_id}")
         stage = TOOL_TO_STAGE.get(function_call.name, "thinking")
         yield json.dumps(get_status_payload(stage)) + "\n"
 
@@ -986,7 +1216,7 @@ async def message_event_stream(conversation_id: str, user_message: str, session:
                 result = await execute_search_products(session["merchant_id"], args, session, db)
                 collected_products.extend(result.get("products", []))
             except Exception as e:
-                print(f"Search products failed: {e}")
+                agent_logger.error(f"Search products failed: {e}")
                 result = {"error": "search_failed", "products": [], "count": 0}
 
             try:
@@ -994,7 +1224,7 @@ async def message_event_stream(conversation_id: str, user_message: str, session:
                     Part.from_function_response(name="search_products", response=result)
                 )
             except Exception as e:
-                print(f"Error calling Gemini with tool response: {e}")
+                agent_logger.error(f"Error calling Gemini with tool response: {e}")
                 response = None
                 break
 
@@ -1005,7 +1235,7 @@ async def message_event_stream(conversation_id: str, user_message: str, session:
                 yield json.dumps({"type": "title", "title": new_title}) + "\n"
                 result = {"status": "ok", "title": new_title}
             except Exception as e:
-                print(f"Rename conversation failed: {e}")
+                agent_logger.error(f"Rename conversation failed: {e}")
                 result = {"status": "error", "message": str(e)}
 
             try:
@@ -1013,7 +1243,7 @@ async def message_event_stream(conversation_id: str, user_message: str, session:
                     Part.from_function_response(name="create_conversation_title", response=result)
                 )
             except Exception as e:
-                print(f"Error calling Gemini with rename response: {e}")
+                agent_logger.error(f"Error calling Gemini with rename response: {e}")
                 response = None
                 break
 
@@ -1043,7 +1273,7 @@ async def message_event_stream(conversation_id: str, user_message: str, session:
                     }) + "\n"
 
             except Exception as e:
-                print(f"Cart tool {function_call.name} failed: {e}")
+                agent_logger.error(f"Cart tool {function_call.name} failed: {e}")
                 result = {"error": "cart_operation_failed", "message": str(e)}
 
             try:
@@ -1051,7 +1281,7 @@ async def message_event_stream(conversation_id: str, user_message: str, session:
                     Part.from_function_response(name=function_call.name, response=result)
                 )
             except Exception as e:
-                print(f"Error calling Gemini with cart tool response: {e}")
+                agent_logger.error(f"Error calling Gemini with cart tool response: {e}")
                 response = None
                 break
 
@@ -1059,7 +1289,7 @@ async def message_event_stream(conversation_id: str, user_message: str, session:
             try:
                 result = await execute_fetch_addresses(session["merchant_id"], session, db)
             except Exception as e:
-                print(f"fetch_addresses failed: {e}")
+                agent_logger.error(f"fetch_addresses failed: {e}")
                 result = {"error": "fetch_addresses_failed", "addresses": [], "count": 0}
 
             try:
@@ -1067,7 +1297,7 @@ async def message_event_stream(conversation_id: str, user_message: str, session:
                     Part.from_function_response(name="fetch_addresses", response=result)
                 )
             except Exception as e:
-                print(f"Error calling Gemini with fetch_addresses response: {e}")
+                agent_logger.error(f"Error calling Gemini with fetch_addresses response: {e}")
                 response = None
                 break
 
@@ -1076,7 +1306,7 @@ async def message_event_stream(conversation_id: str, user_message: str, session:
                 args = dict(function_call.args) if function_call.args else {}
                 result = await execute_create_address(session["merchant_id"], session, args, db)
             except Exception as e:
-                print(f"create_address failed: {e}")
+                agent_logger.error(f"create_address failed: {e}")
                 result = {"error": "create_address_failed", "message": str(e)}
 
             try:
@@ -1084,7 +1314,7 @@ async def message_event_stream(conversation_id: str, user_message: str, session:
                     Part.from_function_response(name="create_address", response=result)
                 )
             except Exception as e:
-                print(f"Error calling Gemini with create_address response: {e}")
+                agent_logger.error(f"Error calling Gemini with create_address response: {e}")
                 response = None
                 break
 
@@ -1104,7 +1334,7 @@ async def message_event_stream(conversation_id: str, user_message: str, session:
                     "subtotal": 0.0
                 }) + "\n"
             except Exception as e:
-                print(f"create_order failed: {e}")
+                agent_logger.error(f"create_order failed: {e}")
                 result = {"error": "create_order_failed", "message": str(e)}
 
             try:
@@ -1112,12 +1342,58 @@ async def message_event_stream(conversation_id: str, user_message: str, session:
                     Part.from_function_response(name="create_order", response=result)
                 )
             except Exception as e:
-                print(f"Error calling Gemini with create_order response: {e}")
+                agent_logger.error(f"Error calling Gemini with create_order response: {e}")
+                response = None
+                break
+
+        elif function_call.name == "get_order_history":
+            try:
+                result = await execute_get_order_history(session["merchant_id"], session, db)
+                if result.get("orders") is not None:
+                    payment_metadata_to_attach = {
+                        "action": "order_history_card",
+                        "orders": result.get("orders", []),
+                        "count": result.get("count", 0)
+                    }
+            except Exception as e:
+                agent_logger.error(f"get_order_history failed: {e}")
+                result = {"error": "get_order_history_failed", "orders": [], "count": 0}
+
+            try:
+                response = await chat.send_message_async(
+                    Part.from_function_response(name="get_order_history", response=result)
+                )
+            except Exception as e:
+                agent_logger.error(f"Error calling Gemini with get_order_history response: {e}")
+                response = None
+                break
+
+        elif function_call.name == "get_customer_profile":
+            try:
+                result = await execute_get_customer_profile(session["merchant_id"], session, db)
+                if result.get("profile"):
+                    payment_metadata_to_attach = {
+                        "action": "profile_card",
+                        "profile": result.get("profile")
+                    }
+            except Exception as e:
+                agent_logger.error(f"get_customer_profile failed: {e}")
+                result = {"error": "get_customer_profile_failed", "profile": None}
+
+            try:
+                response = await chat.send_message_async(
+                    Part.from_function_response(name="get_customer_profile", response=result)
+                )
+            except Exception as e:
+                agent_logger.error(f"Error calling Gemini with get_customer_profile response: {e}")
                 response = None
                 break
 
     yield json.dumps(get_status_payload("final_touches")) + "\n"
     await asyncio.sleep(0.2)
+
+    elapsed_ms = int((datetime.now(timezone.utc) - start_time).total_seconds() * 1000)
+    agent_logger.info(f"Agent loop completed in {elapsed_ms}ms, tool_calls={tool_call_count}, conversation_id={conversation_id}")
 
     if response:
         try:
@@ -1201,11 +1477,13 @@ async def login(
     Customer Login for the Agentic module.
     Authenticates against the merchant's login API dynamically and returns a ShopAgent JWT.
     """
+    auth_logger.info(f"Login attempt: merchant={payload.merchant_id}, email={payload.email}")
     settings = get_settings()
 
     # 1. Fetch onboarding configuration
     onboarding = db.query(Onboarding).filter(Onboarding.user_id == payload.merchant_id).first()
     if not onboarding or not onboarding.auth_config:
+        auth_logger.warning(f"Login failed: merchant={payload.merchant_id} not found or auth config missing")
         raise HTTPException(status_code=404, detail="merchant_not_found")
 
     auth_config = onboarding.auth_config
@@ -1213,6 +1491,7 @@ async def login(
     # 2. Extract mappings and prepare endpoint URL
     auth_url = auth_config.get("auth_url")
     if not auth_url:
+        auth_logger.warning(f"Login failed: auth_url missing for merchant={payload.merchant_id}")
         raise HTTPException(status_code=404, detail="merchant_not_found")
 
     # Resolve relative URL
@@ -1233,25 +1512,21 @@ async def login(
     }
 
     try:
-        async with httpx.AsyncClient() as client:
-            if method == "GET":
-                resp = await client.get(
-                    auth_url,
-                    params=request_body,
-                    timeout=10.0
-                )
-            else:
-                resp = await client.request(
-                    method,
-                    auth_url,
-                    json=request_body,
-                    timeout=10.0
-                )
-    except Exception:
-        # Generic 401 on connection failure
+        resp = await call_merchant_api(
+            method,
+            auth_url,
+            json_body=request_body if method != "GET" else None,
+            params=request_body if method == "GET" else None,
+            context="merchant_login",
+            redact_body_keys=["password", password_field],
+            timeout=10.0,
+        )
+    except Exception as e:
+        auth_logger.warning(f"Login failed (connection error): merchant={payload.merchant_id}, email={payload.email}, err={e}")
         raise HTTPException(status_code=401, detail="invalid_credentials")
 
     if resp.status_code != 200:
+        auth_logger.warning(f"Login failed (merchant returned {resp.status_code}): merchant={payload.merchant_id}, email={payload.email}")
         raise HTTPException(status_code=401, detail="invalid_credentials")
 
     merchant_data = resp.json()
@@ -1260,12 +1535,14 @@ async def login(
     try:
         merchant_token = extract_by_path(merchant_data, token_path)
     except HTTPException:
-        # Pass 502 straight through
+        auth_logger.warning(f"Login failed (shape mismatch): merchant={payload.merchant_id}, token_path={token_path}")
         raise
     except Exception:
+        auth_logger.warning(f"Login failed (shape mismatch): merchant={payload.merchant_id}, token_path={token_path}")
         raise HTTPException(status_code=502, detail="merchant_response_shape_mismatch")
 
     if not merchant_token:
+        auth_logger.warning(f"Login failed (empty token): merchant={payload.merchant_id}, token_path={token_path}")
         raise HTTPException(status_code=502, detail="merchant_response_shape_mismatch")
 
     # Extract customer reference
@@ -1296,6 +1573,7 @@ async def login(
     db.add(session)
     db.commit()
     db.refresh(session)
+    auth_logger.info(f"Login successful: merchant={payload.merchant_id}, customer={customer_ref}")
 
     # 5. Encode our JWT
     our_jwt = jwt.encode(
@@ -1385,7 +1663,8 @@ def get_conversation_messages(
             "sender": m.sender,
             "message": m.message,
             "created_at": m.created_at,
-            "products": m.msg_metadata.get("products") if m.msg_metadata else None
+            "products": m.msg_metadata.get("products") if m.msg_metadata else None,
+            "metadata": m.msg_metadata if m.msg_metadata else None
         })
 
     return {

@@ -25,7 +25,9 @@ import {
   Play,
   UploadCloud,
   Plus,
-  Trash2
+  Trash2,
+  CheckCircle2,
+  XCircle
 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { fetchOnboardingDetails, saveOnboardingDetails, testEndpoint, testCustomerAuth } from "@/lib/api/onboarding";
@@ -152,6 +154,7 @@ export default function OnboardingPage() {
   const [addrSelfCertified, setAddrSelfCertified] = useState(false);
   const [addrFetchPath, setAddrFetchPath] = useState("addresses");
   const [addrFetchResponseKey, setAddrFetchResponseKey] = useState("addresses");
+  const [addrFetchIdField, setAddrFetchIdField] = useState("id");
   const [addrCreatePath, setAddrCreatePath] = useState("addresses");
   const [addrCreateFields, setAddrCreateFields] = useState("line1, line2, city, state, pincode");
   const [addrCreateTestInputs, setAddrCreateTestInputs] = useState<Record<string, string>>({
@@ -239,6 +242,7 @@ export default function OnboardingPage() {
     addBearer,
     cookieName,
     authConfig,
+    addrFetchIdField,
     pageLoading,
     isSavedToDb
   ]);
@@ -327,6 +331,7 @@ export default function OnboardingPage() {
             if (addrs.fetch) {
               setAddrFetchPath(addrs.fetch.path || "addresses");
               setAddrFetchResponseKey(addrs.fetch.response_key || "addresses");
+              setAddrFetchIdField(addrs.fetch.id_field || "id");
             }
             if (addrs.create) {
               setAddrCreatePath(addrs.create.path || "addresses");
@@ -337,6 +342,7 @@ export default function OnboardingPage() {
           } else if (config.endpoints?.addresses) {
             setAddrFetchPath(config.endpoints.addresses.fetch_path || "addresses");
             setAddrFetchResponseKey(config.endpoints.addresses.fetch_response_key || "addresses");
+            setAddrFetchIdField(config.endpoints.addresses.id_field || "id");
             setAddrCreatePath(config.endpoints.addresses.create_path || "addresses");
             setAddrCreateFields(config.endpoints.addresses.create_fields || "line1, line2, city, state, pincode");
             setAddrSupportsCreation(!!config.endpoints.addresses.create_path);
@@ -852,7 +858,8 @@ export default function OnboardingPage() {
         fetch: {
           path: addrFetchPath,
           method: "GET",
-          response_key: addrFetchResponseKey
+          response_key: addrFetchResponseKey,
+          id_field: addrFetchIdField
         },
         create: addrSupportsCreation ? {
           path: addrCreatePath,
@@ -1068,7 +1075,8 @@ export default function OnboardingPage() {
         fetch: {
           path: addrFetchPath,
           method: "GET",
-          response_key: addrFetchResponseKey
+          response_key: addrFetchResponseKey,
+          id_field: addrFetchIdField
         },
         create: addrSupportsCreation ? {
           path: addrCreatePath,
@@ -2319,6 +2327,26 @@ export default function OnboardingPage() {
                           onChange={(e) => setAddrFetchResponseKey(e.target.value)}
                         />
                       </div>
+                      <div>
+                        <div className="flex items-center gap-1.5 mb-1.5">
+                          <label className="block text-sm font-medium text-text-primary">Address ID Key</label>
+                          <div className="group relative">
+                            <Info className="w-4 h-4 text-text-secondary cursor-help" />
+                            <span className="pointer-events-none absolute bottom-full left-1/2 transform -translate-x-1/2 bg-secondary text-white text-[10px] rounded px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity w-56 text-center mb-1.5 z-10 font-sans shadow-lg">
+                              The field name inside each address object that uniquely identifies it — this is what gets used when placing an order against a saved address.
+                            </span>
+                          </div>
+                        </div>
+                        <Input
+                          placeholder="_id or id"
+                          value={addrFetchIdField}
+                          onChange={(e) => setAddrFetchIdField(e.target.value)}
+                          required
+                        />
+                        <p className="text-xs text-text-secondary mt-1">
+                          The field name inside each address object that uniquely identifies it — this is what gets used when placing an order against a saved address.
+                        </p>
+                      </div>
                     </div>
                   ) : (
                     <div className="space-y-6 animate-fade-in">
@@ -2645,7 +2673,61 @@ export default function OnboardingPage() {
 
               {/* JSON RESPONSE BODY INLINE VIEWER */}
               {modalTestResponse && (
-                <div className="space-y-2 border-t border-border pt-6 animate-fade-in">
+                <div className="space-y-3 border-t border-border pt-6 animate-fade-in font-sans">
+                  {/* ADDRESS ID KEY VERIFICATION BANNER */}
+                  {activeResource === "addresses" && addrActiveTab === "fetch" && (() => {
+                    const rawItems = getNestedValue(modalTestResponse, addrFetchResponseKey) || (Array.isArray(modalTestResponse) ? modalTestResponse : []);
+                    if (!Array.isArray(rawItems)) {
+                      return (
+                        <div className="p-3 bg-error/10 border border-error/20 rounded-xl text-xs text-error flex items-center gap-2">
+                          <XCircle className="w-4 h-4 shrink-0 text-error" />
+                          <span>The key <strong>"{addrFetchResponseKey}"</strong> did not resolve to an array in the server response.</span>
+                        </div>
+                      );
+                    }
+                    if (rawItems.length === 0) {
+                      return (
+                        <div className="p-3 bg-warning/10 border border-warning/20 rounded-xl text-xs text-warning flex items-center gap-2">
+                          <AlertTriangle className="w-4 h-4 shrink-0 text-warning" />
+                          <span>Response returned 0 address items. Add sample addresses on your backend to verify key matching.</span>
+                        </div>
+                      );
+                    }
+                    const configuredKey = addrFetchIdField.trim();
+                    const matchingItems = rawItems.filter(item => item && typeof item === "object" && configuredKey in item && item[configuredKey] !== null && item[configuredKey] !== undefined);
+
+                    if (matchingItems.length > 0) {
+                      const sampleVal = String(matchingItems[0][configuredKey]);
+                      return (
+                        <div className="p-3 bg-success/10 border border-success/20 rounded-xl text-xs text-success flex items-start gap-2.5">
+                          <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5 text-success" />
+                          <div>
+                            <p className="font-bold text-success">
+                              Address ID Key Verified!
+                            </p>
+                            <p className="mt-0.5 text-success/90">
+                              Found key <code className="px-1 py-0.5 bg-success/20 rounded font-mono font-bold">{configuredKey}</code> in {matchingItems.length} of {rawItems.length} address objects (sample ID: <code className="px-1 py-0.5 bg-success/20 rounded font-mono">{sampleVal}</code>).
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div className="p-3 bg-error/10 border border-error/20 rounded-xl text-xs text-error flex items-start gap-2.5">
+                        <XCircle className="w-4 h-4 shrink-0 mt-0.5 text-error" />
+                        <div>
+                          <p className="font-bold text-error">
+                            Address ID Key Mismatch!
+                          </p>
+                          <p className="mt-0.5 text-error/90">
+                            Configured key <code className="px-1 py-0.5 bg-error/20 rounded font-mono font-bold">{configuredKey}</code> was <strong>NOT found</strong> in any of the {rawItems.length} address objects returned by your API. Please update your Address ID Key configuration.
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  })()}
+
                   <div className="flex items-center justify-between">
                     <label className="block text-xs font-bold text-text-secondary uppercase">
                       Raw Response JSON
@@ -2703,6 +2785,10 @@ export default function OnboardingPage() {
                     onClick={() => {
                       if (activeResource === "createOrder" && !coAddressIdField.trim()) {
                         toast.error("Address ID key name is required.");
+                        return;
+                      }
+                      if (activeResource === "addresses" && !addrFetchIdField.trim()) {
+                        toast.error("Address ID Key is required for addresses endpoint.");
                         return;
                       }
                       setActiveResource(null);

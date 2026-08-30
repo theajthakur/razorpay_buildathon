@@ -5,7 +5,10 @@ import jwt
 from jwt.exceptions import PyJWTError
 from app.core.database import get_db
 from app.core.config import get_settings
+from app.core.logging_config import get_logger
 from app.system.models import User
+
+auth_logger = get_logger("auth")
 
 # Set up cryptography context with bcrypt scheme
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -31,7 +34,7 @@ def get_current_user(
     Auto-creates the user row if it does not exist in the local database.
     """
     if not authorization or not authorization.startswith("Bearer "):
-        print("Auth Error: Missing or invalid Authorization header format")
+        auth_logger.warning("Auth error: missing or invalid Authorization header format")
         raise HTTPException(
             status_code=401,
             detail="Missing or invalid Authorization header"
@@ -54,13 +57,13 @@ def get_current_user(
         
         clerk_id = payload.get("sub")
         if not clerk_id:
-            print("Auth Error: JWT token is missing subject (sub) claim")
+            auth_logger.warning("Auth error: JWT token missing subject (sub) claim")
             raise HTTPException(
                 status_code=401,
                 detail="JWT token is missing the subject (sub) claim"
             )
     except PyJWTError as err:
-        print(f"Auth Error: JWT verification failed: {str(err)}")
+        auth_logger.warning(f"Auth error: JWT verification failed: {str(err)}")
         raise HTTPException(
             status_code=401,
             detail=f"JWT verification failed: {str(err)}"

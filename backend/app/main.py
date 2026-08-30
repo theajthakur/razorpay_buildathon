@@ -1,13 +1,18 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import get_settings
+from app.core.logging_config import setup_logging, get_logger
 from app.system.router import router as system_router
 from app.agentic.router import router as agentic_router, public_router
 from app.dashboard.router import router as dashboard_router
 
+setup_logging()
+logger = get_logger("main")
+
 settings = get_settings()
 
 app = FastAPI(title="Razorpay Buildathon Backend")
+logger.info("ShopAgent Backend initialized successfully")
 
 # Configure CORS Middleware
 app.add_middleware(

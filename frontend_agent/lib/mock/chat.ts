@@ -12,6 +12,7 @@ export interface ChatMessage {
   role: "user" | "assistant";
   content: string;        // markdown
   products?: Product[];   // optional — assistant messages may embed product cards
+  metadata?: Record<string, any>; // optional — metadata for dynamic chat cards (profile_card, order_history_card, initiate_payment, etc.)
   createdAt: string;      // ISO timestamp
   error?: boolean;        // optional — flag indicating DB save failure
 }

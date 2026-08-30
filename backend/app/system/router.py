@@ -5,6 +5,7 @@ from sqlalchemy.orm import Session
 from svix.webhooks import Webhook, WebhookVerificationError
 from app.core.config import get_settings
 from app.core.database import get_db
+from app.core.logging_config import get_logger
 from app.core.security import get_current_user
 from app.system.models import User
 from app.system.schemas import (
@@ -21,6 +22,9 @@ from app.system.service import (
     upsert_user_onboarding
 )
 
+webhook_logger = get_logger("webhook")
+system_logger = get_logger("system")
+
 router = APIRouter()
 
 @router.post("/webhooks/clerk")
@@ -35,10 +39,7 @@ async def clerk_webhook(
     Receives and processes webhook events from Clerk (e.g. user.created).
     Verifies signatures using Svix if CLERK_WEBHOOK_SECRET is set in environment.
     """
-    import traceback
-    import sys
-
-    print(">>> RECEIVED CLERK WEBHOOK REQUEST <<<")
+    webhook_logger.info("Clerk webhook request received")
     settings = get_settings()
     
     try:
@@ -48,7 +49,7 @@ async def clerk_webhook(
         # 1. Signature Verification
         if settings.CLERK_WEBHOOK_SECRET:
             if not svix_id or not svix_timestamp or not svix_signature:
-                print("Error: Missing Svix verification headers")
+                webhook_logger.warning("Clerk webhook verification failed: missing Svix headers")
                 raise HTTPException(status_code=400, detail="Missing Svix verification headers")
             
             try:
@@ -59,40 +60,38 @@ async def clerk_webhook(
                     "svix-signature": svix_signature
                 })
             except WebhookVerificationError:
-                print("Error: Invalid webhook signature")
+                webhook_logger.warning("Clerk webhook verification failed: invalid signature")
                 raise HTTPException(status_code=400, detail="Invalid webhook signature")
         else:
             # Bypassed signature check in local development
             try:
                 payload = json.loads(body_str)
             except json.JSONDecodeError:
-                print("Error: Invalid JSON body")
+                webhook_logger.warning("Clerk webhook failed: invalid JSON body")
                 raise HTTPException(status_code=400, detail="Invalid JSON body")
 
         event_type = payload.get("type")
         event_data = payload.get("data", {})
-        print(f"Webhook event type: {event_type} for user ID: {event_data.get('id')}")
+        webhook_logger.info(f"Clerk webhook payload parsed: event_type={event_type}, user_id={event_data.get('id')}")
 
         # 2. Event Routing
         if event_type in ("user.created", "user.updated"):
             try:
                 user = handle_clerk_user_upsert(db, event_data)
-                print(f"Successfully upserted user: {user.id}")
+                webhook_logger.info(f"Clerk webhook user upserted: user_id={user.id}")
                 return {"status": "success", "user_id": user.id}
             except ValueError as err:
-                print(f"Validation error handling Clerk user upsert: {err}")
+                webhook_logger.error(f"Clerk webhook user upsert validation failed: {err}")
                 raise HTTPException(status_code=400, detail=str(err))
 
-        print(f"Ignored webhook event type: {event_type}")
+        webhook_logger.info(f"Clerk webhook event ignored: event_type={event_type}")
         return {"status": "ignored"}
 
     except HTTPException as http_err:
         # Re-raise HTTPExceptions as-is
         raise http_err
     except Exception as e:
-        print("====== ERROR IN CLERK WEBHOOK ROUTER ======", file=sys.stderr)
-        traceback.print_exc(file=sys.stderr)
-        print("===========================================", file=sys.stderr)
+        webhook_logger.error(f"Internal error processing Clerk webhook: {e}")
         raise HTTPException(
             status_code=500,
             detail=f"Internal webhook processing error: {str(e)}"

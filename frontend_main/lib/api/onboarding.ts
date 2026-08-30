@@ -9,6 +9,7 @@ export interface AddressFetchConfig {
   path: string;
   method?: string;
   response_key?: string | null;
+  id_field?: string;
 }
 
 export interface AddressCreateConfig {
