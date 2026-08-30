@@ -10,6 +10,8 @@ class Settings(BaseSettings):
 
     CORS_ORIGINS: str = "http://localhost:3000,http://localhost:3001"
     RAZORPAY_SECRET_KEY: str = ""
+    RAZORPAY_CLIENT_ID: str = ""
+    RAZORPAY_CLIENT_SECRET: str = ""
     CLERK_WEBHOOK_SECRET: str = ""
     CLERK_JWKS_URL: str = "https://pumped-caiman-79.clerk.accounts.dev/.well-known/jwks.json"
 

@@ -12,7 +12,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.core.config import get_settings
-from app.system.models import User, Onboarding, MerchantUserSession, Conversation, ConversationMessage, MessageSender, CartItem
+from app.system.models import User, Onboarding, MerchantUserSession, Conversation, ConversationMessage, MessageSender, CartItem, AgentOrder, AgentOrderStatus
 import vertexai
 from vertexai.generative_models import GenerativeModel, Part, Content, FunctionDeclaration, Tool
 from app.agentic.dependencies import resolve_merchant_by_host
@@ -101,6 +101,9 @@ TOOL_TO_STAGE = {
     "update_cart_item": "updating_cart",
     "remove_from_cart": "removing_from_cart",
     "create_conversation_title": "setting_title",
+    "fetch_addresses": "fetching_addresses",
+    "create_address": "saving_address",
+    "create_order": "creating_order",
 }
 
 STAGE_LABELS = {
@@ -111,6 +114,9 @@ STAGE_LABELS = {
     "updating_cart": "Updating your cart…",
     "removing_from_cart": "Removing item…",
     "setting_title": "Naming this chat…",
+    "fetching_addresses": "Fetching addresses…",
+    "saving_address": "Saving address…",
+    "creating_order": "Processing checkout…",
     "final_touches": "Putting it together…",
 }
 
@@ -219,16 +225,64 @@ remove_from_cart_func = FunctionDeclaration(
     },
 )
 
-agent_tool = Tool(
-    function_declarations=[
+fetch_addresses_func = FunctionDeclaration(
+    name="fetch_addresses",
+    description="Fetch the customer's saved delivery addresses. Call this before create_order if the customer hasn't specified an address, or when they ask to see their saved addresses.",
+    parameters={"type": "object", "properties": {}},
+)
+
+create_address_func = FunctionDeclaration(
+    name="create_address",
+    description="Save a new delivery address for the customer. Only available if the merchant supports agent-created addresses — if this tool isn't in your available tools, tell the customer to add the address on the merchant's own site instead.",
+    parameters={
+        "type": "object",
+        "properties": {
+            "line1": {"type": "string"},
+            "line2": {"type": "string", "description": "Optional."},
+            "city": {"type": "string"},
+            "state": {"type": "string"},
+            "pincode": {"type": "string"},
+        },
+        "required": ["line1", "city", "state", "pincode"],
+    },
+)
+
+create_order_func = FunctionDeclaration(
+    name="create_order",
+    description=(
+        "Place an order using the customer's current cart and a delivery address. "
+        "Call fetch_addresses first if you don't already know a valid address_id from "
+        "this conversation. Only call this when the customer has explicitly confirmed "
+        "they want to complete the purchase — never place an order without clear confirmation."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "address_id": {"type": "string", "description": "A valid address ID from a prior fetch_addresses call."},
+        },
+        "required": ["address_id"],
+    },
+)
+
+async def build_tools_for_merchant(merchant_id: str, db: Session) -> Tool:
+    onboarding = db.query(Onboarding).filter(Onboarding.user_id == merchant_id).first()
+    
+    function_declarations = [
         search_products_func,
         create_conversation_title_func,
         add_to_cart_func,
         get_cart_func,
         update_cart_item_func,
         remove_from_cart_func,
+        fetch_addresses_func,
+        create_order_func,
     ]
-)
+
+    if onboarding and onboarding.addresses_config and isinstance(onboarding.addresses_config, dict):
+        if onboarding.addresses_config.get("supports_creation"):
+            function_declarations.append(create_address_func)
+
+    return Tool(function_declarations=function_declarations)
 
 FIELD_CANDIDATES = {
     "id": ["id", "_id", "product_id"],
@@ -467,6 +521,284 @@ async def execute_remove_from_cart(merchant_id: str, customer_email: str, args: 
     db.commit()
     return {"status": "removed", "product_id": product_id}
 
+ADDRESS_FIELD_CANDIDATES = {
+    "id": ["id", "_id", "address_id"],
+    "line1": ["line1", "address_line1", "street"],
+    "line2": ["line2", "address_line2"],
+    "city": ["city"],
+    "state": ["state"],
+    "pincode": ["pincode", "zip", "postal_code"],
+}
+
+async def execute_fetch_addresses(merchant_id: str, session: dict, db: Session) -> dict:
+    onboarding = db.query(Onboarding).filter(Onboarding.user_id == merchant_id).first()
+    if not onboarding or not onboarding.addresses_config:
+        return {"error": "onboarding_config_not_found", "addresses": [], "count": 0}
+
+    cfg = onboarding.addresses_config
+    if isinstance(cfg, dict) and "fetch" in cfg and isinstance(cfg["fetch"], dict):
+        fetch_cfg = cfg["fetch"]
+    elif isinstance(cfg, dict) and "fetch_path" in cfg:
+        fetch_cfg = {"path": cfg.get("fetch_path"), "method": cfg.get("fetch_method", "GET"), "response_key": cfg.get("fetch_response_key")}
+    else:
+        return {"error": "addresses_fetch_config_missing", "addresses": [], "count": 0}
+
+    path = fetch_cfg.get("path", "")
+    method = fetch_cfg.get("method", "GET")
+    response_key = fetch_cfg.get("response_key", "addresses")
+
+    url = f"{onboarding.base_url.rstrip('/')}/{path.lstrip('/')}"
+    headers = {}
+    if onboarding.auth_enabled:
+        try:
+            headers = get_merchant_auth_headers(session=session, db=db)
+        except Exception as e:
+            print(f"Failed to resolve auth headers for fetch_addresses: {e}")
+
+    async with httpx.AsyncClient() as client:
+        resp = await client.request(method, url, headers=headers)
+    resp.raise_for_status()
+
+    json_data = resp.json()
+    raw_items = []
+    if response_key and response_key in json_data:
+        raw_items = json_data[response_key]
+    elif isinstance(json_data, list):
+        raw_items = json_data
+    elif isinstance(json_data, dict):
+        raw_items = json_data.get("addresses", json_data.get("data", []))
+
+    if not isinstance(raw_items, list):
+        raw_items = []
+
+    addresses = []
+    for item in raw_items:
+        if not isinstance(item, dict):
+            continue
+        try:
+            addr = {}
+            for field, candidates in ADDRESS_FIELD_CANDIDATES.items():
+                try:
+                    addr[field] = _pick(item, candidates, field)
+                except KeyError:
+                    addr[field] = "" if field != "id" else "unknown"
+            if addr["id"] != "unknown" or addr["line1"]:
+                addresses.append(addr)
+        except Exception as e:
+            print(f"Skipping malformed address item: {e}")
+            continue
+
+    return {"addresses": addresses, "count": len(addresses)}
+
+
+ADDRESS_CONCEPT_ORDER = ["line1", "line2", "city", "state", "pincode"]
+
+async def execute_create_address(merchant_id: str, session: dict, args: dict, db: Session) -> dict:
+    onboarding = db.query(Onboarding).filter(Onboarding.user_id == merchant_id).first()
+    if not onboarding or not onboarding.addresses_config:
+        return {"error": "onboarding_config_not_found"}
+
+    cfg = onboarding.addresses_config
+    if isinstance(cfg, dict) and "create" in cfg and isinstance(cfg["create"], dict):
+        create_cfg = cfg["create"]
+    else:
+        return {"error": "address_creation_not_supported", "message": "This merchant does not support agent address creation."}
+
+    path = create_cfg.get("path", "")
+    method = create_cfg.get("method", "POST")
+    field_mapping = create_cfg.get("field_mapping", [])
+
+    body = {}
+    if isinstance(field_mapping, list):
+        for concept, json_key in zip(ADDRESS_CONCEPT_ORDER, field_mapping):
+            val = args.get(concept)
+            if val is not None and json_key:
+                body[json_key] = val
+
+    url = f"{onboarding.base_url.rstrip('/')}/{path.lstrip('/')}"
+    headers = {}
+    if onboarding.auth_enabled:
+        try:
+            headers = get_merchant_auth_headers(session=session, db=db)
+        except Exception as e:
+            print(f"Failed to resolve auth headers for create_address: {e}")
+
+    async with httpx.AsyncClient() as client:
+        resp = await client.request(method, url, json=body, headers=headers)
+    resp.raise_for_status()
+
+    return {"status": "created", "response": resp.json()}
+
+
+async def execute_create_order(merchant_id: str, session: dict, conversation_id: str, args: dict, db: Session) -> dict:
+    customer_email = session["customer_ref"]
+    address_id = str(args.get("address_id", "")).strip()
+
+    # 1. Load cart items
+    cart_items = db.query(CartItem).filter(
+        CartItem.merchant_id == merchant_id,
+        CartItem.customer_email == customer_email
+    ).order_by(CartItem.created_at.asc()).all()
+
+    if not cart_items:
+        return {"error": "cart_empty", "message": "Your cart is empty. Please add products before checking out."}
+
+    onboarding = db.query(Onboarding).filter(Onboarding.user_id == merchant_id).first()
+    if not onboarding or not onboarding.create_order_config:
+        return {"error": "create_order_config_not_found"}
+
+    config = onboarding.create_order_config
+    cart_key = config.get("cart_key", "cart")
+    item_id_field = config.get("item_id_field", "product_id")
+    price_field = config.get("price_field", "price")
+    quantity_field = config.get("quantity_field", "quantity")
+    address_id_field = config.get("address_id_field", "address_id")
+    additional_fields = config.get("additional_fields", [])
+
+    # Step 1 — Create local agent_orders record (status: INITIATED)
+    items_snapshot = [
+        {
+            "product_id": item.product_id,
+            "name": item.name,
+            "thumbnail_url": item.thumbnail_url,
+            "price": float(item.price),
+            "quantity": item.quantity
+        }
+        for item in cart_items
+    ]
+
+    agent_order = AgentOrder(
+        merchant_id=merchant_id,
+        customer_ref=customer_email,
+        conversation_id=conversation_id,
+        items=items_snapshot,
+        status=AgentOrderStatus.INITIATED.value
+    )
+    db.add(agent_order)
+    db.commit()
+    db.refresh(agent_order)
+
+    # Step 2 — Construct merchant payload & call merchant API
+    payload = {
+        cart_key: [
+            {
+                item_id_field: item.product_id,
+                price_field: float(item.price),
+                quantity_field: item.quantity
+            }
+            for item in cart_items
+        ],
+        address_id_field: address_id
+    }
+
+    if isinstance(additional_fields, list):
+        for field in additional_fields:
+            if isinstance(field, dict) and "key" in field and "value" in field:
+                payload[field["key"]] = field["value"]
+
+    url = f"{onboarding.base_url.rstrip('/')}/{config['path'].lstrip('/')}"
+    method = config.get("method", "POST")
+    headers = {}
+    if onboarding.auth_enabled:
+        try:
+            headers = get_merchant_auth_headers(session=session, db=db)
+        except Exception as e:
+            print(f"Failed to resolve auth headers for create_order: {e}")
+
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.request(method, url, json=payload, headers=headers)
+        
+        if resp.status_code >= 400:
+            agent_order.status = AgentOrderStatus.FAILED.value
+            agent_order.failure_reason = f"merchant_api_error_{resp.status_code}: {resp.text[:200]}"
+            db.commit()
+            return {
+                "error": "merchant_order_failed",
+                "message": "The merchant's checkout service returned an error. Your cart remains intact."
+            }
+
+        merchant_data = resp.json()
+    except Exception as e:
+        agent_order.status = AgentOrderStatus.FAILED.value
+        agent_order.failure_reason = f"merchant_api_exception: {str(e)[:200]}"
+        db.commit()
+        return {
+            "error": "merchant_api_exception",
+            "message": "Failed to connect to the merchant's checkout service. Your cart remains intact."
+        }
+
+    # Extract merchant_order_id and order_total from merchant response
+    merchant_order_id = str(merchant_data.get("merchant_order_id") or merchant_data.get("order_id") or merchant_data.get("id") or f"m_{agent_order.id[:8]}")
+    try:
+        order_total = float(merchant_data.get("order_total") or merchant_data.get("total") or merchant_data.get("amount") or sum(float(i.price) * i.quantity for i in cart_items))
+    except (TypeError, ValueError):
+        order_total = sum(float(i.price) * i.quantity for i in cart_items)
+
+    currency = str(merchant_data.get("currency", "INR")).upper()
+
+    agent_order.merchant_order_id = merchant_order_id
+    agent_order.order_total = order_total
+    agent_order.currency = currency
+    agent_order.status = AgentOrderStatus.MERCHANT_ORDER_CREATED.value
+    db.commit()
+
+    # Step 3 — Create Razorpay Order
+    settings = get_settings()
+    razorpay_order_id = None
+    if settings.RAZORPAY_CLIENT_ID and settings.RAZORPAY_CLIENT_SECRET:
+        try:
+            import razorpay
+            rzp_client = razorpay.Client(auth=(settings.RAZORPAY_CLIENT_ID, settings.RAZORPAY_CLIENT_SECRET))
+            rzp_order = rzp_client.order.create(data={
+                "amount": int(round(order_total * 100)),
+                "currency": currency,
+                "receipt": agent_order.id,
+                "notes": {
+                    "agent_order_id": agent_order.id,
+                    "merchant_order_id": merchant_order_id,
+                    "merchant_id": merchant_id
+                }
+            })
+            razorpay_order_id = rzp_order.get("id")
+        except Exception as e:
+            print(f"Error creating Razorpay order: {e}")
+            razorpay_order_id = f"order_mock_{agent_order.id[:12]}"
+    else:
+        razorpay_order_id = f"order_mock_{agent_order.id[:12]}"
+
+    agent_order.razorpay_order_id = razorpay_order_id
+    agent_order.status = AgentOrderStatus.AWAITING_PAYMENT.value
+    db.commit()
+
+    # Step 4 — Clear customer's cart
+    db.query(CartItem).filter(
+        CartItem.merchant_id == merchant_id,
+        CartItem.customer_email == customer_email
+    ).delete()
+    db.commit()
+
+    payment_metadata = {
+        "action": "initiate_payment",
+        "agent_order_id": agent_order.id,
+        "merchant_order_id": merchant_order_id,
+        "razorpay_order_id": razorpay_order_id,
+        "amount": order_total,
+        "currency": currency,
+        "key_id": settings.RAZORPAY_CLIENT_ID
+    }
+
+    return {
+        "status": "order_created",
+        "agent_order_id": agent_order.id,
+        "merchant_order_id": merchant_order_id,
+        "razorpay_order_id": razorpay_order_id,
+        "amount": order_total,
+        "currency": currency,
+        "payment_metadata": payment_metadata,
+        "message": "Order successfully created! Please proceed to payment to complete your order."
+    }
+
 def build_system_instruction(merchant_name: str) -> str:
     return f"""You are the sales representative and shopping assistant for {merchant_name}. 
 
@@ -478,6 +810,10 @@ Rules:
 - When customers ask to add, check, update, or remove items in their cart, call the appropriate cart function (add_to_cart, get_cart_items, update_cart_item, remove_from_cart).
 - When you mention specific products in your reply, don't repeat their full details in text (name, price, description) — the product cards render separately below your message. Just reference them naturally, e.g. "You'll love these options:".
 - If a search returns no results, say so plainly and suggest the customer try different terms — don't fabricate alternatives.
+- ADDRESS & CHECKOUT RULES:
+  1. Call fetch_addresses first if the customer asks to place an order or see their addresses, and you don't already have a valid address_id.
+  2. If the merchant supports saving addresses (create_address is available), you can offer to save a new address for them. If create_address is not available, ask them to add their address on the store's website.
+  3. CRITICAL: Never call create_order without explicit customer confirmation (e.g., "Yes, buy now", "Place my order", "Confirm checkout"). Do not place an order on ambiguous messages like "these look nice" or "tell me more".
 - Keep replies conversational, persuasive, and short. A sentence or two of high-energy framing is usually enough; let the product cards do the rest.
 """
 
@@ -630,14 +966,17 @@ async def message_event_stream(conversation_id: str, user_message: str, session:
     merchant = db.query(User).filter(User.id == session["merchant_id"]).first()
     merchant_name = merchant.store_name if (merchant and merchant.store_name) else "the Merchant"
 
+    merchant_tools = await build_tools_for_merchant(session["merchant_id"], db)
+
     model = GenerativeModel(
         settings.GEMINI_MODEL,
         system_instruction=build_system_instruction(merchant_name),
-        tools=[agent_tool],
+        tools=[merchant_tools],
     )
 
     chat = model.start_chat(history=history)
     collected_products = []
+    payment_metadata_to_attach = None
     
     try:
         response = await chat.send_message_async(user_message)
@@ -733,6 +1072,67 @@ async def message_event_stream(conversation_id: str, user_message: str, session:
                 response = None
                 break
 
+        elif function_call.name == "fetch_addresses":
+            try:
+                result = await execute_fetch_addresses(session["merchant_id"], session, db)
+            except Exception as e:
+                print(f"fetch_addresses failed: {e}")
+                result = {"error": "fetch_addresses_failed", "addresses": [], "count": 0}
+
+            try:
+                response = await chat.send_message_async(
+                    Part.from_function_response(name="fetch_addresses", response=result)
+                )
+            except Exception as e:
+                print(f"Error calling Gemini with fetch_addresses response: {e}")
+                response = None
+                break
+
+        elif function_call.name == "create_address":
+            try:
+                args = dict(function_call.args) if function_call.args else {}
+                result = await execute_create_address(session["merchant_id"], session, args, db)
+            except Exception as e:
+                print(f"create_address failed: {e}")
+                result = {"error": "create_address_failed", "message": str(e)}
+
+            try:
+                response = await chat.send_message_async(
+                    Part.from_function_response(name="create_address", response=result)
+                )
+            except Exception as e:
+                print(f"Error calling Gemini with create_address response: {e}")
+                response = None
+                break
+
+        elif function_call.name == "create_order":
+            try:
+                args = dict(function_call.args) if function_call.args else {}
+                m_id = session["merchant_id"]
+                result = await execute_create_order(m_id, session, conversation_id, args, db)
+                if result.get("payment_metadata"):
+                    payment_metadata_to_attach = result["payment_metadata"]
+                
+                # Stream cart cleared event
+                yield json.dumps({
+                    "type": "cart_updated",
+                    "items": [],
+                    "count": 0,
+                    "subtotal": 0.0
+                }) + "\n"
+            except Exception as e:
+                print(f"create_order failed: {e}")
+                result = {"error": "create_order_failed", "message": str(e)}
+
+            try:
+                response = await chat.send_message_async(
+                    Part.from_function_response(name="create_order", response=result)
+                )
+            except Exception as e:
+                print(f"Error calling Gemini with create_order response: {e}")
+                response = None
+                break
+
     yield json.dumps(get_status_payload("final_touches")) + "\n"
     await asyncio.sleep(0.2)
 
@@ -745,11 +1145,15 @@ async def message_event_stream(conversation_id: str, user_message: str, session:
         final_text = "I'm sorry, I'm having trouble getting a response. Can you try again?"
 
     # 4. Save agent message to DB
+    msg_meta = {"products": collected_products}
+    if payment_metadata_to_attach:
+        msg_meta.update(payment_metadata_to_attach)
+
     agent_msg_row = ConversationMessage(
         conversation_id=conversation_id,
         sender=MessageSender.AGENT,
         message=final_text,
-        msg_metadata={"products": collected_products}
+        msg_metadata=msg_meta
     )
     db.add(agent_msg_row)
     if convo:
@@ -771,6 +1175,7 @@ async def message_event_stream(conversation_id: str, user_message: str, session:
         "sender": "agent",
         "message": agent_msg_row.message,
         "products": collected_products,
+        "metadata": agent_msg_row.msg_metadata,
         "created_at": agent_msg_row.created_at.isoformat()
     }
 

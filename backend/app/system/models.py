@@ -171,3 +171,39 @@ class CartItem(Base):
     )
 
 
+class AgentOrderStatus(str, enum.Enum):
+    INITIATED = "initiated"
+    MERCHANT_ORDER_CREATED = "merchant_order_created"
+    AWAITING_PAYMENT = "awaiting_payment"
+    PAYMENT_CAPTURED = "payment_captured"
+    FAILED = "failed"
+
+
+class AgentOrder(Base):
+    __tablename__ = "agent_orders"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    merchant_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    customer_ref = Column(String, nullable=False)
+    conversation_id = Column(String, ForeignKey("conversations.id", ondelete="SET NULL"), nullable=True)
+    
+    items = Column(JSON, nullable=False)
+    merchant_order_id = Column(String, nullable=True, index=True)
+    unit_price = Column(Numeric(10, 2), nullable=True)
+    order_total = Column(Numeric(10, 2), nullable=True)
+    currency = Column(String, default="INR", nullable=False)
+    
+    razorpay_order_id = Column(String, nullable=True, unique=True)
+    razorpay_payment_id = Column(String, nullable=True)
+    
+    status = Column(String, nullable=False, default=AgentOrderStatus.INITIATED.value)
+    failure_reason = Column(String, nullable=True)
+    
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+
+    __table_args__ = (
+        Index("idx_agent_orders_merchant_customer", "merchant_id", "customer_ref"),
+    )
+
+

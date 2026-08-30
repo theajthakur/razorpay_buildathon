@@ -10,3 +10,4 @@ uvicorn
 pyjwt[crypto]
 boto3
 httpx
+razorpay
