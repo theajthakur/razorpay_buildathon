@@ -46,19 +46,20 @@ def resolve_session_expiry(merchant_token: str, merchant_auth_response: dict) ->
     return cap
 
 
-def get_value_by_path(d: dict, path: str):
+def extract_by_path(data: dict, path: str, default=None):
     """
-    Resolves a nested dictionary value using a dot-separated path.
-    Example: get_value_by_path({"data": {"token": "abc"}}, "data.token") -> "abc"
+    Resolves a nested dictionary value using a dot-separated path like 'data.products'.
+    Returns `default` if any segment is missing.
     """
-    if not path:
-        return None
-    parts = path.split(".")
-    curr = d
-    for p in parts:
-        if isinstance(curr, dict) and p in curr:
-            curr = curr[p]
-        else:
-            return None
-    return curr
+    if not path or not isinstance(data, (dict, list)):
+        return default
+    current = data
+    for part in path.split("."):
+        if not isinstance(current, dict) or part not in current:
+            return default
+        current = current[part]
+    return current if current is not None else default
+
+def get_value_by_path(d: dict, path: str, default=None):
+    return extract_by_path(d, path, default=default)
 

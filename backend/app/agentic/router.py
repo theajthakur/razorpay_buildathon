@@ -17,7 +17,7 @@ import vertexai
 from vertexai.generative_models import GenerativeModel, Part, Content, FunctionDeclaration, Tool
 from app.agentic.dependencies import resolve_merchant_by_host
 from app.agentic.crypto import encrypt_merchant_token
-from app.agentic.auth_utils import resolve_session_expiry, get_value_by_path
+from app.agentic.auth_utils import resolve_session_expiry, get_value_by_path, extract_by_path
 from app.agentic.deps import get_current_session, get_merchant_token, get_merchant_auth_headers
 
 router = APIRouter()
@@ -237,13 +237,14 @@ create_address_func = FunctionDeclaration(
     parameters={
         "type": "object",
         "properties": {
-            "line1": {"type": "string"},
-            "line2": {"type": "string", "description": "Optional."},
+            "flat_no": {"type": "string", "description": "Flat/house/building number."},
+            "street": {"type": "string"},
             "city": {"type": "string"},
+            "district": {"type": "string"},
             "state": {"type": "string"},
             "pincode": {"type": "string"},
         },
-        "required": ["line1", "city", "state", "pincode"],
+        "required": ["flat_no", "street", "city", "district", "state", "pincode"],
     },
 )
 
@@ -322,29 +323,14 @@ async def execute_search_products(merchant_id: str, args: dict, session: dict, d
 
     json_data = resp.json()
     response_key = config.get("response_key", "products")
-    raw_items = []
 
-    # Defensively extract product list (supports dot notation, top-level, and nested data structure)
-    if "." in response_key:
-        try:
-            current = json_data
-            for part in response_key.split("."):
-                current = current[part]
-            raw_items = current
-        except Exception:
-            pass
-    else:
-        if response_key in json_data:
-            raw_items = json_data[response_key]
-        elif "data" in json_data and isinstance(json_data["data"], dict) and response_key in json_data["data"]:
-            raw_items = json_data["data"][response_key]
-        elif "data" in json_data and isinstance(json_data["data"], dict) and "products" in json_data["data"]:
-            raw_items = json_data["data"]["products"]
-        else:
-            raw_items = json_data.get("products", [])
-
+    # Extract product list via dot-notation path extractor
+    raw_items = extract_by_path(json_data, response_key, default=[])
     if not isinstance(raw_items, list):
-        raw_items = []
+        if isinstance(json_data, list):
+            raw_items = json_data
+        else:
+            raw_items = []
 
     products = []
     for item in raw_items:
@@ -523,9 +509,10 @@ async def execute_remove_from_cart(merchant_id: str, customer_email: str, args: 
 
 ADDRESS_FIELD_CANDIDATES = {
     "id": ["id", "_id", "address_id"],
-    "line1": ["line1", "address_line1", "street"],
-    "line2": ["line2", "address_line2"],
+    "flat_no": ["flatNo", "flat_no", "houseNo", "house_no", "line1"],
+    "street": ["street", "address_line1", "line2"],
     "city": ["city"],
+    "district": ["district"],
     "state": ["state"],
     "pincode": ["pincode", "zip", "postal_code"],
 }
@@ -560,16 +547,12 @@ async def execute_fetch_addresses(merchant_id: str, session: dict, db: Session) 
     resp.raise_for_status()
 
     json_data = resp.json()
-    raw_items = []
-    if response_key and response_key in json_data:
-        raw_items = json_data[response_key]
-    elif isinstance(json_data, list):
-        raw_items = json_data
-    elif isinstance(json_data, dict):
-        raw_items = json_data.get("addresses", json_data.get("data", []))
-
+    raw_items = extract_by_path(json_data, response_key, default=[])
     if not isinstance(raw_items, list):
-        raw_items = []
+        if isinstance(json_data, list):
+            raw_items = json_data
+        else:
+            raw_items = []
 
     addresses = []
     for item in raw_items:
@@ -582,7 +565,7 @@ async def execute_fetch_addresses(merchant_id: str, session: dict, db: Session) 
                     addr[field] = _pick(item, candidates, field)
                 except KeyError:
                     addr[field] = "" if field != "id" else "unknown"
-            if addr["id"] != "unknown" or addr["line1"]:
+            if addr["id"] != "unknown" or addr["flat_no"] or addr["street"]:
                 addresses.append(addr)
         except Exception as e:
             print(f"Skipping malformed address item: {e}")
@@ -591,7 +574,7 @@ async def execute_fetch_addresses(merchant_id: str, session: dict, db: Session) 
     return {"addresses": addresses, "count": len(addresses)}
 
 
-ADDRESS_CONCEPT_ORDER = ["line1", "line2", "city", "state", "pincode"]
+ADDRESS_CONCEPT_ORDER = ["flat_no", "street", "city", "district", "state", "pincode"]
 
 async def execute_create_address(merchant_id: str, session: dict, args: dict, db: Session) -> dict:
     onboarding = db.query(Onboarding).filter(Onboarding.user_id == merchant_id).first()
@@ -1206,16 +1189,7 @@ def get_public_branding(
     }
 
 
-def extract_by_path(data: dict, path: str):
-    """Resolve a dot-notation path like 'data.token' against a JSON response."""
-    if not path:
-        raise HTTPException(status_code=502, detail="merchant_response_shape_mismatch")
-    current = data
-    for part in path.split("."):
-        if not isinstance(current, dict) or part not in current:
-            raise HTTPException(status_code=502, detail="merchant_response_shape_mismatch")
-        current = current[part]
-    return current
+
 
 
 @public_router.post("/auth/login", response_model=LoginResponse)

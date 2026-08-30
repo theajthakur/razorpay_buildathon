@@ -84,8 +84,8 @@ class TestAddressOrderTools(unittest.TestCase):
         # Case 2: supports_creation is True -> create_address present
         onboarding_false.addresses_config = {
             "supports_creation": True,
-            "fetch": {"path": "addresses", "method": "GET", "response_key": "addresses"},
-            "create": {"path": "addresses", "method": "POST", "field_mapping": ["line1", "line2", "city", "state", "pincode"]}
+            "fetch": {"path": "addresses", "method": "GET", "response_key": "data.addresses"},
+            "create": {"path": "addresses", "method": "POST", "field_mapping": ["flatNo", "street", "city", "district", "state", "pincode"]}
         }
         self.db.commit()
 
@@ -102,26 +102,30 @@ class TestAddressOrderTools(unittest.TestCase):
             auth_enabled=False,
             addresses_config={
                 "supports_creation": False,
-                "fetch": {"path": "user/addresses", "method": "GET", "response_key": "addresses"}
+                "fetch": {"path": "user/addresses", "method": "GET", "response_key": "data.addresses"}
             }
         )
         self.db.add(onboarding)
         self.db.commit()
 
-        # Mock HTTP GET response with 1 valid address item and 1 malformed item
+        # Mock HTTP GET response with nested response_key ("data.addresses"), 1 valid address item and 1 malformed item
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.json.return_value = {
-            "addresses": [
-                {
-                    "address_id": "addr_101",
-                    "street": "123 Main St",
-                    "city": "Bengaluru",
-                    "state": "Karnataka",
-                    "zip": "560001"
-                },
-                "malformed_non_dict_string"
-            ]
+            "data": {
+                "addresses": [
+                    {
+                        "address_id": "addr_101",
+                        "flatNo": "Flat 202",
+                        "street": "123 Main St",
+                        "city": "Bengaluru",
+                        "district": "Bengaluru Urban",
+                        "state": "Karnataka",
+                        "pincode": "560001"
+                    },
+                    "malformed_non_dict_string"
+                ]
+            }
         }
         mock_request.return_value = mock_response
 
@@ -130,8 +134,12 @@ class TestAddressOrderTools(unittest.TestCase):
         self.assertEqual(res["count"], 1)
         addr = res["addresses"][0]
         self.assertEqual(addr["id"], "addr_101")
-        self.assertEqual(addr["line1"], "123 Main St")
+        self.assertEqual(addr["flat_no"], "Flat 202")
+        self.assertEqual(addr["street"], "123 Main St")
         self.assertEqual(addr["city"], "Bengaluru")
+        self.assertEqual(addr["district"], "Bengaluru Urban")
+        self.assertEqual(addr["state"], "Karnataka")
+        self.assertEqual(addr["pincode"], "560001")
 
     @patch("httpx.AsyncClient.request")
     def test_execute_create_address(self, mock_request):
@@ -144,7 +152,7 @@ class TestAddressOrderTools(unittest.TestCase):
                 "create": {
                     "path": "user/addresses",
                     "method": "POST",
-                    "field_mapping": ["address_line1", "address_line2", "city", "state", "postal_code"]
+                    "field_mapping": ["flatNo", "street", "city", "district", "state", "pincode"]
                 }
             }
         )
@@ -158,23 +166,67 @@ class TestAddressOrderTools(unittest.TestCase):
 
         import asyncio
         args = {
-            "line1": "456 Park Ave",
-            "city": "Mumbai",
-            "state": "Maharashtra",
-            "pincode": "400001"
+            "flat_no": "Flat 202",
+            "street": "123 Main St",
+            "city": "Bengaluru",
+            "district": "Bengaluru Urban",
+            "state": "Karnataka",
+            "pincode": "560001"
         }
         res = asyncio.run(execute_create_address(self.test_user_id, self.session_data, args, self.db))
         self.assertEqual(res["status"], "created")
 
-        # Verify posted JSON matches field_mapping position
+        # Verify posted JSON matches 6-field field_mapping positionally
         mock_request.assert_called_once()
         call_kwargs = mock_request.call_args.kwargs
         self.assertEqual(call_kwargs["json"], {
-            "address_line1": "456 Park Ave",
-            "city": "Mumbai",
-            "state": "Maharashtra",
-            "postal_code": "400001"
+            "flatNo": "Flat 202",
+            "street": "123 Main St",
+            "city": "Bengaluru",
+            "district": "Bengaluru Urban",
+            "state": "Karnataka",
+            "pincode": "560001"
         })
+
+    @patch("httpx.AsyncClient.request")
+    def test_execute_search_products_nested_response_key(self, mock_request):
+        from app.agentic.router import execute_search_products
+        onboarding = Onboarding(
+            user_id=self.test_user_id,
+            base_url="https://api.teststore.com/v1",
+            auth_enabled=False,
+            products_config={
+                "path": "catalog/search",
+                "method": "GET",
+                "payload_key": "q",
+                "response_key": "data.products"
+            }
+        )
+        self.db.add(onboarding)
+        self.db.commit()
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "status": "success",
+            "data": {
+                "products": [
+                    {
+                        "id": "p_ponion_1",
+                        "name": "Ponion Chai Mix",
+                        "price": 299.00,
+                        "description": "Authentic instant chai mix"
+                    }
+                ]
+            }
+        }
+        mock_request.return_value = mock_response
+
+        import asyncio
+        res = asyncio.run(execute_search_products(self.test_user_id, {"query": "chai"}, self.session_data, self.db))
+        self.assertEqual(res["count"], 1)
+        self.assertEqual(res["products"][0]["id"], "p_ponion_1")
+        self.assertEqual(res["products"][0]["name"], "Ponion Chai Mix")
 
     def test_execute_create_order_empty_cart(self):
         onboarding = Onboarding(
