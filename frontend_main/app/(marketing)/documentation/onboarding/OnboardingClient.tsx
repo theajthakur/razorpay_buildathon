@@ -126,7 +126,11 @@ const defaultOnboarding = {
     cart_key: "cart",
     item_id_field: "product_id",
     price_field: "price",
-    quantity_field: "quantity"
+    quantity_field: "quantity",
+    address_id_field: "address_id",
+    additional_fields: [
+      { key: "source", value: "shopagent" }
+    ]
   },
   webhook_url: "https://yourstore.com/api/webhooks/shopagent",
   bank_account: "",
@@ -565,9 +569,9 @@ ${merged.customer_profile_config.method} ${formatEndpointUrl(cleanBaseUrl, merge
 
               <div className="space-y-3">
                 <p className="text-[11px] font-bold text-text-primary uppercase tracking-wider">Retrieve Addresses</p>
-                <CodeBlock label={`HTTP REQUEST: ${merged.addresses_config.fetch_method || "GET"} ${formatEndpointUrl(cleanBaseUrl, merged.addresses_config.fetch_path || merged.addresses_config.path || "/api/customer/addresses")}`}>
+                <CodeBlock label={`HTTP REQUEST: ${(merged.addresses_config as any).fetch?.method || (merged.addresses_config as any).fetch_method || "GET"} ${formatEndpointUrl(cleanBaseUrl, (merged.addresses_config as any).fetch?.path || (merged.addresses_config as any).fetch_path || "/api/customer/addresses")}`}>
                   {`
-${merged.addresses_config.fetch_method || "GET"} ${formatEndpointUrl(cleanBaseUrl, merged.addresses_config.fetch_path || merged.addresses_config.path || "/api/customer/addresses")}
+${(merged.addresses_config as any).fetch?.method || (merged.addresses_config as any).fetch_method || "GET"} ${formatEndpointUrl(cleanBaseUrl, (merged.addresses_config as any).fetch?.path || (merged.addresses_config as any).fetch_path || "/api/customer/addresses")}
 `}
                 </CodeBlock>
               </div>
@@ -577,9 +581,9 @@ ${merged.addresses_config.fetch_method || "GET"} ${formatEndpointUrl(cleanBaseUr
                 <p className="text-xs text-text-secondary">
                   ShopAgent posts the address data using your mapped fields:
                 </p>
-                <CodeBlock label={`HTTP REQUEST: ${merged.addresses_config.create_method || "POST"} ${formatEndpointUrl(cleanBaseUrl, merged.addresses_config.create_path || merged.addresses_config.path || "/api/customer/addresses")}`}>
+                <CodeBlock label={`HTTP REQUEST: ${(merged.addresses_config as any).create?.method || (merged.addresses_config as any).create_method || "POST"} ${formatEndpointUrl(cleanBaseUrl, (merged.addresses_config as any).create?.path || (merged.addresses_config as any).create_path || "/api/customer/addresses")}`}>
                   {`
-${merged.addresses_config.create_method || "POST"} ${formatEndpointUrl(cleanBaseUrl, merged.addresses_config.create_path || merged.addresses_config.path || "/api/customer/addresses")}
+${(merged.addresses_config as any).create?.method || (merged.addresses_config as any).create_method || "POST"} ${formatEndpointUrl(cleanBaseUrl, (merged.addresses_config as any).create?.path || (merged.addresses_config as any).create_path || "/api/customer/addresses")}
 Content-Type: application/json
 
 {
@@ -618,7 +622,9 @@ Content-Type: application/json
       "${merged.create_order_config.price_field}": 2499.00,
       "${merged.create_order_config.quantity_field}": 2
     }
-  ]
+  ],
+  "${merged.create_order_config.address_id_field || "address_id"}": "addr_99812",
+  "source": "shopagent"
 }
 `}
               </CodeBlock>

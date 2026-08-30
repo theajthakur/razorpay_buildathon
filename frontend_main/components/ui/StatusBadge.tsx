@@ -1,7 +1,7 @@
 import React from "react";
-import { CheckCircle2, XCircle, Loader2, AlertCircle } from "lucide-react";
+import { CheckCircle2, XCircle, Loader2, AlertCircle, ShieldCheck, AlertTriangle } from "lucide-react";
 
-export type StatusType = "success" | "error" | "pending" | "untested";
+export type StatusType = "success" | "error" | "pending" | "untested" | "configured" | "warning";
 
 export interface StatusBadgeProps {
   status: StatusType;
@@ -14,6 +14,16 @@ export const StatusBadge: React.FC<StatusBadgeProps> = ({ status, message }) => 
       styles: "bg-success/10 text-success border-success/20",
       icon: <CheckCircle2 className="w-4 h-4 shrink-0" />,
       defaultMessage: "Connected",
+    },
+    configured: {
+      styles: "bg-indigo-500/10 text-indigo-400 border-indigo-500/20",
+      icon: <ShieldCheck className="w-4 h-4 shrink-0" />,
+      defaultMessage: "Configured",
+    },
+    warning: {
+      styles: "bg-warning/10 text-warning border-warning/20",
+      icon: <AlertTriangle className="w-4 h-4 shrink-0" />,
+      defaultMessage: "Warning",
     },
     error: {
       styles: "bg-error/10 text-error border-error/20",

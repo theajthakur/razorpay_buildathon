@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import Optional, Dict, Any, List
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, model_validator
 
 class AccountResponse(BaseModel):
     id: str  # Clerk User ID
@@ -42,6 +42,10 @@ class CustomerProfileConfigSchema(BaseModel):
     path: str
     method: str = "GET"
 
+class AdditionalFieldSchema(BaseModel):
+    key: str
+    value: str
+
 class AddressFetchConfig(BaseModel):
     path: str
     method: str = "GET"
@@ -53,8 +57,9 @@ class AddressCreateConfig(BaseModel):
     field_mapping: List[str]
 
 class AddressesConfigSchema(BaseModel):
-    fetch: AddressFetchConfig
-    create: AddressCreateConfig
+    supports_creation: Optional[bool] = False
+    fetch: Optional[AddressFetchConfig] = None
+    create: Optional[AddressCreateConfig] = None
 
 class CreateOrderConfigSchema(BaseModel):
     path: str
@@ -63,6 +68,8 @@ class CreateOrderConfigSchema(BaseModel):
     item_id_field: str
     price_field: str
     quantity_field: str
+    address_id_field: Optional[str] = "address_id"
+    additional_fields: Optional[List[AdditionalFieldSchema]] = []
 
 class BrandingConfigSchema(BaseModel):
     brand_color: Optional[str] = None
@@ -110,6 +117,30 @@ class OnboardingResponse(BaseModel):
     webhook_url: Optional[str] = None
     created_at: datetime
     updated_at: datetime
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_empty_configs(cls, data: Any) -> Any:
+        config_fields = [
+            "auth_config",
+            "products_config",
+            "order_history_config",
+            "customer_profile_config",
+            "addresses_config",
+            "create_order_config",
+            "branding_config",
+        ]
+        if isinstance(data, dict):
+            for field in config_fields:
+                val = data.get(field)
+                if val == {} or (isinstance(val, dict) and not any(val.values())):
+                    data[field] = None
+        elif hasattr(data, "__dict__"):
+            for field in config_fields:
+                val = getattr(data, field, None)
+                if val == {} or (isinstance(val, dict) and not any(val.values())):
+                    setattr(data, field, None)
+        return data
 
     model_config = ConfigDict(from_attributes=True)
 

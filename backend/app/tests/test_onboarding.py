@@ -67,6 +67,27 @@ class TestOnboardingAPIs(unittest.TestCase):
                 "payload_key": "query",
                 "response_key": "products"
             },
+            "addresses_config": {
+                "supports_creation": False,
+                "fetch": {
+                    "path": "addresses",
+                    "method": "GET",
+                    "response_key": "addresses"
+                },
+                "create": None
+            },
+            "create_order_config": {
+                "path": "orders",
+                "method": "POST",
+                "cart_key": "cart",
+                "item_id_field": "product_id",
+                "price_field": "price",
+                "quantity_field": "quantity",
+                "address_id_field": "address_id",
+                "additional_fields": [
+                    {"key": "source", "value": "shopagent"}
+                ]
+            },
             "bank_account": "123456789012",
             "ifsc": "HDFC0000261",
             "branch_name": "Test Branch HDFC",
@@ -88,6 +109,11 @@ class TestOnboardingAPIs(unittest.TestCase):
         self.assertEqual(data["branding_config"]["brand_color"], "#FF5733")
         self.assertEqual(data["branding_config"]["logo_url"], "https://teststore.com/images/logo.png")
 
+        self.assertEqual(data["create_order_config"]["address_id_field"], "address_id")
+        self.assertEqual(data["create_order_config"]["additional_fields"], [{"key": "source", "value": "shopagent"}])
+        self.assertFalse(data["addresses_config"]["supports_creation"])
+        self.assertIsNone(data["addresses_config"]["create"])
+
         # 2. Fetch onboarding details
         get_response = self.client.get("/system/onboarding")
         self.assertEqual(get_response.status_code, 200)
@@ -95,8 +121,44 @@ class TestOnboardingAPIs(unittest.TestCase):
         self.assertEqual(get_data["base_url"], "https://api.teststore.com/v1")
         self.assertEqual(get_data["webhook_url"], "https://api.teststore.com/v1/webhook")
         self.assertEqual(get_data["branding_config"]["brand_color"], "#FF5733")
+        self.assertEqual(get_data["create_order_config"]["address_id_field"], "address_id")
         
         # Verify the user status was transitioned to approved upon completing setup
         user_row = self.db.query(User).filter(User.id == self.test_user_id).first()
         self.db.refresh(user_row)
         self.assertEqual(user_row.status, "approved")
+
+    def test_legacy_create_order_config_deserialization(self):
+        # Delete any existing test onboarding row
+        self.db.query(Onboarding).filter(Onboarding.user_id == self.test_user_id).delete()
+        self.db.commit()
+
+        # Insert a legacy Onboarding DB row where create_order_config lacks address_id_field
+        legacy_onboarding = Onboarding(
+            user_id=self.test_user_id,
+            base_url="https://api.legacy.com/v1",
+            auth_enabled=False,
+            auth_disabled_ack=True,
+            auth_config=None,
+            products_config=None,
+            order_history_config=None,
+            customer_profile_config=None,
+            addresses_config=None,
+            create_order_config={
+                "path": "user/order/merchant-os",
+                "method": "POST",
+                "cart_key": "cart",
+                "item_id_field": "product_id",
+                "price_field": "price",
+                "quantity_field": "quantity"
+            }
+        )
+        self.db.add(legacy_onboarding)
+        self.db.commit()
+
+        # Fetch via endpoint to ensure response validation succeeds with default address_id_field
+        get_response = self.client.get("/system/onboarding")
+        self.assertEqual(get_response.status_code, 200)
+        data = get_response.json()
+        self.assertIsNotNone(data["create_order_config"])
+        self.assertEqual(data["create_order_config"]["address_id_field"], "address_id")

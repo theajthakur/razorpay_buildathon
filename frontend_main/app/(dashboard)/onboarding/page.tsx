@@ -23,7 +23,9 @@ import {
   Info,
   Server,
   Play,
-  UploadCloud
+  UploadCloud,
+  Plus,
+  Trash2
 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { fetchOnboardingDetails, saveOnboardingDetails, testEndpoint, testCustomerAuth } from "@/lib/api/onboarding";
@@ -145,6 +147,9 @@ export default function OnboardingPage() {
   const [cpPath, setCpPath] = useState("customers");
 
   const [addrActiveTab, setAddrActiveTab] = useState<"fetch" | "create">("fetch");
+  const [addrSupportsCreation, setAddrSupportsCreation] = useState(false);
+  const [addrFetchTested, setAddrFetchTested] = useState(false);
+  const [addrSelfCertified, setAddrSelfCertified] = useState(false);
   const [addrFetchPath, setAddrFetchPath] = useState("addresses");
   const [addrFetchResponseKey, setAddrFetchResponseKey] = useState("addresses");
   const [addrCreatePath, setAddrCreatePath] = useState("addresses");
@@ -162,9 +167,28 @@ export default function OnboardingPage() {
   const [coItemIdField, setCoItemIdField] = useState("item_id");
   const [coPriceField, setCoPriceField] = useState("price");
   const [coQuantityField, setCoQuantityField] = useState("quantity");
+  const [coAddressIdField, setCoAddressIdField] = useState("address_id");
+  const [coAdditionalFields, setCoAdditionalFields] = useState<Array<{ key: string; value: string }>>([]);
+  const [coSelfCertified, setCoSelfCertified] = useState(false);
   const [coTestItemId, setCoTestItemId] = useState("item_999");
   const [coTestPrice, setCoTestPrice] = useState("299");
   const [coTestQuantity, setCoTestQuantity] = useState("1");
+
+  const handleAddAdditionalField = () => {
+    setCoAdditionalFields(prev => [...prev, { key: "", value: "" }]);
+  };
+
+  const handleRemoveAdditionalField = (index: number) => {
+    setCoAdditionalFields(prev => prev.filter((_, i) => i !== index));
+  };
+
+  const handleUpdateAdditionalField = (index: number, key: string, value: string) => {
+    setCoAdditionalFields(prev => {
+      const copy = [...prev];
+      copy[index] = { key, value };
+      return copy;
+    });
+  };
 
   // Scoped Modal Test Results
   const [modalTestResponse, setModalTestResponse] = useState<any>(null);
@@ -297,33 +321,48 @@ export default function OnboardingPage() {
           }
 
           if (config.addresses_config) {
-            if (config.addresses_config.fetch) {
-              setAddrFetchPath(config.addresses_config.fetch.path || "addresses");
-              setAddrFetchResponseKey(config.addresses_config.fetch.response_key || "addresses");
+            const addrs = config.addresses_config as any;
+            const supports = addrs.supports_creation === true || !!addrs.create;
+            setAddrSupportsCreation(supports);
+            if (addrs.fetch) {
+              setAddrFetchPath(addrs.fetch.path || "addresses");
+              setAddrFetchResponseKey(addrs.fetch.response_key || "addresses");
             }
-            if (config.addresses_config.create) {
-              setAddrCreatePath(config.addresses_config.create.path || "addresses");
-              setAddrCreateFields(config.addresses_config.create.field_mapping ? config.addresses_config.create.field_mapping.join(", ") : "line1, line2, city, state, pincode");
+            if (addrs.create) {
+              setAddrCreatePath(addrs.create.path || "addresses");
+              setAddrCreateFields(addrs.create.field_mapping ? addrs.create.field_mapping.join(", ") : "line1, line2, city, state, pincode");
             }
+            setAddrFetchTested(true);
+            setAddrSelfCertified(true);
           } else if (config.endpoints?.addresses) {
             setAddrFetchPath(config.endpoints.addresses.fetch_path || "addresses");
             setAddrFetchResponseKey(config.endpoints.addresses.fetch_response_key || "addresses");
             setAddrCreatePath(config.endpoints.addresses.create_path || "addresses");
             setAddrCreateFields(config.endpoints.addresses.create_fields || "line1, line2, city, state, pincode");
+            setAddrSupportsCreation(!!config.endpoints.addresses.create_path);
+            setAddrFetchTested(true);
+            setAddrSelfCertified(true);
           }
 
           if (config.create_order_config) {
-            setCoPath(config.create_order_config.path || "orders");
-            setCoCartKey(config.create_order_config.cart_key || "cart");
-            setCoItemIdField(config.create_order_config.item_id_field || "item_id");
-            setCoPriceField(config.create_order_config.price_field || "price");
-            setCoQuantityField(config.create_order_config.quantity_field || "quantity");
+            const co = config.create_order_config as any;
+            setCoPath(co.path || "orders");
+            setCoCartKey(co.cart_key || "cart");
+            setCoItemIdField(co.item_id_field || "item_id");
+            setCoPriceField(co.price_field || "price");
+            setCoQuantityField(co.quantity_field || "quantity");
+            setCoAddressIdField(co.address_id_field || "address_id");
+            setCoAdditionalFields(Array.isArray(co.additional_fields) ? co.additional_fields : []);
+            setCoSelfCertified(true);
           } else if (config.endpoints?.createOrder) {
             setCoPath(config.endpoints.createOrder.path || "orders");
             setCoCartKey(config.endpoints.createOrder.cart_key || "cart");
             setCoItemIdField(config.endpoints.createOrder.item_id_field || "item_id");
             setCoPriceField(config.endpoints.createOrder.price_field || "price");
             setCoQuantityField(config.endpoints.createOrder.quantity_field || "quantity");
+            setCoAddressIdField(config.endpoints.createOrder.address_id_field || "address_id");
+            setCoAdditionalFields(Array.isArray(config.endpoints.createOrder.additional_fields) ? config.endpoints.createOrder.additional_fields : []);
+            setCoSelfCertified(true);
           }
           if (config.bank_account) setBankAccount(config.bank_account);
           if (config.ifsc) {
@@ -337,7 +376,7 @@ export default function OnboardingPage() {
             orderHistory: "success",
             customerProfile: "success",
             addresses: "success",
-            createOrder: "success",
+            createOrder: "configured",
           });
         } else {
           setIsEditing(true); // Default to editing if DB is empty
@@ -809,16 +848,17 @@ export default function OnboardingPage() {
       };
 
       const addresses_config = {
+        supports_creation: addrSupportsCreation,
         fetch: {
           path: addrFetchPath,
           method: "GET",
           response_key: addrFetchResponseKey
         },
-        create: {
+        create: addrSupportsCreation ? {
           path: addrCreatePath,
           method: "POST",
           field_mapping: addrCreateFields.split(",").map(k => k.trim()).filter(Boolean)
-        }
+        } : null
       };
 
       const create_order_config = {
@@ -827,7 +867,9 @@ export default function OnboardingPage() {
         cart_key: coCartKey,
         item_id_field: coItemIdField,
         price_field: coPriceField,
-        quantity_field: coQuantityField
+        quantity_field: coQuantityField,
+        address_id_field: coAddressIdField,
+        additional_fields: coAdditionalFields.filter(f => f.key.trim() !== "")
       };
 
       const savedResponse = await saveOnboardingDetails({
@@ -1022,16 +1064,17 @@ export default function OnboardingPage() {
       };
 
       const addresses_config = {
+        supports_creation: addrSupportsCreation,
         fetch: {
           path: addrFetchPath,
           method: "GET",
           response_key: addrFetchResponseKey
         },
-        create: {
+        create: addrSupportsCreation ? {
           path: addrCreatePath,
           method: "POST",
           field_mapping: addrCreateFields.split(",").map(k => k.trim()).filter(Boolean)
-        }
+        } : null
       };
 
       const create_order_config = {
@@ -1040,7 +1083,9 @@ export default function OnboardingPage() {
         cart_key: coCartKey,
         item_id_field: coItemIdField,
         price_field: coPriceField,
-        quantity_field: coQuantityField
+        quantity_field: coQuantityField,
+        address_id_field: coAddressIdField,
+        additional_fields: coAdditionalFields.filter(f => f.key.trim() !== "")
       };
 
       const savedResponse = await saveOnboardingDetails({
@@ -1076,13 +1121,19 @@ export default function OnboardingPage() {
     }
   };
 
-  // Onboarding Completion Criteria
+  // Onboarding Completion Criteria: Read endpoints must be 'success', Write endpoints can be 'success' or 'configured'
+  const isProductsSuccess = endpointStatuses.products === "success";
+  const isOrderHistorySuccess = endpointStatuses.orderHistory === "success";
+  const isCustomerProfileSuccess = endpointStatuses.customerProfile === "success";
+  const isAddressesValid = endpointStatuses.addresses === "success" || endpointStatuses.addresses === "configured";
+  const isCreateOrderValid = (endpointStatuses.createOrder === "success" || endpointStatuses.createOrder === "configured") && coAddressIdField.trim() !== "";
+
   const allEndpointsSuccess =
-    endpointStatuses.products === "success" &&
-    endpointStatuses.orderHistory === "success" &&
-    endpointStatuses.customerProfile === "success" &&
-    endpointStatuses.addresses === "success" &&
-    endpointStatuses.createOrder === "success";
+    isProductsSuccess &&
+    isOrderHistorySuccess &&
+    isCustomerProfileSuccess &&
+    isAddressesValid &&
+    isCreateOrderValid;
 
   const isBankSetupValid = bankAccount.trim().length >= 8 && bankVerified;
 
@@ -2168,39 +2219,80 @@ export default function OnboardingPage() {
               {/* customer addresses resource layout */}
               {activeResource === "addresses" && (
                 <div className="space-y-6 animate-fade-in">
-                  {/* Tabs Selector fetch/create */}
-                  <div className="flex gap-4 p-1 bg-background border border-border rounded-xl shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setAddrActiveTab("fetch");
-                        setModalTestResponse(null);
-                        setModalTestStatus("untested");
-                      }}
-                      className={`flex-1 py-2 text-center text-sm font-semibold rounded-lg transition-colors cursor-pointer ${addrActiveTab === "fetch"
-                        ? "bg-surface text-text-primary shadow-xs font-bold"
-                        : "text-text-secondary hover:text-text-primary"
+                  {/* Yes/No Address Creation Question */}
+                  <div className="p-4 bg-background border border-border rounded-xl space-y-3">
+                    <label className="block text-sm font-bold text-text-primary">
+                      Should the agent be able to add new delivery addresses for customers during checkout?
+                    </label>
+                    <div className="flex flex-wrap items-center gap-3">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAddrSupportsCreation(false);
+                          setAddrActiveTab("fetch");
+                        }}
+                        className={`px-4 py-2 rounded-lg text-sm font-semibold border transition-colors cursor-pointer ${
+                          !addrSupportsCreation
+                            ? "bg-primary text-white border-primary"
+                            : "bg-surface text-text-secondary border-border hover:text-text-primary"
                         }`}
-                    >
-                      Fetch Operation (GET)
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setAddrActiveTab("create");
-                        setModalTestResponse(null);
-                        setModalTestStatus("untested");
-                      }}
-                      className={`flex-1 py-2 text-center text-sm font-semibold rounded-lg transition-colors cursor-pointer ${addrActiveTab === "create"
-                        ? "bg-surface text-text-primary shadow-xs font-bold"
-                        : "text-text-secondary hover:text-text-primary"
+                      >
+                        No (Existing saved addresses only)
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAddrSupportsCreation(true);
+                          setAddrActiveTab("create");
+                        }}
+                        className={`px-4 py-2 rounded-lg text-sm font-semibold border transition-colors cursor-pointer ${
+                          addrSupportsCreation
+                            ? "bg-primary text-white border-primary"
+                            : "bg-surface text-text-secondary border-border hover:text-text-primary"
                         }`}
-                    >
-                      Create Operation (POST)
-                    </button>
+                      >
+                        Yes (Allow agent to add new addresses)
+                      </button>
+                    </div>
                   </div>
 
-                  {addrActiveTab === "fetch" ? (
+                  {/* Tabs Selector fetch/create (Only if supports creation is True) */}
+                  {addrSupportsCreation && (
+                    <div className="flex gap-4 p-1 bg-background border border-border rounded-xl shrink-0">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAddrActiveTab("fetch");
+                          setModalTestResponse(null);
+                          setModalTestStatus("untested");
+                        }}
+                        className={`flex-1 py-2 text-center text-sm font-semibold rounded-lg transition-colors cursor-pointer ${
+                          addrActiveTab === "fetch"
+                            ? "bg-surface text-text-primary shadow-xs font-bold"
+                            : "text-text-secondary hover:text-text-primary"
+                        }`}
+                      >
+                        Fetch Operation (GET) - Read
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAddrActiveTab("create");
+                          setModalTestResponse(null);
+                          setModalTestStatus("untested");
+                        }}
+                        className={`flex-1 py-2 text-center text-sm font-semibold rounded-lg transition-colors cursor-pointer ${
+                          addrActiveTab === "create"
+                            ? "bg-surface text-text-primary shadow-xs font-bold"
+                            : "text-text-secondary hover:text-text-primary"
+                        }`}
+                      >
+                        Create Operation (POST) - Write
+                      </button>
+                    </div>
+                  )}
+
+                  {addrActiveTab === "fetch" || !addrSupportsCreation ? (
                     <div className="space-y-6 animate-fade-in">
                       <div>
                         <div className="flex items-center gap-1.5 mb-1">
@@ -2263,7 +2355,6 @@ export default function OnboardingPage() {
                           value={addrCreateFields}
                           onChange={(e) => {
                             setAddrCreateFields(e.target.value);
-                            // Auto-populate dynamic test inputs based on split keys
                             const keys = e.target.value.split(",").map(k => k.trim()).filter(Boolean);
                             const dynamicInputs: Record<string, string> = {};
                             keys.forEach(k => {
@@ -2275,9 +2366,36 @@ export default function OnboardingPage() {
                         />
                       </div>
 
-                      {/* Dynamic Test Inputs Scoped Fields */}
+                      {/* Self-Certification Checkbox for Create Address */}
+                      <div className="border-t border-border pt-4 bg-background p-4 rounded-xl space-y-2">
+                        <label className="flex items-start gap-3 cursor-pointer select-none">
+                          <input
+                            type="checkbox"
+                            checked={addrSelfCertified}
+                            onChange={(e) => {
+                              const checked = e.target.checked;
+                              setAddrSelfCertified(checked);
+                              setEndpointStatuses(prev => ({
+                                ...prev,
+                                addresses: checked ? "configured" : (addrFetchTested ? "success" : "untested")
+                              }));
+                            }}
+                            className="mt-1 w-4 h-4 text-primary rounded border-border focus:ring-primary cursor-pointer"
+                          />
+                          <div>
+                            <span className="text-sm font-semibold text-text-primary">
+                              I confirm this endpoint is configured correctly and will accept requests in the documented shape.
+                            </span>
+                            <p className="text-xs text-text-secondary mt-0.5">
+                              Self-certifying avoids executing live address creation writes against your database during onboarding.
+                            </p>
+                          </div>
+                        </label>
+                      </div>
+
+                      {/* Optional Live Test Sample Values */}
                       <div className="border-t border-border pt-4 space-y-4">
-                        <span className="text-xs font-bold text-text-secondary uppercase">Test Address Values</span>
+                        <span className="text-xs font-bold text-text-secondary uppercase">Optional Live Test Address Values</span>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                           {addrCreateFields.split(",").map(k => k.trim()).filter(Boolean).map(keyName => (
                             <div key={keyName}>
@@ -2381,9 +2499,118 @@ export default function OnboardingPage() {
                     </div>
                   </div>
 
-                  {/* Mock Item inputs */}
+                  {/* Address ID key name (NEW Required Field) */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 border-t border-border pt-4">
+                    <div className="sm:col-span-2">
+                      <div className="flex items-center gap-1.5 mb-1.5">
+                        <label className="block text-sm font-medium text-text-primary">
+                          Address ID Key Name <span className="text-error">*</span>
+                        </label>
+                        <div className="group relative">
+                          <Info className="w-4 h-4 text-text-secondary cursor-help" />
+                          <span className="pointer-events-none absolute bottom-full left-1/2 transform -translate-x-1/2 bg-secondary text-white text-[10px] rounded px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity w-56 text-center mb-1.5 z-10 font-sans shadow-lg">
+                            The JSON key your API expects for the delivery address ID (e.g. address_id).
+                          </span>
+                        </div>
+                      </div>
+                      <Input
+                        placeholder="address_id"
+                        value={coAddressIdField}
+                        onChange={(e) => setCoAddressIdField(e.target.value)}
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  {/* Dynamic Additional Fields List */}
                   <div className="border-t border-border pt-4 space-y-4">
-                    <span className="text-xs font-bold text-text-secondary uppercase">Test Cart Item Values</span>
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <label className="block text-sm font-bold text-text-primary">
+                          Additional Custom Fields (Optional)
+                        </label>
+                        <p className="text-xs text-text-secondary mt-0.5">
+                          Static key/value pairs passed in every create-order payload (e.g. source: shopagent).
+                        </p>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        onClick={handleAddAdditionalField}
+                        className="flex items-center gap-1 shrink-0"
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                        <span>Add additional field</span>
+                      </Button>
+                    </div>
+
+                    {coAdditionalFields.length > 0 && (
+                      <div className="space-y-3">
+                        {coAdditionalFields.map((field, idx) => (
+                          <div key={idx} className="flex items-center gap-3 bg-background p-2.5 rounded-xl border border-border">
+                            <input
+                              type="text"
+                              placeholder="Field Name (Key)"
+                              value={field.key}
+                              onChange={(e) => handleUpdateAdditionalField(idx, e.target.value, field.value)}
+                              className="flex-1 bg-surface border border-border rounded-lg px-3 py-1.5 text-sm text-text-primary font-sans focus:outline-none focus:ring-1 focus:ring-primary"
+                            />
+                            <input
+                              type="text"
+                              placeholder="Field Value"
+                              value={field.value}
+                              onChange={(e) => handleUpdateAdditionalField(idx, field.key, e.target.value)}
+                              className="flex-1 bg-surface border border-border rounded-lg px-3 py-1.5 text-sm text-text-primary font-sans focus:outline-none focus:ring-1 focus:ring-primary"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveAdditionalField(idx)}
+                              className="p-1.5 text-text-secondary hover:text-error hover:bg-error/10 rounded-lg transition-colors cursor-pointer"
+                              title="Remove field"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Self-Certification Checkbox for Write Endpoint */}
+                  <div className="border-t border-border pt-4 bg-background p-4 rounded-xl space-y-2">
+                    <label className="flex items-start gap-3 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={coSelfCertified}
+                        onChange={(e) => {
+                          if (!coAddressIdField.trim()) {
+                            toast.error("Address ID key name is required before self-certifying.");
+                            return;
+                          }
+                          const checked = e.target.checked;
+                          setCoSelfCertified(checked);
+                          setEndpointStatuses(prev => ({
+                            ...prev,
+                            createOrder: checked ? "configured" : "untested"
+                          }));
+                        }}
+                        className="mt-1 w-4 h-4 text-primary rounded border-border focus:ring-primary cursor-pointer"
+                      />
+                      <div>
+                        <span className="text-sm font-semibold text-text-primary">
+                          I confirm this endpoint is configured correctly and will accept requests in the documented shape.
+                        </span>
+                        <p className="text-xs text-text-secondary mt-0.5">
+                          Self-certifying avoids sending live test orders to your production backend during onboarding.
+                        </p>
+                      </div>
+                    </label>
+                  </div>
+
+                  {/* Optional Live Test Sample Values */}
+                  <div className="border-t border-border pt-4 space-y-4">
+                    <span className="text-xs font-bold text-text-secondary uppercase">Optional Live Test Cart Item Values</span>
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                       <Input
                         label="Sample Item ID"
@@ -2443,7 +2670,7 @@ export default function OnboardingPage() {
 
             </div>
 
-            {/* Modal Footer (Save & Test Trigger) */}
+            {/* Modal Footer */}
             <div className="p-5 border-t border-border flex items-center justify-between bg-background-alt shrink-0">
               <Button
                 type="button"
@@ -2452,25 +2679,60 @@ export default function OnboardingPage() {
               >
                 Close
               </Button>
-              <Button
-                type="button"
-                variant="primary"
-                onClick={() => handleSaveAndTestResource(activeResource)}
-                disabled={modalTestLoading}
-                className="flex items-center gap-2"
-              >
-                {modalTestLoading ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Testing...</span>
-                  </>
-                ) : (
-                  <>
-                    <Play className="w-4 h-4 shrink-0" />
-                    <span>Save & Test</span>
-                  </>
-                )}
-              </Button>
+
+              {activeResource === "createOrder" || (activeResource === "addresses" && addrActiveTab === "create") ? (
+                <div className="flex gap-2">
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    onClick={() => handleSaveAndTestResource(activeResource)}
+                    disabled={modalTestLoading || (activeResource === "createOrder" && !coAddressIdField.trim())}
+                    className="flex items-center gap-1.5"
+                  >
+                    {modalTestLoading ? (
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                    ) : (
+                      <Play className="w-4 h-4" />
+                    )}
+                    <span>Optional Live Test</span>
+                  </Button>
+
+                  <Button
+                    type="button"
+                    variant="primary"
+                    onClick={() => {
+                      if (activeResource === "createOrder" && !coAddressIdField.trim()) {
+                        toast.error("Address ID key name is required.");
+                        return;
+                      }
+                      setActiveResource(null);
+                      toast.success("Endpoint configuration updated.");
+                    }}
+                  >
+                    Save & Done
+                  </Button>
+                </div>
+              ) : (
+                <Button
+                  type="button"
+                  variant="primary"
+                  onClick={() => handleSaveAndTestResource(activeResource)}
+                  disabled={modalTestLoading}
+                  className="flex items-center gap-2"
+                >
+                  {modalTestLoading ? (
+                    <>
+                      <Loader2 className="w-4 h-4 animate-spin" />
+                      <span>Testing...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Play className="w-4 h-4 shrink-0" />
+                      <span>Save & Live Test</span>
+                    </>
+                  )}
+                </Button>
+              )}
             </div>
 
           </div>

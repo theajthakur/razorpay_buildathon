@@ -1,5 +1,39 @@
 import apiClient from "./client";
 
+export interface AdditionalField {
+  key: string;
+  value: string;
+}
+
+export interface AddressFetchConfig {
+  path: string;
+  method?: string;
+  response_key?: string | null;
+}
+
+export interface AddressCreateConfig {
+  path: string;
+  method?: string;
+  field_mapping: string[];
+}
+
+export interface AddressesConfig {
+  supports_creation: boolean;
+  fetch: AddressFetchConfig;
+  create?: AddressCreateConfig | null;
+}
+
+export interface CreateOrderConfig {
+  path: string;
+  method?: string;
+  cart_key: string;
+  item_id_field: string;
+  price_field: string;
+  quantity_field: string;
+  address_id_field: string;
+  additional_fields?: AdditionalField[];
+}
+
 export interface EndpointDetails {
   path?: string;
   method?: string;
@@ -11,10 +45,13 @@ export interface EndpointDetails {
   create_path?: string;
   create_method?: string;
   create_fields?: string;
+  supports_creation?: boolean;
   cart_key?: string;
   item_id_field?: string;
   price_field?: string;
   quantity_field?: string;
+  address_id_field?: string;
+  additional_fields?: AdditionalField[];
   [key: string]: any;
 }
 
@@ -49,8 +86,8 @@ export interface OnboardingData {
   products_config?: EndpointDetails | null;
   order_history_config?: EndpointDetails | null;
   customer_profile_config?: EndpointDetails | null;
-  addresses_config?: EndpointDetails | null;
-  create_order_config?: EndpointDetails | null;
+  addresses_config?: AddressesConfig | EndpointDetails | null;
+  create_order_config?: CreateOrderConfig | EndpointDetails | null;
   bank_account?: string | null;
   ifsc?: string | null;
   branch_name?: string | null;
