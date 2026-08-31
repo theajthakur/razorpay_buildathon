@@ -500,9 +500,11 @@ export default function OnboardingPage() {
       if (oAddr.fetch) {
         setAddrFetchPath(oAddr.fetch.path || "addresses");
         setAddrFetchResponseKey(oAddr.fetch.response_key || "addresses");
+        setAddrFetchIdField(oAddr.fetch.id_field || "id");
       } else {
         setAddrFetchPath(oAddr.fetch_path || "addresses");
         setAddrFetchResponseKey(oAddr.fetch_response_key || "addresses");
+        setAddrFetchIdField(oAddr.id_field || "id");
       }
       if (oAddr.create) {
         setAddrCreatePath(oAddr.create.path || "addresses");
@@ -573,9 +575,11 @@ export default function OnboardingPage() {
     if (oAddr.fetch) {
       if (addrFetchPath !== (oAddr.fetch.path || "addresses")) return true;
       if (addrFetchResponseKey !== (oAddr.fetch.response_key || "addresses")) return true;
+      if (addrFetchIdField !== (oAddr.fetch.id_field || "id")) return true;
     } else {
       if (addrFetchPath !== (oAddr.fetch_path || "addresses")) return true;
       if (addrFetchResponseKey !== (oAddr.fetch_response_key || "addresses")) return true;
+      if (addrFetchIdField !== (oAddr.id_field || "id")) return true;
     }
     if (oAddr.create) {
       if (addrCreatePath !== (oAddr.create.path || "addresses")) return true;
@@ -1008,6 +1012,7 @@ export default function OnboardingPage() {
           fetch_path: addrFetchPath,
           fetch_method: "GET",
           fetch_response_key: addrFetchResponseKey,
+          id_field: addrFetchIdField,
           create_path: addrCreatePath,
           create_method: "POST",
           create_fields: addrCreateFields

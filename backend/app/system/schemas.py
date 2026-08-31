@@ -50,6 +50,7 @@ class AddressFetchConfig(BaseModel):
     path: str
     method: str = "GET"
     response_key: Optional[str] = None
+    id_field: Optional[str] = "id"
 
 class AddressCreateConfig(BaseModel):
     path: str
