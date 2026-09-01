@@ -299,8 +299,12 @@ class TestAddressOrderTools(unittest.TestCase):
         count = self.db.query(AgentOrder).filter(AgentOrder.merchant_id == self.test_user_id).count()
         self.assertEqual(count, 0)
 
+    @patch("app.agentic.router.execute_fetch_addresses")
     @patch("httpx.AsyncClient.request")
-    def test_execute_create_order_success(self, mock_request):
+    def test_execute_create_order_success(self, mock_request, mock_fetch_addresses):
+        mock_fetch_addresses.return_value = {
+            "addresses": [{"id": "addr_777", "city": "Bengaluru"}]
+        }
         onboarding = Onboarding(
             user_id=self.test_user_id,
             base_url="https://api.teststore.com/v1",
@@ -366,3 +370,102 @@ class TestAddressOrderTools(unittest.TestCase):
         self.assertEqual(posted_json["items"][0]["sku"], "prod_shoe_1")
         self.assertEqual(posted_json["items"][0]["unit_price"], 1999.0)
         self.assertEqual(posted_json["items"][0]["qty"], 2)
+
+    @patch("app.agentic.router.execute_fetch_addresses")
+    @patch("httpx.AsyncClient.request")
+    def test_execute_create_order_invalid_address_rejection(self, mock_request, mock_fetch_addresses):
+        mock_fetch_addresses.return_value = {
+            "addresses": [
+                {"id": "addr_101", "city": "Bengaluru", "pincode": "560001"}
+            ]
+        }
+        onboarding = Onboarding(
+            user_id=self.test_user_id,
+            base_url="https://api.teststore.com/v1",
+            auth_enabled=False,
+            create_order_config={
+                "path": "orders",
+                "method": "POST",
+                "cart_key": "cart",
+                "item_id_field": "product_id",
+                "price_field": "price",
+                "quantity_field": "quantity",
+                "address_id_field": "address_id"
+            }
+        )
+        self.db.add(onboarding)
+
+        item = CartItem(
+            merchant_id=self.test_user_id,
+            customer_email="customer_test@example.com",
+            product_id="prod_shoe_1",
+            name="Running Shoes",
+            price=1999.00,
+            quantity=1
+        )
+        self.db.add(item)
+        self.db.commit()
+
+        import asyncio
+        # Model calls create_order with fabricated address_id "560001" (pincode or random number)
+        res = asyncio.run(execute_create_order(self.test_user_id, self.session_data, None, {"address_id": "560001"}, self.db))
+        
+        self.assertEqual(res["error"], "invalid_address")
+        self.assertIn("couldn't match that to one of your saved addresses", res["message"])
+        self.assertEqual(len(res["addresses"]), 1)
+        self.assertEqual(res["addresses"][0]["id"], "addr_101")
+
+        # Zero merchant API requests dispatched
+        mock_request.assert_not_called()
+
+        # Zero AgentOrder rows created
+        agent_order_count = self.db.query(AgentOrder).filter(AgentOrder.merchant_id == self.test_user_id).count()
+        self.assertEqual(agent_order_count, 0)
+
+        # Cart item remains intact
+        cart_count = self.db.query(CartItem).filter(CartItem.merchant_id == self.test_user_id).count()
+        self.assertEqual(cart_count, 1)
+
+    @patch("httpx.AsyncClient.request")
+    def test_execute_fetch_addresses_is_default_handling(self, mock_request):
+        onboarding = Onboarding(
+            user_id=self.test_user_id,
+            base_url="https://api.teststore.com/v1",
+            auth_enabled=False,
+            addresses_config={
+                "supports_creation": False,
+                "fetch": {"path": "addresses", "method": "GET", "response_key": "addresses"}
+            }
+        )
+        self.db.add(onboarding)
+        self.db.commit()
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "addresses": [
+                {
+                    "id": "addr_1",
+                    "city": "Bengaluru",
+                    "isDefault": True
+                },
+                {
+                    "id": "addr_2",
+                    "city": "Mumbai"
+                    # No isDefault field present
+                }
+            ]
+        }
+        mock_request.return_value = mock_response
+
+        import asyncio
+        res = asyncio.run(execute_fetch_addresses(self.test_user_id, self.session_data, self.db))
+        self.assertEqual(res["count"], 2)
+        
+        # Present on addr_1 as True
+        self.assertIn("is_default", res["addresses"][0])
+        self.assertTrue(res["addresses"][0]["is_default"])
+
+        # Absent (not defaulted to false) on addr_2
+        self.assertNotIn("is_default", res["addresses"][1])
+

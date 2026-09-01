@@ -64,13 +64,21 @@ export interface TokenDeliveryConfig {
 }
 
 export interface AuthConfig {
-  auth_url: string;
+  path?: string;
+  auth_url?: string;
   method: string;
   identifier_field: string;
   identifier_type: string;
   password_field: string;
   token_path: string;
   token_delivery: TokenDeliveryConfig;
+}
+
+export interface VerifyOrderConfig {
+  path: string;
+  method: string;
+  order_id_field: string;
+  response_price_field: string;
 }
 
 export interface BrandingConfig {
@@ -89,11 +97,13 @@ export interface OnboardingData {
   customer_profile_config?: EndpointDetails | null;
   addresses_config?: AddressesConfig | EndpointDetails | null;
   create_order_config?: CreateOrderConfig | EndpointDetails | null;
+  verify_order_config?: VerifyOrderConfig | null;
   bank_account?: string | null;
   ifsc?: string | null;
   branch_name?: string | null;
   branding_config?: BrandingConfig | null;
   webhook_url?: string | null;
+  webhook_path?: string | null;
 }
 
 export interface OnboardingResponse extends OnboardingData {
@@ -123,7 +133,9 @@ export interface TestEndpointResponse {
 }
 
 export interface TestCustomerAuthPayload {
-  auth_url: string;
+  base_url?: string;
+  auth_path?: string;
+  auth_url?: string;
   auth_method: string;
   payload: Record<string, any>;
 }
@@ -156,6 +168,14 @@ export async function fetchOnboardingDetails(): Promise<OnboardingResponse | nul
  */
 export async function saveOnboardingDetails(data: OnboardingData): Promise<OnboardingResponse> {
   const response = await apiClient.post<OnboardingResponse>("/system/onboarding", data);
+  return response.data;
+}
+
+/**
+ * Partially updates the onboarding configuration for autosave.
+ */
+export async function patchOnboardingDetails(data: Partial<OnboardingData>): Promise<OnboardingResponse> {
+  const response = await apiClient.patch<OnboardingResponse>("/system/onboarding", data);
   return response.data;
 }
 

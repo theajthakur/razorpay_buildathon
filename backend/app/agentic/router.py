@@ -22,10 +22,16 @@ from app.agentic.deps import get_current_session, get_merchant_token, get_mercha
 from app.agentic.merchant_api import call_merchant_api
 from app.core.logging_config import get_logger
 
+import hmac
+import hashlib
+import uuid
+from app.system.service import extract_relative_path
+
 agent_logger = get_logger("agent")
 cart_logger = get_logger("cart")
 orders_logger = get_logger("orders")
 auth_logger = get_logger("auth")
+webhook_logger = get_logger("webhook")
 
 router = APIRouter()
 public_router = APIRouter()
@@ -264,9 +270,11 @@ create_order_func = FunctionDeclaration(
     name="create_order",
     description=(
         "Place an order using the customer's current cart and a delivery address. "
-        "Call fetch_addresses first if you don't already know a valid address_id from "
-        "this conversation. Only call this when the customer has explicitly confirmed "
-        "they want to complete the purchase — never place an order without clear confirmation."
+        "address_id must be a real address ID — but note that this is validated "
+        "server-side regardless, so an incorrect value will be safely rejected and "
+        "you'll receive the customer's real saved addresses back to correct it. "
+        "Only call this when the customer has explicitly confirmed they want to "
+        "complete the purchase."
     ),
     parameters={
         "type": "object",
@@ -564,6 +572,7 @@ ADDRESS_FIELD_CANDIDATES = {
     "district": ["district"],
     "state": ["state"],
     "pincode": ["pincode", "zip", "postal_code"],
+    "is_default": ["isDefault", "is_default", "default"],
 }
 
 async def execute_fetch_addresses(merchant_id: str, session: dict, db: Session) -> dict:
@@ -635,7 +644,8 @@ async def execute_fetch_addresses(merchant_id: str, session: dict, db: Session) 
                 try:
                     addr[field] = _pick(item, candidates, field)
                 except KeyError:
-                    addr[field] = ""
+                    if field != "is_default":
+                        addr[field] = ""
             addresses.append(addr)
         except Exception as e:
             agent_logger.debug(f"Skipping malformed address item: {e}")
@@ -694,9 +704,8 @@ async def execute_create_address(merchant_id: str, session: dict, args: dict, db
 
 async def execute_create_order(merchant_id: str, session: dict, conversation_id: str, args: dict, db: Session) -> dict:
     customer_email = session["customer_ref"]
-    address_id = str(args.get("address_id", "")).strip()
 
-    orders_logger.info(f"Checkout initiated: merchant={merchant_id}, customer={customer_email}, address_id={address_id}")
+    orders_logger.info(f"Checkout initiated: merchant={merchant_id}, customer={customer_email}")
 
     # 1. Load cart items
     cart_items = db.query(CartItem).filter(
@@ -707,6 +716,33 @@ async def execute_create_order(merchant_id: str, session: dict, conversation_id:
     if not cart_items:
         orders_logger.warning(f"Checkout aborted (cart empty): merchant={merchant_id}, customer={customer_email}")
         return {"error": "cart_empty", "message": "Your cart is empty. Please add products before checking out."}
+
+    # 2. ALWAYS fetch real addresses here — unconditionally, regardless of
+    #    whether fetch_addresses was called earlier in the conversation.
+    #    This is the fix: address validity is never assumed, only ever checked
+    #    fresh, right here, every time create_order runs.
+    address_result = await execute_fetch_addresses(merchant_id, session, db)
+    valid_addresses = {str(addr["id"]): addr for addr in address_result.get("addresses", []) if "id" in addr}
+
+    supplied_id = str(args.get("address_id", "")).strip()
+
+    if supplied_id not in valid_addresses:
+        orders_logger.warning(
+            f"create_order: address_id='{supplied_id}' not found among "
+            f"{len(valid_addresses)} real addresses for customer={customer_email} — "
+            f"rejecting before any merchant API call."
+        )
+        return {
+            "error": "invalid_address",
+            "message": (
+                "I couldn't match that to one of your saved addresses. "
+                "Here are your saved addresses — please tell me which one to use."
+            ),
+            "addresses": address_result.get("addresses", []),
+        }
+
+    selected_address = valid_addresses[supplied_id]
+    orders_logger.info(f"create_order: address validated — using address_id={supplied_id} ({selected_address.get('city', '?')})")
 
     onboarding = db.query(Onboarding).filter(Onboarding.user_id == merchant_id).first()
     if not onboarding or not onboarding.create_order_config:
@@ -755,7 +791,7 @@ async def execute_create_order(merchant_id: str, session: dict, conversation_id:
             }
             for item in cart_items
         ],
-        address_id_field: address_id
+        address_id_field: supplied_id
     }
 
     if isinstance(additional_fields, list):
@@ -819,27 +855,50 @@ async def execute_create_order(merchant_id: str, session: dict, conversation_id:
 
     # Step 3 — Create Razorpay Order
     settings = get_settings()
-    razorpay_order_id = None
-    if settings.RAZORPAY_CLIENT_ID and settings.RAZORPAY_CLIENT_SECRET:
-        try:
-            import razorpay
-            rzp_client = razorpay.Client(auth=(settings.RAZORPAY_CLIENT_ID, settings.RAZORPAY_CLIENT_SECRET))
-            rzp_order = rzp_client.order.create(data={
-                "amount": int(round(order_total * 100)),
-                "currency": currency,
-                "receipt": agent_order.id,
-                "notes": {
-                    "agent_order_id": agent_order.id,
-                    "merchant_order_id": merchant_order_id,
-                    "merchant_id": merchant_id
-                }
-            })
-            razorpay_order_id = rzp_order.get("id")
-        except Exception as e:
-            orders_logger.warning(f"Razorpay order creation fallback: {e}")
-            razorpay_order_id = f"order_mock_{agent_order.id[:12]}"
-    else:
-        razorpay_order_id = f"order_mock_{agent_order.id[:12]}"
+    key_id = settings.razorpay_key_id
+    key_secret = settings.razorpay_key_secret
+
+    if not key_id or not key_secret:
+        err_msg = f"Razorpay order creation FAILED for agent_order_id={agent_order.id}: Missing Razorpay API credentials (RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET)"
+        orders_logger.error(err_msg)
+        agent_order.status = AgentOrderStatus.FAILED.value
+        agent_order.failure_reason = "razorpay_error: Missing Razorpay API credentials"
+        db.commit()
+        return {
+            "error": "payment_initiation_failed",
+            "message": "I placed your order with the store, but I'm having trouble setting up payment right now. Please try again in a moment, or contact support — your order isn't lost.",
+            "agent_order_id": agent_order.id,
+            "merchant_order_id": merchant_order_id
+        }
+
+    try:
+        import razorpay
+        rzp_client = razorpay.Client(auth=(key_id, key_secret))
+        rzp_order = rzp_client.order.create(data={
+            "amount": int(round(order_total * 100)),
+            "currency": currency,
+            "receipt": str(agent_order.id),
+            "notes": {
+                "agent_order_id": str(agent_order.id),
+                "merchant_order_id": str(merchant_order_id),
+                "merchant_id": str(merchant_id)
+            }
+        })
+        razorpay_order_id = rzp_order.get("id")
+        if not razorpay_order_id:
+            raise ValueError("Razorpay client returned response without order id")
+    except Exception as e:
+        err_msg = f"Razorpay order creation FAILED for agent_order_id={agent_order.id}: {e!r}"
+        orders_logger.error(err_msg)
+        agent_order.status = AgentOrderStatus.FAILED.value
+        agent_order.failure_reason = f"razorpay_error: {e}"
+        db.commit()
+        return {
+            "error": "payment_initiation_failed",
+            "message": "I placed your order with the store, but I'm having trouble setting up payment right now. Please try again in a moment, or contact support — your order isn't lost.",
+            "agent_order_id": agent_order.id,
+            "merchant_order_id": merchant_order_id
+        }
 
     agent_order.razorpay_order_id = razorpay_order_id
     agent_order.status = AgentOrderStatus.AWAITING_PAYMENT.value
@@ -861,7 +920,7 @@ async def execute_create_order(merchant_id: str, session: dict, conversation_id:
         "razorpay_order_id": razorpay_order_id,
         "amount": order_total,
         "currency": currency,
-        "key_id": settings.RAZORPAY_CLIENT_ID
+        "key_id": key_id
     }
 
     return {
@@ -874,6 +933,138 @@ async def execute_create_order(merchant_id: str, session: dict, conversation_id:
         "payment_metadata": payment_metadata,
         "message": "Order successfully created! Please proceed to payment to complete your order."
     }
+
+
+async def send_merchant_webhook(
+    merchant_id: str,
+    event: str,
+    event_id: str,
+    merchant_order_id: str,
+    db: Session
+) -> bool:
+    """
+    Dispatches a webhook event to the merchant's configured webhook_path.
+    Contract payload:
+    {
+      "event": "order.payment_completed",
+      "event_id": "...",
+      "merchant_order_id": "..."
+    }
+    """
+    onboarding = db.query(Onboarding).filter(Onboarding.user_id == merchant_id).first()
+    if not onboarding or not onboarding.base_url:
+        webhook_logger.warning(f"send_merchant_webhook aborted: merchant={merchant_id} onboarding/base_url not found")
+        return False
+
+    webhook_path = onboarding.webhook_path or extract_relative_path(onboarding.webhook_url or "", onboarding.base_url) or "webhook/merchant-os"
+    
+    if webhook_path.startswith(("http://", "https://")):
+        target_url = webhook_path
+    else:
+        target_url = f"{onboarding.base_url.rstrip('/')}/{webhook_path.lstrip('/')}"
+
+    payload = {
+        "event": event,
+        "event_id": event_id,
+        "merchant_order_id": merchant_order_id
+    }
+
+    headers = {
+        "User-Agent": "ShopAgent-API-Agent/1.0",
+        "Content-Type": "application/json",
+        "Accept": "application/json"
+    }
+
+    max_retries = 3
+    for attempt in range(1, max_retries + 1):
+        try:
+            async with httpx.AsyncClient(timeout=10.0, follow_redirects=True) as client:
+                resp = await client.post(target_url, json=payload, headers=headers)
+                if 200 <= resp.status_code < 300:
+                    webhook_logger.info(
+                        f"Merchant webhook delivered: merchant={merchant_id}, event={event}, "
+                        f"event_id={event_id}, status_code={resp.status_code}, attempt={attempt}"
+                    )
+                    return True
+                else:
+                    webhook_logger.warning(
+                        f"Merchant webhook failed: merchant={merchant_id}, status_code={resp.status_code}, "
+                        f"attempt={attempt}/{max_retries}"
+                    )
+        except Exception as e:
+            webhook_logger.error(
+                f"Merchant webhook dispatch exception: merchant={merchant_id}, error={e!r}, "
+                f"attempt={attempt}/{max_retries}"
+            )
+        if attempt < max_retries:
+            await asyncio.sleep(0.5 * attempt)
+
+    return False
+
+
+class VerifyPaymentRequest(BaseModel):
+    razorpay_payment_id: str
+    razorpay_order_id: str
+    razorpay_signature: str
+
+
+@router.post("/payments/verify")
+async def verify_payment(
+    payload: VerifyPaymentRequest,
+    db: Session = Depends(get_db)
+):
+    """
+    Verifies Razorpay payment signature, marks agent_orders row as payment_captured,
+    and dispatches order.payment_completed merchant webhook.
+    """
+    settings = get_settings()
+    key_secret = settings.razorpay_key_secret
+
+    if not key_secret:
+        orders_logger.error("Payment verification FAILED: Razorpay secret key is not configured.")
+        raise HTTPException(status_code=500, detail="razorpay_secret_not_configured")
+
+    # 1. Recompute expected signature using HMAC SHA256
+    msg_bytes = f"{payload.razorpay_order_id}|{payload.razorpay_payment_id}".encode("utf-8")
+    expected_signature = hmac.new(
+        key=key_secret.encode("utf-8"),
+        msg=msg_bytes,
+        digestmod=hashlib.sha256
+    ).hexdigest()
+
+    if not hmac.compare_digest(expected_signature, payload.razorpay_signature):
+        orders_logger.error(
+            f"Payment signature MISMATCH for razorpay_order_id={payload.razorpay_order_id} — "
+            f"possible tampering or spoofed callback."
+        )
+        raise HTTPException(status_code=400, detail="signature_verification_failed")
+
+    # 2. Look up the agent_orders row by razorpay_order_id
+    order = db.query(AgentOrder).filter(AgentOrder.razorpay_order_id == payload.razorpay_order_id).first()
+    if not order:
+        orders_logger.error(f"Payment verification failed: AgentOrder not found for razorpay_order_id={payload.razorpay_order_id}")
+        raise HTTPException(status_code=404, detail="order_not_found")
+
+    # 3. Mark captured
+    order.status = AgentOrderStatus.PAYMENT_CAPTURED.value
+    order.razorpay_payment_id = payload.razorpay_payment_id
+    db.commit()
+    db.refresh(order)
+    orders_logger.info(f"Payment verified and captured: agent_order_id={order.id}, razorpay_payment_id={payload.razorpay_payment_id}")
+
+    # 4. Fire merchant webhook
+    event_id = str(uuid.uuid4())
+    asyncio.create_task(
+        send_merchant_webhook(
+            merchant_id=order.merchant_id,
+            event="order.payment_completed",
+            event_id=event_id,
+            merchant_order_id=order.merchant_order_id or "",
+            db=db
+        )
+    )
+
+    return {"status": "captured", "agent_order_id": order.id, "razorpay_payment_id": payload.razorpay_payment_id}
 
 ORDER_FIELD_CANDIDATES = {
     "order_id": ["order_id", "id", "_id"],
@@ -1018,8 +1209,9 @@ Rules:
 - If a search returns no results, say so plainly and suggest the customer try different terms — don't fabricate alternatives.
 - ADDRESS & CHECKOUT RULES:
   1. Call fetch_addresses first if the customer asks to place an order or see their addresses, and you don't already have a valid address_id.
-  2. If the merchant supports saving addresses (create_address is available), you can offer to save a new address for them. If create_address is not available, ask them to add their address on the store's website.
-  3. CRITICAL: Never call create_order without explicit customer confirmation (e.g., "Yes, buy now", "Place my order", "Confirm checkout"). Do not place an order on ambiguous messages like "these look nice" or "tell me more".
+  2. If the customer hasn't specified an address and one of their fetched addresses has is_default: true, use that one directly rather than asking — but still confirm the order itself before placing it.
+  3. If the merchant supports saving addresses (create_address is available), you can offer to save a new address for them. If create_address is not available, ask them to add their address on the store's website.
+  4. CRITICAL: Never call create_order without explicit customer confirmation (e.g., "Yes, buy now", "Place my order", "Confirm checkout"). Do not place an order on ambiguous messages like "these look nice" or "tell me more".
 - Keep replies conversational, persuasive, and short. A sentence or two of high-energy framing is usually enough; let the product cards do the rest.
 """
 
@@ -1489,9 +1681,9 @@ async def login(
     auth_config = onboarding.auth_config
 
     # 2. Extract mappings and prepare endpoint URL
-    auth_url = auth_config.get("auth_url")
+    auth_url = auth_config.get("path") or auth_config.get("auth_url")
     if not auth_url:
-        auth_logger.warning(f"Login failed: auth_url missing for merchant={payload.merchant_id}")
+        auth_logger.warning(f"Login failed: auth_url/path missing for merchant={payload.merchant_id}")
         raise HTTPException(status_code=404, detail="merchant_not_found")
 
     # Resolve relative URL

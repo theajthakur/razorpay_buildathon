@@ -11,6 +11,7 @@ from app.system.models import User
 from app.system.schemas import (
     AccountResponse,
     OnboardingUpsertRequest,
+    OnboardingPartialUpdateRequest,
     OnboardingResponse,
     TestEndpointRequest,
     TestCustomerAuthRequest
@@ -19,7 +20,8 @@ from app.system.service import (
     handle_clerk_user_upsert,
     get_user_by_id,
     get_user_onboarding,
-    upsert_user_onboarding
+    upsert_user_onboarding,
+    patch_user_onboarding
 )
 
 webhook_logger = get_logger("webhook")
@@ -130,6 +132,17 @@ def upsert_onboarding(
     Saves or updates the onboarding settings for the logged-in merchant.
     """
     return upsert_user_onboarding(db, current_user.id, payload)
+
+@router.patch("/onboarding", response_model=OnboardingResponse)
+def patch_onboarding(
+    payload: OnboardingPartialUpdateRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Partially updates onboarding settings for autosave.
+    """
+    return patch_user_onboarding(db, current_user.id, payload)
 
 @router.post("/onboarding/test-endpoint")
 async def test_onboarding_endpoint(
@@ -242,7 +255,9 @@ async def test_customer_auth_endpoint(
     Test customer authentication endpoint by dispatching credentials payload.
     Bypasses CORS restrictions on the merchant's customer-auth URL.
     """
-    full_url = payload.auth_url
+    full_url = payload.auth_url or payload.auth_path or ""
+    if payload.base_url and not full_url.startswith(("http://", "https://")):
+        full_url = f"{payload.base_url.rstrip('/')}/{full_url.lstrip('/')}"
     method = payload.auth_method.upper()
     body = payload.payload
 

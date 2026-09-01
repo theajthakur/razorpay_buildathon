@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/button";
@@ -27,13 +27,63 @@ import {
   Plus,
   Trash2,
   CheckCircle2,
-  XCircle
+  XCircle,
+  FileCheck,
+  RefreshCw
 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
-import { fetchOnboardingDetails, saveOnboardingDetails, testEndpoint, testCustomerAuth } from "@/lib/api/onboarding";
+import {
+  fetchOnboardingDetails,
+  saveOnboardingDetails,
+  patchOnboardingDetails,
+  testEndpoint,
+  testCustomerAuth,
+  OnboardingData,
+  VerifyOrderConfig
+} from "@/lib/api/onboarding";
+import { getPresignedLogoUrl, uploadFileToS3 } from "@/lib/api/settings";
+import { ImageCropperModal } from "@/components/shared/ImageCropperModal";
 import { useAuth } from "@clerk/nextjs";
 import axios from "axios";
 import { toast } from "sonner";
+
+function parseAddressPath(combined: string) {
+  const trimmed = combined.trim();
+  const lastDot = trimmed.lastIndexOf(".");
+  if (lastDot <= 0 || lastDot === trimmed.length - 1) {
+    return { isValid: false, response_key: "", id_field: "" };
+  }
+  return {
+    isValid: true,
+    response_key: trimmed.substring(0, lastDot),
+    id_field: trimmed.substring(lastDot + 1)
+  };
+}
+
+const SaveIndicator = ({ status, error }: { status?: string; error?: string }) => {
+  if (status === "saving") {
+    return (
+      <span className="inline-flex items-center gap-1 text-xs text-primary animate-pulse font-medium">
+        <Loader2 className="w-3.5 h-3.5 animate-spin" /> Saving...
+      </span>
+    );
+  }
+  if (status === "saved") {
+    return (
+      <span className="inline-flex items-center gap-1 text-xs text-success font-medium animate-fade-in">
+        <Check className="w-3.5 h-3.5" /> Saved ✓
+      </span>
+    );
+  }
+  if (status === "error" || error) {
+    return (
+      <span className="inline-flex items-center gap-1 text-xs text-error font-medium" title={error}>
+        <AlertTriangle className="w-3.5 h-3.5" /> Save failed
+      </span>
+    );
+  }
+  return null;
+};
 
 export default function OnboardingPage() {
   const router = useRouter();
@@ -42,31 +92,41 @@ export default function OnboardingPage() {
   // Loading and saving states
   const [pageLoading, setPageLoading] = useState(true);
   const [saveLoading, setSaveLoading] = useState(false);
-  const [isSavedToDb, setIsSavedToDb] = useState(false); // Step 1 Lock/Unlock gating state
+  const [isSavedToDb, setIsSavedToDb] = useState(false);
 
   // Edit & Change Tracking States
-  const [isEditing, setIsEditing] = useState(false);
+  const [isEditing, setIsEditing] = useState(true);
   const [originalConfig, setOriginalConfig] = useState<any>(null);
 
+  // Per-field / Section Autosave States
+  const [saveStatuses, setSaveStatuses] = useState<Record<string, "idle" | "saving" | "saved" | "error">>({});
+  const [saveErrors, setSaveErrors] = useState<Record<string, string>>({});
+
+  // Real Logo Crop & Upload State
+  const logoInputRef = useRef<HTMLInputElement>(null);
+  const [selectedLogoFile, setSelectedLogoFile] = useState<File | null>(null);
+  const [isCropperOpen, setIsCropperOpen] = useState(false);
+  const [isLogoUploading, setIsLogoUploading] = useState(false);
+
   // Branding & Webhook States
-  const [colorTheme, setColorTheme] = useState("");
+  const [colorTheme, setColorTheme] = useState("#4338CA");
   const [logoUrl, setLogoUrl] = useState("");
-  const [webhookUrl, setWebhookUrl] = useState("");
+  const [webhookPath, setWebhookPath] = useState("webhook/merchant-os");
 
   // Modals state
   const [showConfirmDisableModal, setShowConfirmDisableModal] = useState(false);
   const [showMappingModal, setShowMappingModal] = useState(false);
   const [mappingStep, setMappingStep] = useState(1); // 1 | 2 | 3 | 4
-  const [activeResource, setActiveResource] = useState<string | null>(null); // "products" | "orderHistory" | "customerProfile" | "addresses" | "createOrder" | null
+  const [activeResource, setActiveResource] = useState<string | null>(null);
 
   // Active Session Token (tested in Step 1, reused in Step 2)
   const [sessionToken, setSessionToken] = useState<string | null>(null);
 
-  // Part A: Shared Connection Details State
-  const [baseUrl, setBaseUrl] = useState("https://api.acmestore.com/v1");
+  // Connection Details State (Path-Only)
+  const [baseUrl, setBaseUrl] = useState("https://ponion-backend.onrender.com");
   const [authEnabled, setAuthEnabled] = useState(true);
   const [authDisabledAck, setAuthDisabledAck] = useState(false);
-  const [authUrl, setAuthUrl] = useState("https://api.acmestore.com/v1/auth/login");
+  const [authPath, setAuthPath] = useState("auth/login");
   const [authMethod, setAuthMethod] = useState("POST");
 
   // Custom authConfig structure
@@ -99,7 +159,7 @@ export default function OnboardingPage() {
   const [cookieName, setCookieName] = useState("session");
   const [testLoading, setTestLoading] = useState(false);
 
-  // Part B: Endpoints Mapping State (Scoped fields stored here)
+  // Endpoints Mapping State
   const [endpoints, setEndpoints] = useState<any>({
     products: { path: "products", method: "GET", payload_key: "query", response_key: "products" },
     orderHistory: { path: "orders/history", method: "GET", response_key: "orders" },
@@ -108,6 +168,7 @@ export default function OnboardingPage() {
       fetch_path: "addresses",
       fetch_method: "GET",
       fetch_response_key: "addresses",
+      id_field: "_id",
       create_path: "addresses",
       create_method: "POST",
       create_fields: "line1, line2, city, state, pincode"
@@ -120,24 +181,32 @@ export default function OnboardingPage() {
       price_field: "price",
       quantity_field: "quantity"
     },
+    verifyOrder: {
+      path: "user/payments",
+      method: "POST",
+      order_id_field: "merchantOrderId",
+      response_price_field: "price"
+    }
   });
 
-  // Resource Configured/Test Statuses
+  // Resource Statuses
   const [endpointStatuses, setEndpointStatuses] = useState<{
     products: StatusType;
     orderHistory: StatusType;
     customerProfile: StatusType;
     addresses: StatusType;
     createOrder: StatusType;
+    verifyOrder: StatusType;
   }>({
     products: "untested",
     orderHistory: "untested",
     customerProfile: "untested",
     addresses: "untested",
     createOrder: "untested",
+    verifyOrder: "untested",
   });
 
-  // Scoped Resource Modal Fields State (for modal inputs)
+  // Scoped Resource Modal Fields State
   const [prodPath, setProdPath] = useState("products");
   const [prodPayloadKey, setProdPayloadKey] = useState("query");
   const [prodResponseKey, setProdResponseKey] = useState("products");
@@ -153,8 +222,9 @@ export default function OnboardingPage() {
   const [addrFetchTested, setAddrFetchTested] = useState(false);
   const [addrSelfCertified, setAddrSelfCertified] = useState(false);
   const [addrFetchPath, setAddrFetchPath] = useState("addresses");
+  const [addrCombinedPath, setAddrCombinedPath] = useState("addresses._id");
   const [addrFetchResponseKey, setAddrFetchResponseKey] = useState("addresses");
-  const [addrFetchIdField, setAddrFetchIdField] = useState("id");
+  const [addrFetchIdField, setAddrFetchIdField] = useState("_id");
   const [addrCreatePath, setAddrCreatePath] = useState("addresses");
   const [addrCreateFields, setAddrCreateFields] = useState("line1, line2, city, state, pincode");
   const [addrCreateTestInputs, setAddrCreateTestInputs] = useState<Record<string, string>>({
@@ -177,21 +247,11 @@ export default function OnboardingPage() {
   const [coTestPrice, setCoTestPrice] = useState("299");
   const [coTestQuantity, setCoTestQuantity] = useState("1");
 
-  const handleAddAdditionalField = () => {
-    setCoAdditionalFields(prev => [...prev, { key: "", value: "" }]);
-  };
-
-  const handleRemoveAdditionalField = (index: number) => {
-    setCoAdditionalFields(prev => prev.filter((_, i) => i !== index));
-  };
-
-  const handleUpdateAdditionalField = (index: number, key: string, value: string) => {
-    setCoAdditionalFields(prev => {
-      const copy = [...prev];
-      copy[index] = { key, value };
-      return copy;
-    });
-  };
+  // Verify Order Amount Endpoint State
+  const [voPath, setVoPath] = useState("user/payments");
+  const [voMethod, setVoMethod] = useState("POST");
+  const [voOrderIdField, setVoOrderIdField] = useState("merchantOrderId");
+  const [voResponsePriceField, setVoResponsePriceField] = useState("price");
 
   // Scoped Modal Test Results
   const [modalTestResponse, setModalTestResponse] = useState<any>(null);
@@ -207,45 +267,38 @@ export default function OnboardingPage() {
   const [bankVerified, setBankVerified] = useState(false);
   const [bankLoading, setBankLoading] = useState(false);
 
-  // 1. LOCALSTORAGE PERSISTENCE (Step 1 Draft)
-  useEffect(() => {
-    if (pageLoading || isSavedToDb) return;
-    const draft = {
-      baseUrl,
-      authEnabled,
-      authDisabledAck,
-      authUrl,
-      authMethod,
-      modalIdentifierField,
-      modalIdentifierType,
-      modalPasswordField,
-      tokenPath,
-      deliveryType,
-      headerName,
-      addBearer,
-      cookieName,
-      authConfig,
-    };
-    localStorage.setItem("onboarding_step1_draft", JSON.stringify(draft));
-  }, [
-    baseUrl,
-    authEnabled,
-    authDisabledAck,
-    authUrl,
-    authMethod,
-    modalIdentifierField,
-    modalIdentifierType,
-    modalPasswordField,
-    tokenPath,
-    deliveryType,
-    headerName,
-    addBearer,
-    cookieName,
-    authConfig,
-    addrFetchIdField,
-    pageLoading,
-    isSavedToDb
-  ]);
+  // Centralized Autosave Engine
+  const handleAutosave = async (sectionKey: string, patchData: Partial<OnboardingData>) => {
+    setSaveStatuses(prev => ({ ...prev, [sectionKey]: "saving" }));
+    setSaveErrors(prev => ({ ...prev, [sectionKey]: "" }));
+
+    try {
+      const updated = await patchOnboardingDetails(patchData);
+      setOriginalConfig(updated);
+      setSaveStatuses(prev => ({ ...prev, [sectionKey]: "saved" }));
+      setTimeout(() => {
+        setSaveStatuses(prev => ({ ...prev, [sectionKey]: "idle" }));
+      }, 2500);
+    } catch (err: any) {
+      console.error(`Autosave failed for ${sectionKey}:`, err);
+      setSaveStatuses(prev => ({ ...prev, [sectionKey]: "error" }));
+      const msg = err?.response?.data?.detail || "Autosave failed. Please check field inputs.";
+      setSaveErrors(prev => ({ ...prev, [sectionKey]: msg }));
+      toast.error(`Autosave failed: ${msg}`);
+    }
+  };
+
+  // Debounced Autosave for Text Inputs
+  const debouncedSaveTimeoutRef = useRef<Record<string, NodeJS.Timeout>>({});
+  const triggerDebouncedAutosave = (sectionKey: string, patchData: Partial<OnboardingData>, delayMs = 500) => {
+    setSaveStatuses(prev => ({ ...prev, [sectionKey]: "saving" }));
+    if (debouncedSaveTimeoutRef.current[sectionKey]) {
+      clearTimeout(debouncedSaveTimeoutRef.current[sectionKey]);
+    }
+    debouncedSaveTimeoutRef.current[sectionKey] = setTimeout(() => {
+      handleAutosave(sectionKey, patchData);
+    }, delayMs);
+  };
 
   // Load existing onboarding details on mount
   useEffect(() => {
@@ -255,22 +308,19 @@ export default function OnboardingPage() {
         if (config) {
           setIsSavedToDb(true);
           setOriginalConfig(config);
-          setIsEditing(false);
+          setIsEditing(true);
           setBaseUrl(config.base_url);
           setAuthEnabled(config.auth_enabled);
           setAuthDisabledAck(config.auth_disabled_ack);
 
           if (config.branding_config) {
-            setColorTheme(config.branding_config.brand_color || "");
+            setColorTheme(config.branding_config.brand_color || "#4338CA");
             setLogoUrl(config.branding_config.logo_url || "");
-          } else {
-            setColorTheme("");
-            setLogoUrl("");
           }
-          setWebhookUrl(config.webhook_url || "");
+          setWebhookPath(config.webhook_path || config.webhook_url || "webhook/merchant-os");
 
           if (config.auth_config) {
-            setAuthUrl(config.auth_config.auth_url || "https://api.acmestore.com/v1/auth/login");
+            setAuthPath(config.auth_config.path || config.auth_config.auth_url || "auth/login");
             setAuthMethod(config.auth_config.method || "POST");
             setModalIdentifierField(config.auth_config.identifier_field || "email");
             setModalIdentifierType(config.auth_config.identifier_type || "Email");
@@ -290,7 +340,7 @@ export default function OnboardingPage() {
 
             setAuthConfig({
               isConfigured: true,
-              auth_url: config.auth_config.auth_url,
+              path: config.auth_config.path || config.auth_config.auth_url,
               method: config.auth_config.method,
               identifier_field: config.auth_config.identifier_field,
               identifier_type: config.auth_config.identifier_type,
@@ -299,29 +349,20 @@ export default function OnboardingPage() {
               token_delivery: delivery
             });
           }
-          // Load individual configurations from backend columns
+
           if (config.products_config) {
             setProdPath(config.products_config.path || "products");
             setProdPayloadKey(config.products_config.payload_key || "query");
             setProdResponseKey(config.products_config.response_key || "products");
-          } else if (config.endpoints?.products) {
-            setProdPath(config.endpoints.products.path || "products");
-            setProdPayloadKey(config.endpoints.products.payload_key || "query");
-            setProdResponseKey(config.endpoints.products.response_key || "products");
           }
 
           if (config.order_history_config) {
             setOhPath(config.order_history_config.path || "orders/history");
             setOhResponseKey(config.order_history_config.response_key || "orders");
-          } else if (config.endpoints?.orderHistory) {
-            setOhPath(config.endpoints.orderHistory.path || "orders/history");
-            setOhResponseKey(config.endpoints.orderHistory.response_key || "orders");
           }
 
           if (config.customer_profile_config) {
             setCpPath(config.customer_profile_config.path || "customers");
-          } else if (config.endpoints?.customerProfile) {
-            setCpPath(config.endpoints.customerProfile.path || "customers");
           }
 
           if (config.addresses_config) {
@@ -330,22 +371,16 @@ export default function OnboardingPage() {
             setAddrSupportsCreation(supports);
             if (addrs.fetch) {
               setAddrFetchPath(addrs.fetch.path || "addresses");
-              setAddrFetchResponseKey(addrs.fetch.response_key || "addresses");
-              setAddrFetchIdField(addrs.fetch.id_field || "id");
+              const rKey = addrs.fetch.response_key || "addresses";
+              const idKey = addrs.fetch.id_field || "_id";
+              setAddrFetchResponseKey(rKey);
+              setAddrFetchIdField(idKey);
+              setAddrCombinedPath(`${rKey}.${idKey}`);
             }
             if (addrs.create) {
               setAddrCreatePath(addrs.create.path || "addresses");
               setAddrCreateFields(addrs.create.field_mapping ? addrs.create.field_mapping.join(", ") : "line1, line2, city, state, pincode");
             }
-            setAddrFetchTested(true);
-            setAddrSelfCertified(true);
-          } else if (config.endpoints?.addresses) {
-            setAddrFetchPath(config.endpoints.addresses.fetch_path || "addresses");
-            setAddrFetchResponseKey(config.endpoints.addresses.fetch_response_key || "addresses");
-            setAddrFetchIdField(config.endpoints.addresses.id_field || "id");
-            setAddrCreatePath(config.endpoints.addresses.create_path || "addresses");
-            setAddrCreateFields(config.endpoints.addresses.create_fields || "line1, line2, city, state, pincode");
-            setAddrSupportsCreation(!!config.endpoints.addresses.create_path);
             setAddrFetchTested(true);
             setAddrSelfCertified(true);
           }
@@ -360,20 +395,19 @@ export default function OnboardingPage() {
             setCoAddressIdField(co.address_id_field || "address_id");
             setCoAdditionalFields(Array.isArray(co.additional_fields) ? co.additional_fields : []);
             setCoSelfCertified(true);
-          } else if (config.endpoints?.createOrder) {
-            setCoPath(config.endpoints.createOrder.path || "orders");
-            setCoCartKey(config.endpoints.createOrder.cart_key || "cart");
-            setCoItemIdField(config.endpoints.createOrder.item_id_field || "item_id");
-            setCoPriceField(config.endpoints.createOrder.price_field || "price");
-            setCoQuantityField(config.endpoints.createOrder.quantity_field || "quantity");
-            setCoAddressIdField(config.endpoints.createOrder.address_id_field || "address_id");
-            setCoAdditionalFields(Array.isArray(config.endpoints.createOrder.additional_fields) ? config.endpoints.createOrder.additional_fields : []);
-            setCoSelfCertified(true);
           }
+
+          if (config.verify_order_config) {
+            const vo = config.verify_order_config as any;
+            setVoPath(vo.path || "user/payments");
+            setVoMethod(vo.method || "POST");
+            setVoOrderIdField(vo.order_id_field || "merchantOrderId");
+            setVoResponsePriceField(vo.response_price_field || "price");
+          }
+
           if (config.bank_account) setBankAccount(config.bank_account);
           if (config.ifsc) {
             setIfsc(config.ifsc);
-            // Trigger IFSC Lookup immediately to auto-resolve bank details
             handleIfscLookup(config.ifsc);
           }
 
@@ -383,45 +417,20 @@ export default function OnboardingPage() {
             customerProfile: "success",
             addresses: "success",
             createOrder: "configured",
+            verifyOrder: "configured",
           });
         } else {
-          setIsEditing(true); // Default to editing if DB is empty
-          // Restore draft from localStorage if DB is empty
-          const draftStr = localStorage.getItem("onboarding_step1_draft");
-          if (draftStr) {
-            try {
-              const draft = JSON.parse(draftStr);
-              setBaseUrl(draft.baseUrl);
-              setAuthEnabled(draft.authEnabled);
-              setAuthDisabledAck(draft.authDisabledAck);
-              setAuthUrl(draft.authUrl);
-              setAuthMethod(draft.authMethod);
-              setModalIdentifierField(draft.modalIdentifierField);
-              setModalIdentifierType(draft.modalIdentifierType);
-              setModalPasswordField(draft.modalPasswordField);
-              setTokenPath(draft.tokenPath);
-              setDeliveryType(draft.deliveryType);
-              setHeaderName(draft.headerName);
-              setAddBearer(draft.addBearer);
-              setCookieName(draft.cookieName);
-              setAuthConfig(draft.authConfig);
-              toast.info("Restored connection settings draft from browser storage.");
-            } catch (e) {
-              console.error("Failed to parse onboarding draft", e);
-            }
-          }
+          setIsEditing(true);
         }
       } catch (err) {
-        if (axios.isCancel(err)) {
-          return;
+        if (!axios.isCancel(err)) {
+          console.error("Failed to load onboarding info: ", err);
         }
-        console.error("Failed to load onboarding info: ", err);
       } finally {
         setPageLoading(false);
       }
     }
 
-    // Try reading cached test token
     const cachedToken = sessionStorage.getItem("test_session_token");
     if (cachedToken) {
       setSessionToken(cachedToken);
@@ -436,214 +445,11 @@ export default function OnboardingPage() {
     }
   }, [authLoaded, authSignedIn]);
 
-  const handleCancelEdit = () => {
-    if (originalConfig) {
-      setBaseUrl(originalConfig.base_url || "");
-      setAuthEnabled(originalConfig.auth_enabled || false);
-      setAuthDisabledAck(originalConfig.auth_disabled_ack || false);
-      setBankAccount(originalConfig.bank_account || "");
-      setIfsc(originalConfig.ifsc || "");
-
-      if (originalConfig.branding_config) {
-        setColorTheme(originalConfig.branding_config.brand_color || "");
-        setLogoUrl(originalConfig.branding_config.logo_url || "");
-      } else {
-        setColorTheme("");
-        setLogoUrl("");
-      }
-      setWebhookUrl(originalConfig.webhook_url || "");
-
-      const oAuth = originalConfig.auth_config || {};
-      setAuthUrl(oAuth.auth_url || "https://api.acmestore.com/v1/auth/login");
-      setAuthMethod(oAuth.method || "POST");
-      setModalIdentifierField(oAuth.identifier_field || "email");
-      setModalIdentifierType(oAuth.identifier_type || "Email");
-      setModalPasswordField(oAuth.password_field || "password");
-      setTokenPath(oAuth.token_path || "token");
-
-      const delivery = oAuth.token_delivery || {
-        method: "header",
-        header_name: "Authorization",
-        bearer_prefix: true,
-        cookie_name: "session"
-      };
-      setDeliveryType(delivery.method);
-      setHeaderName(delivery.header_name || "Authorization");
-      setAddBearer(delivery.bearer_prefix !== false);
-      setCookieName(delivery.cookie_name || "session");
-
-      setAuthConfig({
-        isConfigured: true,
-        auth_url: oAuth.auth_url,
-        method: oAuth.method,
-        identifier_field: oAuth.identifier_field,
-        identifier_type: oAuth.identifier_type,
-        password_field: oAuth.password_field,
-        token_path: oAuth.token_path,
-        token_delivery: delivery
-      });
-
-      const oEndpoints = originalConfig.endpoints || {};
-      const oProd = oEndpoints.products || originalConfig.products_config || {};
-      setProdPath(oProd.path || "products");
-      setProdPayloadKey(oProd.payload_key || "query");
-      setProdResponseKey(oProd.response_key || "products");
-
-      const oOh = oEndpoints.orderHistory || originalConfig.order_history_config || {};
-      setOhPath(oOh.path || "orders/history");
-      setOhResponseKey(oOh.response_key || "orders");
-
-      const oCp = oEndpoints.customerProfile || originalConfig.customer_profile_config || {};
-      setCpPath(oCp.path || "customers");
-
-      const oAddr = oEndpoints.addresses || originalConfig.addresses_config || {};
-      if (oAddr.fetch) {
-        setAddrFetchPath(oAddr.fetch.path || "addresses");
-        setAddrFetchResponseKey(oAddr.fetch.response_key || "addresses");
-        setAddrFetchIdField(oAddr.fetch.id_field || "id");
-      } else {
-        setAddrFetchPath(oAddr.fetch_path || "addresses");
-        setAddrFetchResponseKey(oAddr.fetch_response_key || "addresses");
-        setAddrFetchIdField(oAddr.id_field || "id");
-      }
-      if (oAddr.create) {
-        setAddrCreatePath(oAddr.create.path || "addresses");
-        setAddrCreateFields(oAddr.create.field_mapping ? oAddr.create.field_mapping.join(", ") : "line1, line2, city, state, pincode");
-      } else {
-        setAddrCreatePath(oAddr.create_path || "addresses");
-        setAddrCreateFields(oAddr.create_fields || "line1, line2, city, state, pincode");
-      }
-
-      const oCo = oEndpoints.createOrder || originalConfig.create_order_config || {};
-      setCoPath(oCo.path || "orders");
-      setCoCartKey(oCo.cart_key || "cart");
-      setCoItemIdField(oCo.item_id_field || "item_id");
-      setCoPriceField(oCo.price_field || "price");
-      setCoQuantityField(oCo.quantity_field || "quantity");
-
-      if (originalConfig.ifsc) {
-        handleIfscLookup(originalConfig.ifsc);
-      }
-    }
-    setIsEditing(false);
-  };
-
-  const hasPendingChanges = useMemo(() => {
-    if (!originalConfig) {
-      return baseUrl !== "" || bankAccount !== "" || ifsc !== "" || colorTheme !== "" || logoUrl !== "" || webhookUrl !== "";
-    }
-
-    if (baseUrl !== (originalConfig.base_url || "")) return true;
-    if (authEnabled !== originalConfig.auth_enabled) return true;
-    if (authDisabledAck !== originalConfig.auth_disabled_ack) return true;
-    if (bankAccount !== (originalConfig.bank_account || "")) return true;
-    if (ifsc !== (originalConfig.ifsc || "")) return true;
-    if (webhookUrl !== (originalConfig.webhook_url || "")) return true;
-
-    const oBrand = originalConfig.branding_config || {};
-    if (colorTheme !== (oBrand.brand_color || "")) return true;
-    if (logoUrl !== (oBrand.logo_url || "")) return true;
-
-    const oAuth = originalConfig.auth_config || {};
-    if (authUrl !== (oAuth.auth_url || "")) return true;
-    if (authMethod !== (oAuth.method || "POST")) return true;
-    if (modalIdentifierField !== (oAuth.identifier_field || "")) return true;
-    if (modalIdentifierType !== (oAuth.identifier_type || "")) return true;
-    if (modalPasswordField !== (oAuth.password_field || "")) return true;
-    if (tokenPath !== (oAuth.token_path || "")) return true;
-
-    const oDel = oAuth.token_delivery || {};
-    if (deliveryType !== (oDel.method || "header")) return true;
-    if (headerName !== (oDel.header_name || "Authorization")) return true;
-    if (addBearer !== (oDel.bearer_prefix !== false)) return true;
-    if (cookieName !== (oDel.cookie_name || "session")) return true;
-
-    const oEndpoints = originalConfig.endpoints || {};
-    const oProd = oEndpoints.products || originalConfig.products_config || {};
-    if (prodPath !== (oProd.path || "products")) return true;
-    if (prodPayloadKey !== (oProd.payload_key || "query")) return true;
-    if (prodResponseKey !== (oProd.response_key || "products")) return true;
-
-    const oOh = oEndpoints.orderHistory || originalConfig.order_history_config || {};
-    if (ohPath !== (oOh.path || "orders/history")) return true;
-    if (ohResponseKey !== (oOh.response_key || "orders")) return true;
-
-    const oCp = oEndpoints.customerProfile || originalConfig.customer_profile_config || {};
-    if (cpPath !== (oCp.path || "customers")) return true;
-
-    const oAddr = oEndpoints.addresses || originalConfig.addresses_config || {};
-    if (oAddr.fetch) {
-      if (addrFetchPath !== (oAddr.fetch.path || "addresses")) return true;
-      if (addrFetchResponseKey !== (oAddr.fetch.response_key || "addresses")) return true;
-      if (addrFetchIdField !== (oAddr.fetch.id_field || "id")) return true;
-    } else {
-      if (addrFetchPath !== (oAddr.fetch_path || "addresses")) return true;
-      if (addrFetchResponseKey !== (oAddr.fetch_response_key || "addresses")) return true;
-      if (addrFetchIdField !== (oAddr.id_field || "id")) return true;
-    }
-    if (oAddr.create) {
-      if (addrCreatePath !== (oAddr.create.path || "addresses")) return true;
-      const originalFields = oAddr.create.field_mapping ? oAddr.create.field_mapping.join(", ") : "line1, line2, city, state, pincode";
-      if (addrCreateFields !== originalFields) return true;
-    } else {
-      if (addrCreatePath !== (oAddr.create_path || "addresses")) return true;
-      if (addrCreateFields !== (oAddr.create_fields || "line1, line2, city, state, pincode")) return true;
-    }
-
-    const oCo = oEndpoints.createOrder || originalConfig.create_order_config || {};
-    if (coPath !== (oCo.path || "orders")) return true;
-    if (coCartKey !== (oCo.cart_key || "cart")) return true;
-    if (coItemIdField !== (oCo.item_id_field || "item_id")) return true;
-    if (coPriceField !== (oCo.price_field || "price")) return true;
-    if (coQuantityField !== (oCo.quantity_field || "quantity")) return true;
-
-    return false;
-  }, [
-    originalConfig,
-    baseUrl,
-    authEnabled,
-    authDisabledAck,
-    bankAccount,
-    ifsc,
-    colorTheme,
-    logoUrl,
-    webhookUrl,
-    authUrl,
-    authMethod,
-    modalIdentifierField,
-    modalIdentifierType,
-    modalPasswordField,
-    tokenPath,
-    deliveryType,
-    headerName,
-    addBearer,
-    cookieName,
-    prodPath,
-    prodPayloadKey,
-    prodResponseKey,
-    ohPath,
-    ohResponseKey,
-    cpPath,
-    addrFetchPath,
-    addrFetchResponseKey,
-    addrCreatePath,
-    addrCreateFields,
-    coPath,
-    coCartKey,
-    coItemIdField,
-    coPriceField,
-    coQuantityField,
-  ]);
-
-  const isFinishButtonVisible = !isSavedToDb || (isEditing && hasPendingChanges);
-
-  // Update test token status resolving on object
   const getNestedValue = (obj: any, path: string): any => {
     if (!obj || !path) return undefined;
     return path.split(".").reduce((acc, part) => acc && acc[part], obj);
   };
 
-  // Recursively search object for auth keys
   const findTokenPathInObject = (obj: any, path = ""): string | null => {
     if (!obj || typeof obj !== "object") return null;
     const tokenKeys = ["token", "access_token", "auth_token", "secret", "key", "credentials", "jwt"];
@@ -660,7 +466,6 @@ export default function OnboardingPage() {
     return null;
   };
 
-  // Validate entered path resolves in the last test response
   useEffect(() => {
     if (!testResponseData || !tokenPath) {
       setTokenPathStatus("none");
@@ -679,7 +484,8 @@ export default function OnboardingPage() {
       setShowConfirmDisableModal(true);
     } else {
       setAuthEnabled(true);
-      setAuthDisabledAck(false); // Reset to false whenever auth_enabled is true
+      setAuthDisabledAck(false);
+      handleAutosave("connection", { auth_enabled: true, auth_disabled_ack: false });
     }
   };
 
@@ -687,6 +493,7 @@ export default function OnboardingPage() {
     setAuthEnabled(false);
     setAuthDisabledAck(true);
     setShowConfirmDisableModal(false);
+    handleAutosave("connection", { auth_enabled: false, auth_disabled_ack: true });
     toast.warning("Customer authentication disabled. Shop assistant will operate in anonymous guest mode.");
   };
 
@@ -714,6 +521,7 @@ export default function OnboardingPage() {
       setResolvedBank(data.BANK);
       setResolvedBranch(data.BRANCH);
       setBankVerified(true);
+      handleAutosave("settlement", { ifsc: cleaned, branch_name: data.BRANCH || data.BANK });
     } catch (err) {
       setIfscError("Failed to detect branch. Please check the IFSC code.");
       setResolvedBank("");
@@ -724,7 +532,42 @@ export default function OnboardingPage() {
     }
   };
 
-  // Trigger test customer auth request
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      setSelectedLogoFile(file);
+      setIsCropperOpen(true);
+    }
+  };
+
+  const handleCropComplete = async (croppedBlob: Blob) => {
+    try {
+      setIsLogoUploading(true);
+      const fileName = selectedLogoFile?.name || "logo.png";
+      const fileType = croppedBlob.type || "image/png";
+
+      const presignData = await getPresignedLogoUrl(fileName, fileType);
+      const fileToUpload = new File([croppedBlob], fileName, { type: fileType });
+      await uploadFileToS3(presignData.uploadUrl, fileToUpload, fileType);
+
+      const publicUrl = presignData.publicUrl;
+      setLogoUrl(publicUrl);
+
+      await handleAutosave("branding", {
+        branding_config: { brand_color: colorTheme, logo_url: publicUrl }
+      });
+
+      toast.success("Logo uploaded & saved successfully!");
+      setIsCropperOpen(false);
+      setSelectedLogoFile(null);
+    } catch (err: any) {
+      console.error("Error processing logo upload:", err);
+      toast.error("Failed to upload logo image. Please try again.");
+    } finally {
+      setIsLogoUploading(false);
+    }
+  };
+
   const handleTestCustomerAuth = async () => {
     setTestLoading(true);
     setTestResponseData(null);
@@ -735,7 +578,8 @@ export default function OnboardingPage() {
       };
 
       const result = await testCustomerAuth({
-        auth_url: authUrl,
+        base_url: baseUrl,
+        auth_path: authPath,
         auth_method: authMethod,
         payload: reqPayload
       });
@@ -759,7 +603,7 @@ export default function OnboardingPage() {
         toast.error(`Server returned error status code: ${result.status_code}`);
       }
     } catch (err) {
-      toast.error("Failed to connect to authentication URL.");
+      toast.error("Failed to connect to authentication path.");
     } finally {
       setTestLoading(false);
     }
@@ -790,18 +634,19 @@ export default function OnboardingPage() {
       cookie_name: deliveryType === "cookie" ? cookieName : null,
     };
 
-    setAuthConfig({
+    const newAuthConfig = {
       isConfigured: true,
-      auth_url: authUrl,
+      path: authPath,
       method: authMethod,
       identifier_field: modalIdentifierField,
       identifier_type: modalIdentifierType,
       password_field: modalPasswordField,
       token_path: tokenPath,
       token_delivery: deliveryConfig
-    });
+    };
 
-    // Capture the session token from Step 2 test result
+    setAuthConfig(newAuthConfig);
+
     if (testResponseData) {
       const token = getNestedValue(testResponseData, tokenPath);
       if (token) {
@@ -811,122 +656,21 @@ export default function OnboardingPage() {
     }
 
     setShowMappingModal(false);
+    handleAutosave("connection", { auth_config: newAuthConfig as any });
     toast.success("Customer login configurations saved successfully!");
   };
 
-  const handleMockLogoUpload = () => {
-    if (!isEditing) return;
-    toast.success("Logo uploaded successfully (mock file: logo.png)");
-    setLogoUrl("https://yourstore.com/logo.png");
-  };
-
-  // STEP GATING: Save Step 1 Connection details to Backend to unlock Step 2
-  const handleSaveStep1 = async () => {
-    setSaveLoading(true);
-    try {
-      const finalAuthConfig = authEnabled ? {
-        auth_url: authUrl,
-        method: authMethod,
-        identifier_field: modalIdentifierField,
-        identifier_type: modalIdentifierType,
-        password_field: modalPasswordField,
-        token_path: tokenPath,
-        token_delivery: {
-          method: deliveryType,
-          header_name: deliveryType === "header" ? headerName : null,
-          bearer_prefix: deliveryType === "header" ? addBearer : null,
-          cookie_name: deliveryType === "cookie" ? cookieName : null,
-        }
-      } : null;
-
-      const products_config = {
-        path: prodPath,
-        method: "GET",
-        payload_key: prodPayloadKey,
-        response_key: prodResponseKey
-      };
-
-      const order_history_config = {
-        path: ohPath,
-        method: "GET",
-        response_key: ohResponseKey
-      };
-
-      const customer_profile_config = {
-        path: cpPath,
-        method: "GET"
-      };
-
-      const addresses_config = {
-        supports_creation: addrSupportsCreation,
-        fetch: {
-          path: addrFetchPath,
-          method: "GET",
-          response_key: addrFetchResponseKey,
-          id_field: addrFetchIdField
-        },
-        create: addrSupportsCreation ? {
-          path: addrCreatePath,
-          method: "POST",
-          field_mapping: addrCreateFields.split(",").map(k => k.trim()).filter(Boolean)
-        } : null
-      };
-
-      const create_order_config = {
-        path: coPath,
-        method: "POST",
-        cart_key: coCartKey,
-        item_id_field: coItemIdField,
-        price_field: coPriceField,
-        quantity_field: coQuantityField,
-        address_id_field: coAddressIdField,
-        additional_fields: coAdditionalFields.filter(f => f.key.trim() !== "")
-      };
-
-      const savedResponse = await saveOnboardingDetails({
-        base_url: baseUrl,
-        auth_enabled: authEnabled,
-        auth_disabled_ack: authDisabledAck,
-        auth_config: finalAuthConfig,
-        products_config,
-        order_history_config,
-        customer_profile_config,
-        addresses_config,
-        create_order_config,
-        bank_account: bankAccount,
-        ifsc,
-        branch_name: resolvedBranch || resolvedBank,
-        branding_config: { brand_color: colorTheme, logo_url: logoUrl },
-        webhook_url: webhookUrl,
-      });
-
-      setIsSavedToDb(true);
-      setOriginalConfig(savedResponse);
-      setIsEditing(false);
-      localStorage.removeItem("onboarding_step1_draft");
-      toast.success("Step 1 (Connection Details) saved successfully! Step 2 is now unlocked.");
-    } catch (err) {
-      console.error(err);
-      toast.error("Failed to save connection details. Please verify your settings.");
-    } finally {
-      setSaveLoading(false);
-    }
-  };
-
-  // Open scoped resource config modal
   const handleOpenResourceModal = (resourceKey: string) => {
     setActiveResource(resourceKey);
     setModalTestResponse(null);
     setModalTestStatus("untested");
     setModalTestLoading(false);
 
-    // Set dynamic tab for addresses
     if (resourceKey === "addresses") {
       setAddrActiveTab("fetch");
     }
   };
 
-  // Scoped Resource Endpoint Save & Test flow
   const handleSaveAndTestResource = async (resourceKey: string) => {
     setModalTestLoading(true);
     setModalTestResponse(null);
@@ -935,7 +679,6 @@ export default function OnboardingPage() {
     let method = "GET";
     let reqPayload: Record<string, any> = {};
 
-    // Gather scoped inputs based on active resource
     if (resourceKey === "products") {
       path = prodPath;
       method = "GET";
@@ -966,23 +709,38 @@ export default function OnboardingPage() {
             [coQuantityField]: Number(coTestQuantity) || 1
           }
         ],
-        "address": "123 Mock Lane, Springfield"
+        [coAddressIdField]: "addr_mock_123"
+      };
+    } else if (resourceKey === "verifyOrder") {
+      path = voPath;
+      method = voMethod;
+      reqPayload = {
+        [voOrderIdField]: "ord_sample_999"
       };
     }
 
+    const activeToken = sessionToken || (typeof window !== "undefined" ? sessionStorage.getItem("test_session_token") : null);
+
+    if (authEnabled && !activeToken) {
+      toast.warning("No test session token active. Customer endpoints requiring authentication may return 401 Unauthorized.");
+    }
+
     try {
-      // 3. TOKEN REUSE IN STEP 2 TESTING
       const result = await testEndpoint({
         base_url: baseUrl,
         auth_needed: authEnabled,
-        credential_value: authEnabled ? sessionToken : null,
-        token_delivery_method: authEnabled ? authConfig.token_delivery?.method : null,
+        credential_value: authEnabled ? activeToken : null,
+        token_delivery_method: authEnabled ? (authConfig.token_delivery?.method || deliveryType) : null,
         token_delivery_name: authEnabled ? (
-          authConfig.token_delivery?.method === "header"
-            ? authConfig.token_delivery.header_name
-            : authConfig.token_delivery.cookie_name
+          (authConfig.token_delivery?.method || deliveryType) === "header"
+            ? (authConfig.token_delivery?.header_name || headerName)
+            : (authConfig.token_delivery?.cookie_name || cookieName)
         ) : null,
-        token_delivery_bearer: authEnabled ? authConfig.token_delivery?.bearer_prefix : null,
+        token_delivery_bearer: authEnabled ? (
+          authConfig.token_delivery?.bearer_prefix !== undefined && authConfig.token_delivery?.bearer_prefix !== null
+            ? authConfig.token_delivery.bearer_prefix
+            : addBearer
+        ) : null,
         path,
         method,
         payload: reqPayload
@@ -993,41 +751,17 @@ export default function OnboardingPage() {
       setModalTestStatus(isSuccess ? "success" : "error");
 
       if (isSuccess) {
-        toast.success(`${resourceKey.toUpperCase()} endpoint test passed!`);
+        if (resourceKey === "addresses") {
+          const addressList = getNestedValue(result.data, parsedAddressObj.response_key);
+          const addressCount = Array.isArray(addressList) ? addressList.length : (addressList ? 1 : 0);
+          toast.success(`${addressCount} address${addressCount === 1 ? "" : "es"} found against key '${parsedAddressObj.response_key}'!`);
+        } else {
+          toast.success(`${resourceKey} endpoint test passed!`);
+        }
       } else {
-        toast.error(`${resourceKey.toUpperCase()} endpoint test failed.`);
+        toast.error(`${resourceKey} endpoint test failed.`);
       }
 
-      // Save mapping to active endpoints state
-      const updatedEndpoints = { ...endpoints };
-      if (resourceKey === "products") {
-        updatedEndpoints.products = { path, method, payload_key: prodPayloadKey, response_key: prodResponseKey };
-      } else if (resourceKey === "orderHistory") {
-        updatedEndpoints.orderHistory = { path, method, response_key: ohResponseKey };
-      } else if (resourceKey === "customerProfile") {
-        updatedEndpoints.customerProfile = { path, method };
-      } else if (resourceKey === "addresses") {
-        updatedEndpoints.addresses = {
-          ...updatedEndpoints.addresses,
-          fetch_path: addrFetchPath,
-          fetch_method: "GET",
-          fetch_response_key: addrFetchResponseKey,
-          id_field: addrFetchIdField,
-          create_path: addrCreatePath,
-          create_method: "POST",
-          create_fields: addrCreateFields
-        };
-      } else if (resourceKey === "createOrder") {
-        updatedEndpoints.createOrder = {
-          path,
-          method,
-          cart_key: coCartKey,
-          item_id_field: coItemIdField,
-          price_field: coPriceField,
-          quantity_field: coQuantityField
-        };
-      }
-      setEndpoints(updatedEndpoints);
       setEndpointStatuses(prev => ({ ...prev, [resourceKey]: isSuccess ? "success" : "error" }));
 
     } catch (err) {
@@ -1038,108 +772,21 @@ export default function OnboardingPage() {
     }
   };
 
-  // Save the full configuration of resources + bank account to backend DB
   const handleFinish = async () => {
-    setSaveLoading(true);
-    try {
-      const finalAuthConfig = authEnabled ? {
-        auth_url: authUrl,
-        method: authMethod,
-        identifier_field: modalIdentifierField,
-        identifier_type: modalIdentifierType,
-        password_field: modalPasswordField,
-        token_path: tokenPath,
-        token_delivery: {
-          method: deliveryType,
-          header_name: deliveryType === "header" ? headerName : null,
-          bearer_prefix: deliveryType === "header" ? addBearer : null,
-          cookie_name: deliveryType === "cookie" ? cookieName : null,
-        }
-      } : null;
-
-      const products_config = {
-        path: prodPath,
-        method: "GET",
-        payload_key: prodPayloadKey,
-        response_key: prodResponseKey
-      };
-
-      const order_history_config = {
-        path: ohPath,
-        method: "GET",
-        response_key: ohResponseKey
-      };
-
-      const customer_profile_config = {
-        path: cpPath,
-        method: "GET"
-      };
-
-      const addresses_config = {
-        supports_creation: addrSupportsCreation,
-        fetch: {
-          path: addrFetchPath,
-          method: "GET",
-          response_key: addrFetchResponseKey,
-          id_field: addrFetchIdField
-        },
-        create: addrSupportsCreation ? {
-          path: addrCreatePath,
-          method: "POST",
-          field_mapping: addrCreateFields.split(",").map(k => k.trim()).filter(Boolean)
-        } : null
-      };
-
-      const create_order_config = {
-        path: coPath,
-        method: "POST",
-        cart_key: coCartKey,
-        item_id_field: coItemIdField,
-        price_field: coPriceField,
-        quantity_field: coQuantityField,
-        address_id_field: coAddressIdField,
-        additional_fields: coAdditionalFields.filter(f => f.key.trim() !== "")
-      };
-
-      const savedResponse = await saveOnboardingDetails({
-        base_url: baseUrl,
-        auth_enabled: authEnabled,
-        auth_disabled_ack: authDisabledAck,
-        auth_config: finalAuthConfig,
-        products_config,
-        order_history_config,
-        customer_profile_config,
-        addresses_config,
-        create_order_config,
-        bank_account: bankAccount,
-        ifsc,
-        branch_name: resolvedBranch || resolvedBank || "Verified Branch",
-        branding_config: { brand_color: colorTheme, logo_url: logoUrl },
-        webhook_url: webhookUrl,
-      });
-
-      setOriginalConfig(savedResponse);
-      setIsEditing(false);
-
-      toast.success("Onboarding configurations saved successfully!");
-
-      setTimeout(() => {
-        window.location.href = "/dashboard";
-      }, 1000);
-    } catch (err) {
-      console.error("Failed to save onboarding configuration: ", err);
-      toast.error("Failed to save onboarding configurations.");
-    } finally {
-      setSaveLoading(false);
-    }
+    toast.success("All onboarding configurations are complete and saved!");
+    setTimeout(() => {
+      window.location.href = "/dashboard";
+    }, 1000);
   };
 
-  // Onboarding Completion Criteria: Read endpoints must be 'success', Write endpoints can be 'success' or 'configured'
+  const parsedAddressObj = useMemo(() => parseAddressPath(addrCombinedPath), [addrCombinedPath]);
+
   const isProductsSuccess = endpointStatuses.products === "success";
   const isOrderHistorySuccess = endpointStatuses.orderHistory === "success";
   const isCustomerProfileSuccess = endpointStatuses.customerProfile === "success";
-  const isAddressesValid = endpointStatuses.addresses === "success" || endpointStatuses.addresses === "configured";
+  const isAddressesValid = (endpointStatuses.addresses === "success" || endpointStatuses.addresses === "configured") && parsedAddressObj.isValid;
   const isCreateOrderValid = (endpointStatuses.createOrder === "success" || endpointStatuses.createOrder === "configured") && coAddressIdField.trim() !== "";
+  const isVerifyOrderValid = endpointStatuses.verifyOrder === "success" || endpointStatuses.verifyOrder === "configured";
 
   const allEndpointsSuccess =
     isProductsSuccess &&
@@ -1149,7 +796,6 @@ export default function OnboardingPage() {
     isCreateOrderValid;
 
   const isBankSetupValid = bankAccount.trim().length >= 8 && bankVerified;
-
   const isSetupComplete = isSavedToDb && allEndpointsSuccess && isBankSetupValid;
 
   if (pageLoading) {
@@ -1164,52 +810,64 @@ export default function OnboardingPage() {
   }
 
   return (
-    <div className="space-y-8 max-w-4xl mx-auto py-4">
-      {/* Title Header */}
+    <div className="space-y-8 max-w-4xl mx-auto py-4 px-4 sm:px-6 font-sans">
+      <input
+        type="file"
+        ref={logoInputRef}
+        onChange={handleFileSelect}
+        accept="image/*"
+        className="hidden"
+      />
+
+      <ImageCropperModal
+        open={isCropperOpen}
+        file={selectedLogoFile}
+        aspectRatio={1}
+        maxOutputSize={512}
+        onCancel={() => {
+          setIsCropperOpen(false);
+          setSelectedLogoFile(null);
+        }}
+        onCropComplete={handleCropComplete}
+      />
+
+      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-border pb-4">
         <div>
           <h1 className="font-heading text-2xl font-bold text-text-primary">
             Connect Your Business APIs
           </h1>
           <p className="text-sm text-text-secondary mt-1">
-            Provide your endpoint coordinates, authentication settings, and payout account details to complete setup.
+            Configure your endpoint paths, authentication settings, branding, and payout account details. Changes save automatically.
           </p>
         </div>
-        {isSavedToDb && (
-          <Button
-            type="button"
-            variant={isEditing ? "secondary" : "primary"}
-            onClick={() => {
-              if (isEditing) {
-                handleCancelEdit();
-              } else {
-                setIsEditing(true);
-              }
-            }}
-            className="font-semibold shrink-0"
-          >
-            {isEditing ? "Cancel" : "Edit Settings"}
-          </Button>
-        )}
       </div>
 
       {/* Part A: Shared Connection Details Card */}
       <Card
-        title="1. Shared Connection Details"
-        description="Configure the base URL and customer authentication settings. These credentials are used by the AI agent to secure and identify store shoppers."
+        title={
+          <div className="flex items-center justify-between w-full">
+            <span>1. Shared Connection Details</span>
+            <SaveIndicator status={saveStatuses.connection} error={saveErrors.connection} />
+          </div>
+        }
+        description="Configure your base URL and customer authentication settings. These credentials secure shopper sessions."
       >
         <div className="space-y-6">
           <Input
             label="API Base URL"
-            placeholder="https://api.yourstore.com/v1"
+            placeholder="https://ponion-backend.onrender.com"
             value={baseUrl}
-            onChange={(e) => setBaseUrl(e.target.value)}
+            onChange={(e) => {
+              const val = e.target.value;
+              setBaseUrl(val);
+              triggerDebouncedAutosave("connection", { base_url: val });
+            }}
             required
-            disabled={saveLoading || !isEditing}
           />
 
           {/* Toggle Switch */}
-          <div className="flex items-center justify-between p-4 bg-background border border-border rounded-xl">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-background border border-border rounded-xl gap-4">
             <div className="flex items-center gap-3">
               {authEnabled ? (
                 <Lock className="w-5 h-5 text-primary shrink-0" />
@@ -1221,20 +879,19 @@ export default function OnboardingPage() {
                   Require customer authentication
                 </p>
                 <p className="text-xs text-text-secondary mt-0.5">
-                  Securely validates customers via tokens before letting them query order histories or profiles.
+                  Securely validates customers via tokens before querying order histories or profiles.
                 </p>
               </div>
             </div>
             <Switch
               checked={authEnabled}
               onCheckedChange={handleToggleAuth}
-              disabled={saveLoading || !isEditing}
             />
           </div>
 
-          {/* Conditional Customer Auth Fields */}
+          {/* Customer Auth Fields */}
           {authEnabled && (
-            <div className="border border-border bg-background-alt p-5 rounded-xl space-y-6 animate-fade-in">
+            <div className="border border-border bg-background-alt p-4 sm:p-5 rounded-xl space-y-6 animate-fade-in">
               <div className="flex items-center justify-between border-b border-border pb-3">
                 <span className="text-sm font-bold text-text-primary">Customer Authentication Setup</span>
                 {authConfig.isConfigured ? (
@@ -1249,13 +906,21 @@ export default function OnboardingPage() {
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div className="md:col-span-2">
                   <Input
-                    label="Customer Login URL"
-                    placeholder="https://api.yourstore.com/v1/auth/login"
-                    value={authUrl}
-                    onChange={(e) => setAuthUrl(e.target.value)}
+                    label="Customer Login Path"
+                    placeholder="auth/login"
+                    value={authPath}
+                    onChange={(e) => {
+                      const val = e.target.value.replace(/^\/+/, "");
+                      setAuthPath(val);
+                      triggerDebouncedAutosave("connection", {
+                        auth_config: { ...authConfig, path: val }
+                      });
+                    }}
                     required
-                    disabled={saveLoading || !isEditing}
                   />
+                  <p className="text-xs text-text-secondary mt-1">
+                    Relative to your base URL — don't include the domain (e.g. <code className="bg-background px-1 py-0.5 rounded font-mono">auth/login</code>).
+                  </p>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-text-primary mb-1.5">
@@ -1263,9 +928,14 @@ export default function OnboardingPage() {
                   </label>
                   <select
                     value={authMethod}
-                    onChange={(e) => setAuthMethod(e.target.value)}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setAuthMethod(val);
+                      handleAutosave("connection", {
+                        auth_config: { ...authConfig, method: val, path: authPath }
+                      });
+                    }}
                     className="w-full bg-surface border border-border rounded-lg px-3.5 py-2.5 text-base text-text-primary focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-colors cursor-pointer"
-                    disabled={saveLoading || !isEditing}
                   >
                     <option value="POST">POST</option>
                     <option value="GET">GET</option>
@@ -1275,29 +945,26 @@ export default function OnboardingPage() {
                 </div>
               </div>
 
-              {/* Configure Fields Button or Config Summary */}
               {authConfig.isConfigured ? (
-                <div className="flex items-center justify-between p-4 bg-surface border border-border rounded-lg text-sm">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between p-4 bg-surface border border-border rounded-lg text-sm gap-3">
                   <div className="space-y-1">
                     <p className="text-text-secondary">
                       Payload: <strong className="text-text-primary">"{authConfig.identifier_field}"</strong> ({authConfig.identifier_type}) &bull; Target: <strong className="text-text-primary">"{authConfig.token_path}"</strong>
                     </p>
                     <p className="text-text-secondary">
-                      Delivery: <strong className="text-text-primary">{authConfig.token_delivery.method === "header" ? `Header (${authConfig.token_delivery.header_name})` : `Cookie (${authConfig.token_delivery.cookie_name})`}</strong>
+                      Delivery: <strong className="text-text-primary">{authConfig.token_delivery?.method === "header" ? `Header (${authConfig.token_delivery?.header_name || "Authorization"})` : `Cookie (${authConfig.token_delivery?.cookie_name || "session"})`}</strong>
                     </p>
                   </div>
-                  {isEditing && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setMappingStep(1);
-                        setShowMappingModal(true);
-                      }}
-                      className="text-primary hover:underline font-semibold flex items-center gap-1 text-xs cursor-pointer"
-                    >
-                      <Edit3 className="w-3.5 h-3.5" /> Edit Configuration
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMappingStep(1);
+                      setShowMappingModal(true);
+                    }}
+                    className="text-primary hover:underline font-semibold flex items-center gap-1 text-xs cursor-pointer shrink-0"
+                  >
+                    <Edit3 className="w-3.5 h-3.5" /> Edit Configuration
+                  </button>
                 </div>
               ) : (
                 <div className="flex justify-end pt-2">
@@ -1308,7 +975,7 @@ export default function OnboardingPage() {
                       setMappingStep(1);
                       setShowMappingModal(true);
                     }}
-                    disabled={authUrl.trim() === "" || !isEditing}
+                    disabled={authPath.trim() === ""}
                     className="flex items-center gap-2"
                   >
                     <span>Map Login Fields</span>
@@ -1320,11 +987,14 @@ export default function OnboardingPage() {
           )}
 
           {/* Widget Branding & Webhook Settings */}
-          <div className="border border-border bg-background p-5 rounded-xl space-y-6">
-            <span className="text-sm font-bold text-text-primary block border-b border-border pb-3">Widget Branding & Webhooks</span>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
+          <div className="border border-border bg-background p-4 sm:p-5 rounded-xl space-y-6">
+            <div className="flex items-center justify-between border-b border-border pb-3">
+              <span className="text-sm font-bold text-text-primary">Widget Branding & Webhooks</span>
+              <SaveIndicator status={saveStatuses.branding} error={saveErrors.branding} />
+            </div>
 
-              {/* Accent Color Picker & Text Input */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
+              {/* Accent Color Picker */}
               <div>
                 <label className="block text-sm font-medium text-text-primary mb-1.5">
                   Accent Color Theme (Hex)
@@ -1333,45 +1003,72 @@ export default function OnboardingPage() {
                   <input
                     type="color"
                     value={colorTheme || "#4338CA"}
-                    onChange={(e) => setColorTheme(e.target.value)}
-                    disabled={saveLoading || !isEditing}
-                    className="w-11 h-11 border border-border rounded-lg cursor-pointer bg-surface p-1"
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setColorTheme(val);
+                      handleAutosave("branding", {
+                        branding_config: { brand_color: val, logo_url: logoUrl }
+                      });
+                    }}
+                    className="w-11 h-11 border border-border rounded-lg cursor-pointer bg-surface p-1 shrink-0"
                   />
                   <div className="flex-1">
                     <Input
                       value={(colorTheme || "").toUpperCase()}
-                      onChange={(e) => setColorTheme(e.target.value)}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setColorTheme(val);
+                        if (/^#[0-9A-Fa-f]{6}$/.test(val)) {
+                          triggerDebouncedAutosave("branding", {
+                            branding_config: { brand_color: val, logo_url: logoUrl }
+                          });
+                        }
+                      }}
                       placeholder="#4338CA"
                       maxLength={7}
-                      disabled={saveLoading || !isEditing}
                     />
                   </div>
                 </div>
               </div>
 
-              {/* Logo Mock Upload UI */}
+              {/* Widget Logo Upload UI */}
               <div>
                 <label className="block text-sm font-medium text-text-primary mb-1.5">
                   Widget Logo
                 </label>
                 <div className="flex items-center gap-4">
                   {logoUrl ? (
-                    <div className="relative w-16 h-16 rounded-xl border border-border bg-surface flex items-center justify-center overflow-hidden">
-                      <img src={logoUrl} alt="Logo" className="w-full h-full object-cover" onError={(e) => {
-                        (e.target as any).style.display = 'none';
-                      }} />
-                      <div className="absolute inset-0 bg-secondary/55 flex items-center justify-center text-white opacity-0 hover:opacity-100 transition-opacity">
-                        <UploadCloud className="w-5 h-5 animate-pulse" />
+                    <div
+                      onClick={() => logoInputRef.current?.click()}
+                      className="relative w-16 h-16 rounded-xl border border-border bg-surface flex items-center justify-center overflow-hidden cursor-pointer group shrink-0"
+                    >
+                      <img
+                        src={logoUrl}
+                        alt="Logo"
+                        className="w-full h-full object-cover"
+                        onError={(e) => {
+                          (e.target as any).style.display = 'none';
+                        }}
+                      />
+                      <div className="absolute inset-0 bg-secondary/70 flex flex-col items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-opacity">
+                        <UploadCloud className="w-5 h-5" />
+                        <span className="text-[9px] font-bold mt-0.5">Change</span>
                       </div>
                     </div>
                   ) : (
                     <div
-                      onClick={handleMockLogoUpload}
-                      className={`w-16 h-16 rounded-xl border-2 border-dashed border-border bg-background flex flex-col items-center justify-center text-text-secondary hover:text-primary hover:border-primary transition-colors ${isEditing ? "cursor-pointer" : "opacity-50 cursor-not-allowed"}`}
-                      role="presentation"
+                      onClick={() => logoInputRef.current?.click()}
+                      className="w-16 h-16 rounded-xl border-2 border-dashed border-border bg-background flex flex-col items-center justify-center text-text-secondary hover:text-primary hover:border-primary transition-colors cursor-pointer shrink-0"
+                      role="button"
                     >
-                      <UploadCloud className="w-6 h-6" />
-                      <span className="text-[10px] font-semibold mt-1">Upload</span>
+                      {isLogoUploading ? (
+                        <Loader2 className="w-6 h-6 animate-spin text-primary" />
+                      ) : (
+                        <>
+                          <UploadCloud className="w-6 h-6" />
+                          <span className="text-[10px] font-semibold mt-1">Upload</span>
+                        </>
+                      )}
                     </div>
                   )}
                   <div>
@@ -1379,13 +1076,18 @@ export default function OnboardingPage() {
                       {logoUrl ? "Custom Logo Active" : "Default Avatar Active"}
                     </p>
                     <p className="text-xs text-text-secondary mt-0.5">
-                      Supports PNG, JPG, or SVG. Suggested size 512x512px.
+                      Supports PNG, JPG, WEBP, SVG. Crop to 1:1 square ratio.
                     </p>
-                    {logoUrl && isEditing && (
+                    {logoUrl && (
                       <button
                         type="button"
-                        onClick={() => setLogoUrl("")}
-                        className="text-error hover:underline text-xs font-semibold mt-1 block"
+                        onClick={() => {
+                          setLogoUrl("");
+                          handleAutosave("branding", {
+                            branding_config: { brand_color: colorTheme, logo_url: null }
+                          });
+                        }}
+                        className="text-error hover:underline text-xs font-semibold mt-1 block cursor-pointer"
                       >
                         Remove Logo
                       </button>
@@ -1393,182 +1095,180 @@ export default function OnboardingPage() {
                   </div>
                 </div>
               </div>
-
             </div>
-            <Input
-              label="Merchant Webhook URL"
-              placeholder="https://api.yourstore.com/webhooks/payments"
-              value={webhookUrl}
-              onChange={(e) => setWebhookUrl(e.target.value)}
-              disabled={saveLoading || !isEditing}
-            />
+
+            <div>
+              <Input
+                label="Merchant Webhook Path"
+                placeholder="webhook/merchant-os"
+                value={webhookPath}
+                onChange={(e) => {
+                  const val = e.target.value.replace(/^\/+/, "");
+                  setWebhookPath(val);
+                  triggerDebouncedAutosave("branding", { webhook_path: val });
+                }}
+              />
+              <p className="text-xs text-text-secondary mt-1">
+                Relative to your base URL — don't include the domain (e.g. <code className="bg-surface px-1 py-0.5 rounded font-mono">webhook/merchant-os</code>).
+              </p>
+            </div>
           </div>
-
-          {/* STEP 1 SAVE BUTTON */}
-          {!isSavedToDb && (
-            <div className="flex justify-end border-t border-border pt-4">
-              <Button
-                type="button"
-                variant="primary"
-                onClick={handleSaveStep1}
-                disabled={saveLoading || baseUrl.trim() === "" || (authEnabled && !authConfig.isConfigured)}
-                className="flex items-center gap-2"
-              >
-                {saveLoading ? (
-                  <>
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    <span>Saving Connection...</span>
-                  </>
-                ) : (
-                  <>
-                    <Server className="w-4 h-4" />
-                    <span>Save Connection Details</span>
-                  </>
-                )}
-              </Button>
-            </div>
-          )}
         </div>
       </Card>
 
-      {/* Part B: Endpoints Mapping Card (Step Gated) */}
+      {/* Part B: Endpoints Mapping Card */}
       <Card
-        title="2. Resource Endpoints"
-        description="Verify connection details for individual endpoint resource paths. You must configure and test each endpoint below."
+        title={
+          <div className="flex items-center justify-between w-full">
+            <span>2. Resource Endpoints</span>
+            <SaveIndicator status={saveStatuses.endpoints} error={saveErrors.endpoints} />
+          </div>
+        }
+        description="Verify connection details for individual resource paths. Configure and test each endpoint below."
       >
-        {!isSavedToDb ? (
-          <div className="p-8 text-center bg-background border border-border border-dashed rounded-xl flex flex-col items-center justify-center gap-3">
-            <Lock className="w-8 h-8 text-text-secondary animate-pulse" />
-            <p className="text-sm font-semibold text-text-secondary">
-              Step 2 is Locked
-            </p>
-            <p className="text-xs text-text-secondary">
-              Complete and save Step 1 (Connection Details) above to unlock endpoint configurations.
-            </p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 pt-4 animate-fade-in">
+          {/* Products Card */}
+          <div className="border border-border bg-surface p-5 rounded-xl flex flex-col justify-between min-h-[180px] shadow-xs hover:border-primary transition-all">
+            <div>
+              <span className="text-sm font-bold text-text-primary block">Products Catalog</span>
+              <div className="mt-1.5 mb-2.5">
+                <StatusBadge status={endpointStatuses.products} size="sm" />
+              </div>
+              <p className="text-xs text-text-secondary leading-relaxed">
+                Path: <code className="bg-background px-1.5 py-0.5 rounded font-mono text-[11px]">{prodPath}</code>
+              </p>
+            </div>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => handleOpenResourceModal("products")}
+              className="w-full justify-center mt-4"
+            >
+              Configure & Test
+            </Button>
           </div>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 pt-4 animate-fade-in">
-            {/* Products Card */}
-            <div className="border border-border bg-surface p-5 rounded-xl flex flex-col justify-between h-48 shadow-xs hover:border-primary transition-all">
-              <div>
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-sm font-bold text-text-primary">Products Catalog</span>
-                  <StatusBadge status={endpointStatuses.products} />
-                </div>
-                <p className="text-xs text-text-secondary leading-relaxed">
-                  Allows the agent to search your product catalog keywords dynamically.
-                </p>
-              </div>
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                onClick={() => handleOpenResourceModal("products")}
-                className="w-full justify-center"
-                disabled={!isEditing}
-              >
-                Configure & Test
-              </Button>
-            </div>
 
-            {/* Order History Card */}
-            <div className="border border-border bg-surface p-5 rounded-xl flex flex-col justify-between h-48 shadow-xs hover:border-primary transition-all">
-              <div>
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-sm font-bold text-text-primary">Order History</span>
-                  <StatusBadge status={endpointStatuses.orderHistory} />
-                </div>
-                <p className="text-xs text-text-secondary leading-relaxed">
-                  Retrieves active status and previous order history records for shoppers.
-                </p>
+          {/* Order History Card */}
+          <div className="border border-border bg-surface p-5 rounded-xl flex flex-col justify-between min-h-[180px] shadow-xs hover:border-primary transition-all">
+            <div>
+              <span className="text-sm font-bold text-text-primary block">Order History</span>
+              <div className="mt-1.5 mb-2.5">
+                <StatusBadge status={endpointStatuses.orderHistory} size="sm" />
               </div>
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                onClick={() => handleOpenResourceModal("orderHistory")}
-                className="w-full justify-center"
-                disabled={!isEditing}
-              >
-                Configure & Test
-              </Button>
+              <p className="text-xs text-text-secondary leading-relaxed">
+                Path: <code className="bg-background px-1.5 py-0.5 rounded font-mono text-[11px]">{ohPath}</code>
+              </p>
             </div>
-
-            {/* Customer Profile Card */}
-            <div className="border border-border bg-surface p-5 rounded-xl flex flex-col justify-between h-48 shadow-xs hover:border-primary transition-all">
-              <div>
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-sm font-bold text-text-primary">Customer Profile</span>
-                  <StatusBadge status={endpointStatuses.customerProfile} />
-                </div>
-                <p className="text-xs text-text-secondary leading-relaxed">
-                  Fetches loyalty tier records and profile information.
-                </p>
-              </div>
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                onClick={() => handleOpenResourceModal("customerProfile")}
-                className="w-full justify-center"
-                disabled={!isEditing}
-              >
-                Configure & Test
-              </Button>
-            </div>
-
-            {/* Addresses Card */}
-            <div className="border border-border bg-surface p-5 rounded-xl flex flex-col justify-between h-48 shadow-xs hover:border-primary transition-all">
-              <div>
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-sm font-bold text-text-primary">Customer Addresses</span>
-                  <StatusBadge status={endpointStatuses.addresses} />
-                </div>
-                <p className="text-xs text-text-secondary leading-relaxed">
-                  Fetch existing or register new shipment locations for customer checkouts.
-                </p>
-              </div>
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                onClick={() => handleOpenResourceModal("addresses")}
-                className="w-full justify-center"
-                disabled={!isEditing}
-              >
-                Configure & Test
-              </Button>
-            </div>
-
-            {/* Create Order Card */}
-            <div className="border border-border bg-surface p-5 rounded-xl flex flex-col justify-between h-48 shadow-xs hover:border-primary transition-all">
-              <div>
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-sm font-bold text-text-primary">Create Order</span>
-                  <StatusBadge status={endpointStatuses.createOrder} />
-                </div>
-                <p className="text-xs text-text-secondary leading-relaxed">
-                  Submits cart contents and creates orders inside your billing pipeline.
-                </p>
-              </div>
-              <Button
-                type="button"
-                variant="secondary"
-                size="sm"
-                onClick={() => handleOpenResourceModal("createOrder")}
-                className="w-full justify-center"
-                disabled={!isEditing}
-              >
-                Configure & Test
-              </Button>
-            </div>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => handleOpenResourceModal("orderHistory")}
+              className="w-full justify-center mt-4"
+            >
+              Configure & Test
+            </Button>
           </div>
-        )}
+
+          {/* Customer Profile Card */}
+          <div className="border border-border bg-surface p-5 rounded-xl flex flex-col justify-between min-h-[180px] shadow-xs hover:border-primary transition-all">
+            <div>
+              <span className="text-sm font-bold text-text-primary block">Customer Profile</span>
+              <div className="mt-1.5 mb-2.5">
+                <StatusBadge status={endpointStatuses.customerProfile} size="sm" />
+              </div>
+              <p className="text-xs text-text-secondary leading-relaxed">
+                Path: <code className="bg-background px-1.5 py-0.5 rounded font-mono text-[11px]">{cpPath}</code>
+              </p>
+            </div>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => handleOpenResourceModal("customerProfile")}
+              className="w-full justify-center mt-4"
+            >
+              Configure & Test
+            </Button>
+          </div>
+
+          {/* Addresses Card */}
+          <div className="border border-border bg-surface p-5 rounded-xl flex flex-col justify-between min-h-[180px] shadow-xs hover:border-primary transition-all">
+            <div>
+              <span className="text-sm font-bold text-text-primary block">Customer Addresses</span>
+              <div className="mt-1.5 mb-2.5">
+                <StatusBadge status={endpointStatuses.addresses} size="sm" />
+              </div>
+              <p className="text-xs text-text-secondary leading-relaxed">
+                Dot-path: <code className="bg-background px-1.5 py-0.5 rounded font-mono text-[11px]">{addrCombinedPath}</code>
+              </p>
+            </div>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => handleOpenResourceModal("addresses")}
+              className="w-full justify-center mt-4"
+            >
+              Configure & Test
+            </Button>
+          </div>
+
+          {/* Create Order Card */}
+          <div className="border border-border bg-surface p-5 rounded-xl flex flex-col justify-between min-h-[180px] shadow-xs hover:border-primary transition-all">
+            <div>
+              <span className="text-sm font-bold text-text-primary block">Create Order</span>
+              <div className="mt-1.5 mb-2.5">
+                <StatusBadge status={endpointStatuses.createOrder} size="sm" />
+              </div>
+              <p className="text-xs text-text-secondary leading-relaxed">
+                Path: <code className="bg-background px-1.5 py-0.5 rounded font-mono text-[11px]">{coPath}</code>
+              </p>
+            </div>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => handleOpenResourceModal("createOrder")}
+              className="w-full justify-center mt-4"
+            >
+              Configure & Test
+            </Button>
+          </div>
+
+          {/* Verify Order Amount Card */}
+          <div className="border border-border bg-surface p-5 rounded-xl flex flex-col justify-between min-h-[180px] shadow-xs hover:border-primary transition-all">
+            <div>
+              <span className="text-sm font-bold text-text-primary block">Verify Order Amount</span>
+              <div className="mt-1.5 mb-2.5">
+                <StatusBadge status={endpointStatuses.verifyOrder} size="sm" />
+              </div>
+              <p className="text-xs text-text-secondary leading-relaxed">
+                Path: <code className="bg-background px-1.5 py-0.5 rounded font-mono text-[11px]">{voPath}</code>
+              </p>
+            </div>
+            <Button
+              type="button"
+              variant="secondary"
+              size="sm"
+              onClick={() => handleOpenResourceModal("verifyOrder")}
+              className="w-full justify-center mt-4"
+            >
+              Configure & Test
+            </Button>
+          </div>
+        </div>
       </Card>
 
       {/* Part C: Settlement Bank Target */}
       <Card
-        title="3. Settlement Bank Account"
+        title={
+          <div className="flex items-center justify-between w-full">
+            <span>3. Settlement Bank Account</span>
+            <SaveIndicator status={saveStatuses.settlement} error={saveErrors.settlement} />
+          </div>
+        }
         description="Provide your business deposit details to route payouts from Razorpay transaction completions."
       >
         <div className="space-y-6">
@@ -1578,9 +1278,12 @@ export default function OnboardingPage() {
               type="text"
               placeholder="09280192839128"
               value={bankAccount}
-              onChange={(e) => setBankAccount(e.target.value.replace(/\D/g, ""))}
+              onChange={(e) => {
+                const val = e.target.value.replace(/\D/g, "");
+                setBankAccount(val);
+                triggerDebouncedAutosave("settlement", { bank_account: val });
+              }}
               required
-              disabled={saveLoading || !isEditing}
             />
 
             <div className="relative">
@@ -1593,7 +1296,6 @@ export default function OnboardingPage() {
                 maxLength={11}
                 error={ifscError}
                 required
-                disabled={saveLoading || !isEditing}
               />
               {bankLoading && (
                 <span className="absolute right-3 top-9 text-xs text-text-secondary animate-pulse">
@@ -1604,7 +1306,7 @@ export default function OnboardingPage() {
           </div>
 
           {bankVerified && resolvedBank && (
-            <div className="p-4 border border-success/20 bg-success/5 rounded-lg flex items-center justify-between animate-fade-in">
+            <div className="p-4 border border-success/20 bg-success/5 rounded-lg flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-fade-in">
               <div className="flex items-center gap-3">
                 <Landmark className="w-6 h-6 text-success shrink-0" />
                 <div>
@@ -1633,37 +1335,26 @@ export default function OnboardingPage() {
             )}
             <div>
               <p className="font-semibold text-text-primary">
-                {isSetupComplete ? "All Integration Rules Met" : "Pending Setup Configuration"}
+                {isSetupComplete ? "All Integration Rules Met" : "Autosaving Setup Progress"}
               </p>
               <p className="text-xs text-text-secondary">
                 {isSetupComplete
                   ? "Your endpoints, credentials, and settlement bank have been verified successfully."
-                  : "All endpoints, credentials mapping, and the bank settlement lookup must be verified to complete setup."}
+                  : "Endpoints and payout bank account details auto-save immediately as you type."}
               </p>
             </div>
           </div>
 
-          {isFinishButtonVisible && (
-            <Button
-              type="button"
-              variant="primary"
-              onClick={handleFinish}
-              disabled={!isSetupComplete || saveLoading}
-              className="flex items-center gap-2 shadow-xs min-w-[140px] justify-center"
-            >
-              {saveLoading ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  <span>Saving...</span>
-                </>
-              ) : (
-                <>
-                  <ShieldCheck className="w-5 h-5 shrink-0" />
-                  <span>Finish Setup</span>
-                </>
-              )}
-            </Button>
-          )}
+          <Button
+            type="button"
+            variant="primary"
+            onClick={handleFinish}
+            disabled={!isSetupComplete}
+            className="flex items-center gap-2 shadow-xs min-w-[140px] justify-center"
+          >
+            <ShieldCheck className="w-5 h-5 shrink-0" />
+            <span>Finish Setup</span>
+          </Button>
         </div>
       </Card>
 
@@ -1688,7 +1379,7 @@ export default function OnboardingPage() {
             </div>
 
             <p className="text-sm text-text-secondary leading-relaxed mb-6">
-              Without authentication, the AI agent <b>cannot securely identify customers</b>, <b>cannot show order history</b> or order status per customer, and <b>cannot restrict access</b> to a customer's own data. Proceed only if this merchant's use case truly has no per-customer data or runs fully anonymously.
+              Without authentication, the AI agent <b>cannot securely identify customers</b>, <b>cannot show order history</b>, and <b>cannot restrict access</b> to customer data.
             </p>
 
             <div className="flex flex-col gap-2.5">
@@ -1712,11 +1403,10 @@ export default function OnboardingPage() {
         </div>
       )}
 
-      {/* MAPPING STEP-MODAL: Map Login Fields */}
+      {/* MAPPING STEP-MODAL */}
       {showMappingModal && (
         <div className="fixed inset-0 bg-secondary/80 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
           <div className="bg-surface max-w-2xl w-full rounded-2xl border border-border shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
-            {/* Modal Header */}
             <div className="p-5 border-b border-border flex items-center justify-between bg-background-alt shrink-0">
               <div>
                 <h3 className="font-heading text-lg font-bold text-text-primary">
@@ -1734,11 +1424,10 @@ export default function OnboardingPage() {
               </button>
             </div>
 
-            {/* Stepper indicator bar */}
             <div className="px-6 py-3 border-b border-border bg-surface flex items-center justify-between shrink-0 text-xs font-semibold select-none">
               {[
                 { step: 1, label: "Payload Mapping" },
-                { step: 2, label: "Test API URL" },
+                { step: 2, label: "Test API Path" },
                 { step: 3, label: "Token Path" },
                 { step: 4, label: "Token Delivery" }
               ].map((s) => (
@@ -1764,15 +1453,13 @@ export default function OnboardingPage() {
               ))}
             </div>
 
-            {/* Modal Scrollable Content Body */}
             <div className="p-6 overflow-y-auto space-y-6 flex-1 font-sans">
-              {/* STEP 1: Payload mapping */}
               {mappingStep === 1 && (
                 <div className="space-y-6 animate-fade-in">
                   <div className="space-y-2">
                     <h4 className="text-sm font-bold text-text-primary">Configure Payload Parameters</h4>
                     <p className="text-xs text-text-secondary">
-                      Specify the JSON field keys that your authentication API expects during login requests.
+                      Specify JSON field keys expected during customer login requests.
                     </p>
                   </div>
 
@@ -1821,13 +1508,12 @@ export default function OnboardingPage() {
                 </div>
               )}
 
-              {/* STEP 2: Test auth endpoint */}
               {mappingStep === 2 && (
                 <div className="space-y-6 animate-fade-in">
                   <div className="space-y-2">
                     <h4 className="text-sm font-bold text-text-primary">Send Test Credentials</h4>
                     <p className="text-xs text-text-secondary">
-                      Provide temporary sandbox credentials to test the login route and receive a token response. (These values are not saved).
+                      Provide temporary credentials to test customer login against your path: <code className="bg-background px-1 py-0.5 rounded font-mono">{authPath}</code>
                     </p>
                   </div>
 
@@ -1899,13 +1585,12 @@ export default function OnboardingPage() {
                 </div>
               )}
 
-              {/* STEP 3: Token detection */}
               {mappingStep === 3 && (
                 <div className="space-y-6 animate-fade-in">
                   <div className="space-y-2">
                     <h4 className="text-sm font-bold text-text-primary">Extract Token Path</h4>
                     <p className="text-xs text-text-secondary">
-                      Specify the path inside the JSON response where the authenticated session token resides.
+                      Specify the path inside the JSON response where the session token resides.
                     </p>
                   </div>
 
@@ -1918,7 +1603,6 @@ export default function OnboardingPage() {
                       required
                     />
 
-                    {/* Status Indicator */}
                     <div className="absolute right-3 top-8.5">
                       {tokenPathStatus === "success" && (
                         <span className="inline-flex items-center gap-1 text-xs text-success font-semibold bg-success/10 px-2.5 py-1 rounded-full border border-success/20 animate-fade-in">
@@ -1928,11 +1612,6 @@ export default function OnboardingPage() {
                       {tokenPathStatus === "error" && (
                         <span className="inline-flex items-center gap-1 text-xs text-error font-semibold bg-error/10 px-2.5 py-1 rounded-full border border-error/20 animate-fade-in">
                           <X className="w-3.5 h-3.5" /> Unresolvable Path
-                        </span>
-                      )}
-                      {tokenPathStatus === "none" && (
-                        <span className="inline-flex items-center gap-1 text-xs text-text-secondary bg-background border border-border px-2.5 py-1 rounded-full">
-                          <HelpCircle className="w-3.5 h-3.5" /> Empty
                         </span>
                       )}
                     </div>
@@ -1971,17 +1650,15 @@ export default function OnboardingPage() {
                 </div>
               )}
 
-              {/* STEP 4: Token delivery */}
               {mappingStep === 4 && (
                 <div className="space-y-6 animate-fade-in">
                   <div className="space-y-2">
                     <h4 className="text-sm font-bold text-text-primary">Token Delivery Method</h4>
                     <p className="text-xs text-text-secondary">
-                      Choose how the customer authentication token should be attached to subsequent resource requests.
+                      Choose how customer auth tokens are attached to subsequent resource requests.
                     </p>
                   </div>
 
-                  {/* Delivery Selection */}
                   <div className="flex gap-4 p-1 bg-background border border-border rounded-xl shrink-0">
                     <button
                       type="button"
@@ -2005,7 +1682,6 @@ export default function OnboardingPage() {
                     </button>
                   </div>
 
-                  {/* Conditional inputs */}
                   {deliveryType === "header" ? (
                     <div className="space-y-6 animate-fade-in">
                       <Input
@@ -2066,19 +1742,18 @@ export default function OnboardingPage() {
         </div>
       )}
 
-      {/* SCOPED RESOURCE MODAL: Scoped endpoint configs and testing */}
+      {/* SCOPED RESOURCE MODAL */}
       {activeResource && (
         <div className="fixed inset-0 bg-secondary/80 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
           <div className="bg-surface max-w-2xl w-full rounded-2xl border border-border shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
-
-            {/* Modal Header */}
             <div className="p-5 border-b border-border flex items-center justify-between bg-background-alt shrink-0">
               <div>
                 <h3 className="font-heading text-lg font-bold text-text-primary">
                   Configure {activeResource === "products" ? "Products API" :
                     activeResource === "orderHistory" ? "Order History API" :
                       activeResource === "customerProfile" ? "Customer Profile API" :
-                        activeResource === "addresses" ? "Addresses (Fetch/Create)" : "Create Order API"}
+                        activeResource === "addresses" ? "Customer Addresses API" :
+                          activeResource === "createOrder" ? "Create Order API" : "Verify Order Amount API"}
                 </h3>
                 <p className="text-xs text-text-secondary mt-0.5">
                   Configure specific resource properties and verify real API responses.
@@ -2086,29 +1761,73 @@ export default function OnboardingPage() {
               </div>
               <button
                 onClick={() => setActiveResource(null)}
-                className="p-1.5 rounded-lg text-text-secondary hover:text-text-primary hover:bg-background transition-colors"
+                className="p-1.5 rounded-lg text-text-secondary hover:text-text-primary hover:bg-background transition-colors cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            {/* Modal Body */}
             <div className="p-6 overflow-y-auto space-y-6 flex-1 font-sans">
+              {authEnabled && (
+                <div className="p-4 bg-background border border-border rounded-xl space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-text-primary flex items-center gap-1.5">
+                      <Lock className="w-3.5 h-3.5 text-primary" /> Active Test Auth Token
+                    </span>
+                    {sessionToken ? (
+                      <span className="text-[10px] text-success font-bold bg-success/10 px-2 py-0.5 rounded border border-success/20">
+                        Token Active ✓
+                      </span>
+                    ) : (
+                      <span className="text-[10px] text-warning font-bold bg-warning/10 px-2 py-0.5 rounded border border-warning/20">
+                        No Token Set
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex gap-2 items-center">
+                    <input
+                      type="text"
+                      placeholder="Paste test customer JWT / session token..."
+                      value={sessionToken || ""}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setSessionToken(val);
+                        if (typeof window !== "undefined") {
+                          sessionStorage.setItem("test_session_token", val);
+                        }
+                      }}
+                      className="flex-1 bg-surface border border-border rounded-lg px-3 py-2 text-xs font-mono text-text-primary focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+                    />
+                    {!sessionToken && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setActiveResource(null);
+                          setMappingStep(1);
+                          setShowMappingModal(true);
+                        }}
+                        className="px-3 py-2 bg-primary/10 text-primary border border-primary/20 hover:bg-primary hover:text-white rounded-lg text-xs font-semibold transition-colors shrink-0 cursor-pointer"
+                      >
+                        Run Login Test
+                      </button>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-text-secondary">
+                    Sent during live test as:{" "}
+                    <code className="bg-surface px-1.5 py-0.5 rounded font-mono text-[11px]">
+                      {(authConfig.token_delivery?.method || deliveryType) === "cookie"
+                        ? `Cookie: ${authConfig.token_delivery?.cookie_name || cookieName}=<token>`
+                        : `Header: ${authConfig.token_delivery?.header_name || headerName}: ${authConfig.token_delivery?.bearer_prefix !== false ? "Bearer " : ""}<token>`}
+                    </code>
+                  </p>
+                </div>
+              )}
 
-              {/* products resource layout */}
               {activeResource === "products" && (
                 <div className="space-y-6 animate-fade-in">
-                  <div className="relative">
-                    <div className="flex items-center gap-1.5 mb-1">
-                      <label className="block text-sm font-medium text-text-primary">Endpoint Path</label>
-                      <div className="group relative">
-                        <Info className="w-4 h-4 text-text-secondary cursor-help" />
-                        <span className="pointer-events-none absolute bottom-full left-1/2 transform -translate-x-1/2 bg-secondary text-white text-[10px] rounded px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity w-48 text-center mb-1.5 z-10 font-sans shadow-lg">
-                          The endpoint path appended to Base URL to search products.
-                        </span>
-                      </div>
-                    </div>
+                  <div>
                     <Input
+                      label="Endpoint Path (Relative to base URL)"
                       placeholder="products"
                       value={prodPath}
                       onChange={(e) => setProdPath(e.target.value.replace(/^\/+/, ""))}
@@ -2117,41 +1836,20 @@ export default function OnboardingPage() {
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                    <div>
-                      <div className="flex items-center gap-1.5 mb-1.5">
-                        <label className="block text-sm font-medium text-text-primary">Search Query Param Key</label>
-                        <div className="group relative">
-                          <Info className="w-4 h-4 text-text-secondary cursor-help" />
-                          <span className="pointer-events-none absolute bottom-full left-1/2 transform -translate-x-1/2 bg-secondary text-white text-[10px] rounded px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity w-48 text-center mb-1.5 z-10 font-sans shadow-lg">
-                            The parameter key used to pass keywords (e.g. query).
-                          </span>
-                        </div>
-                      </div>
-                      <Input
-                        placeholder="query"
-                        value={prodPayloadKey}
-                        onChange={(e) => setProdPayloadKey(e.target.value)}
-                        required
-                      />
-                    </div>
-
-                    <div>
-                      <div className="flex items-center gap-1.5 mb-1.5">
-                        <label className="block text-sm font-medium text-text-primary">Results Array Path</label>
-                        <div className="group relative">
-                          <Info className="w-4 h-4 text-text-secondary cursor-help" />
-                          <span className="pointer-events-none absolute bottom-full left-1/2 transform -translate-x-1/2 bg-secondary text-white text-[10px] rounded px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity w-48 text-center mb-1.5 z-10 font-sans shadow-lg">
-                            Dot-notation path resolving to the products list in response.
-                          </span>
-                        </div>
-                      </div>
-                      <Input
-                        placeholder="products"
-                        value={prodResponseKey}
-                        onChange={(e) => setProdResponseKey(e.target.value)}
-                        required
-                      />
-                    </div>
+                    <Input
+                      label="Search Query Param Key"
+                      placeholder="query"
+                      value={prodPayloadKey}
+                      onChange={(e) => setProdPayloadKey(e.target.value)}
+                      required
+                    />
+                    <Input
+                      label="Results Array Path"
+                      placeholder="products"
+                      value={prodResponseKey}
+                      onChange={(e) => setProdResponseKey(e.target.value)}
+                      required
+                    />
                   </div>
 
                   <div className="border-t border-border pt-4 space-y-4">
@@ -2166,73 +1864,38 @@ export default function OnboardingPage() {
                 </div>
               )}
 
-              {/* order history resource layout */}
               {activeResource === "orderHistory" && (
                 <div className="space-y-6 animate-fade-in">
-                  <div>
-                    <div className="flex items-center gap-1.5 mb-1">
-                      <label className="block text-sm font-medium text-text-primary">Endpoint Path</label>
-                      <div className="group relative">
-                        <Info className="w-4 h-4 text-text-secondary cursor-help" />
-                        <span className="pointer-events-none absolute bottom-full left-1/2 transform -translate-x-1/2 bg-secondary text-white text-[10px] rounded px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity w-48 text-center mb-1.5 z-10 font-sans shadow-lg">
-                          The endpoint path to fetch shipping/orders list.
-                        </span>
-                      </div>
-                    </div>
-                    <Input
-                      placeholder="orders/history"
-                      value={ohPath}
-                      onChange={(e) => setOhPath(e.target.value.replace(/^\/+/, ""))}
-                      required
-                    />
-                  </div>
-
-                  <div>
-                    <div className="flex items-center gap-1.5 mb-1.5">
-                      <label className="block text-sm font-medium text-text-primary">Orders List Array Path</label>
-                      <div className="group relative">
-                        <Info className="w-4 h-4 text-text-secondary cursor-help" />
-                        <span className="pointer-events-none absolute bottom-full left-1/2 transform -translate-x-1/2 bg-secondary text-white text-[10px] rounded px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity w-48 text-center mb-1.5 z-10 font-sans shadow-lg">
-                          Dot-notation path mapping the array response (empty if array directly).
-                        </span>
-                      </div>
-                    </div>
-                    <Input
-                      placeholder="orders"
-                      value={ohResponseKey}
-                      onChange={(e) => setOhResponseKey(e.target.value)}
-                    />
-                  </div>
+                  <Input
+                    label="Endpoint Path (Relative to base URL)"
+                    placeholder="orders/history"
+                    value={ohPath}
+                    onChange={(e) => setOhPath(e.target.value.replace(/^\/+/, ""))}
+                    required
+                  />
+                  <Input
+                    label="Orders List Array Path"
+                    placeholder="orders"
+                    value={ohResponseKey}
+                    onChange={(e) => setOhResponseKey(e.target.value)}
+                  />
                 </div>
               )}
 
-              {/* customer profile resource layout */}
               {activeResource === "customerProfile" && (
                 <div className="space-y-6 animate-fade-in">
-                  <div>
-                    <div className="flex items-center gap-1.5 mb-1">
-                      <label className="block text-sm font-medium text-text-primary">Endpoint Path</label>
-                      <div className="group relative">
-                        <Info className="w-4 h-4 text-text-secondary cursor-help" />
-                        <span className="pointer-events-none absolute bottom-full left-1/2 transform -translate-x-1/2 bg-secondary text-white text-[10px] rounded px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity w-48 text-center mb-1.5 z-10 font-sans shadow-lg">
-                          The endpoint path returning client profile details.
-                        </span>
-                      </div>
-                    </div>
-                    <Input
-                      placeholder="customers"
-                      value={cpPath}
-                      onChange={(e) => setCpPath(e.target.value.replace(/^\/+/, ""))}
-                      required
-                    />
-                  </div>
+                  <Input
+                    label="Endpoint Path (Relative to base URL)"
+                    placeholder="customers"
+                    value={cpPath}
+                    onChange={(e) => setCpPath(e.target.value.replace(/^\/+/, ""))}
+                    required
+                  />
                 </div>
               )}
 
-              {/* customer addresses resource layout */}
               {activeResource === "addresses" && (
                 <div className="space-y-6 animate-fade-in">
-                  {/* Yes/No Address Creation Question */}
                   <div className="p-4 bg-background border border-border rounded-xl space-y-3">
                     <label className="block text-sm font-bold text-text-primary">
                       Should the agent be able to add new delivery addresses for customers during checkout?
@@ -2244,11 +1907,10 @@ export default function OnboardingPage() {
                           setAddrSupportsCreation(false);
                           setAddrActiveTab("fetch");
                         }}
-                        className={`px-4 py-2 rounded-lg text-sm font-semibold border transition-colors cursor-pointer ${
-                          !addrSupportsCreation
-                            ? "bg-primary text-white border-primary"
-                            : "bg-surface text-text-secondary border-border hover:text-text-primary"
-                        }`}
+                        className={`px-4 py-2 rounded-lg text-sm font-semibold border transition-colors cursor-pointer ${!addrSupportsCreation
+                          ? "bg-primary text-white border-primary"
+                          : "bg-surface text-text-secondary border-border hover:text-text-primary"
+                          }`}
                       >
                         No (Existing saved addresses only)
                       </button>
@@ -2258,18 +1920,16 @@ export default function OnboardingPage() {
                           setAddrSupportsCreation(true);
                           setAddrActiveTab("create");
                         }}
-                        className={`px-4 py-2 rounded-lg text-sm font-semibold border transition-colors cursor-pointer ${
-                          addrSupportsCreation
-                            ? "bg-primary text-white border-primary"
-                            : "bg-surface text-text-secondary border-border hover:text-text-primary"
-                        }`}
+                        className={`px-4 py-2 rounded-lg text-sm font-semibold border transition-colors cursor-pointer ${addrSupportsCreation
+                          ? "bg-primary text-white border-primary"
+                          : "bg-surface text-text-secondary border-border hover:text-text-primary"
+                          }`}
                       >
                         Yes (Allow agent to add new addresses)
                       </button>
                     </div>
                   </div>
 
-                  {/* Tabs Selector fetch/create (Only if supports creation is True) */}
                   {addrSupportsCreation && (
                     <div className="flex gap-4 p-1 bg-background border border-border rounded-xl shrink-0">
                       <button
@@ -2279,11 +1939,10 @@ export default function OnboardingPage() {
                           setModalTestResponse(null);
                           setModalTestStatus("untested");
                         }}
-                        className={`flex-1 py-2 text-center text-sm font-semibold rounded-lg transition-colors cursor-pointer ${
-                          addrActiveTab === "fetch"
-                            ? "bg-surface text-text-primary shadow-xs font-bold"
-                            : "text-text-secondary hover:text-text-primary"
-                        }`}
+                        className={`flex-1 py-2 text-center text-sm font-semibold rounded-lg transition-colors cursor-pointer ${addrActiveTab === "fetch"
+                          ? "bg-surface text-text-primary shadow-xs font-bold"
+                          : "text-text-secondary hover:text-text-primary"
+                          }`}
                       >
                         Fetch Operation (GET) - Read
                       </button>
@@ -2294,11 +1953,10 @@ export default function OnboardingPage() {
                           setModalTestResponse(null);
                           setModalTestStatus("untested");
                         }}
-                        className={`flex-1 py-2 text-center text-sm font-semibold rounded-lg transition-colors cursor-pointer ${
-                          addrActiveTab === "create"
-                            ? "bg-surface text-text-primary shadow-xs font-bold"
-                            : "text-text-secondary hover:text-text-primary"
-                        }`}
+                        className={`flex-1 py-2 text-center text-sm font-semibold rounded-lg transition-colors cursor-pointer ${addrActiveTab === "create"
+                          ? "bg-surface text-text-primary shadow-xs font-bold"
+                          : "text-text-secondary hover:text-text-primary"
+                          }`}
                       >
                         Create Operation (POST) - Write
                       </button>
@@ -2307,83 +1965,49 @@ export default function OnboardingPage() {
 
                   {addrActiveTab === "fetch" || !addrSupportsCreation ? (
                     <div className="space-y-6 animate-fade-in">
+                      <Input
+                        label="Fetch Path (Relative to base URL)"
+                        placeholder="addresses"
+                        value={addrFetchPath}
+                        onChange={(e) => setAddrFetchPath(e.target.value.replace(/^\/+/, ""))}
+                        required
+                      />
+
                       <div>
-                        <div className="flex items-center gap-1.5 mb-1">
-                          <label className="block text-sm font-medium text-text-primary">Fetch Path</label>
-                          <div className="group relative">
-                            <Info className="w-4 h-4 text-text-secondary cursor-help" />
-                            <span className="pointer-events-none absolute bottom-full left-1/2 transform -translate-x-1/2 bg-secondary text-white text-[10px] rounded px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity w-48 text-center mb-1.5 z-10 font-sans shadow-lg">
-                              The endpoint used to fetch customer addresses.
-                            </span>
-                          </div>
-                        </div>
                         <Input
-                          placeholder="addresses"
-                          value={addrFetchPath}
-                          onChange={(e) => setAddrFetchPath(e.target.value.replace(/^\/+/, ""))}
+                          label="Addresses Path (Array Path + ID Field)"
+                          placeholder="addresses._id"
+                          value={addrCombinedPath}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setAddrCombinedPath(val);
+                            const parsed = parseAddressPath(val);
+                            if (parsed.isValid) {
+                              setAddrFetchResponseKey(parsed.response_key);
+                              setAddrFetchIdField(parsed.id_field);
+                            }
+                          }}
                           required
-                        />
-                      </div>
-                      <div>
-                        <label className="block text-sm font-medium text-text-primary mb-1.5">Addresses Array Path</label>
-                        <Input
-                          placeholder="addresses"
-                          value={addrFetchResponseKey}
-                          onChange={(e) => setAddrFetchResponseKey(e.target.value)}
-                        />
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-1.5 mb-1.5">
-                          <label className="block text-sm font-medium text-text-primary">Address ID Key</label>
-                          <div className="group relative">
-                            <Info className="w-4 h-4 text-text-secondary cursor-help" />
-                            <span className="pointer-events-none absolute bottom-full left-1/2 transform -translate-x-1/2 bg-secondary text-white text-[10px] rounded px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity w-56 text-center mb-1.5 z-10 font-sans shadow-lg">
-                              The field name inside each address object that uniquely identifies it — this is what gets used when placing an order against a saved address.
-                            </span>
-                          </div>
-                        </div>
-                        <Input
-                          placeholder="_id or id"
-                          value={addrFetchIdField}
-                          onChange={(e) => setAddrFetchIdField(e.target.value)}
-                          required
+                          error={!parsedAddressObj.isValid ? "Must be a dot-path like 'addresses._id' or 'data.addresses.id'" : undefined}
                         />
                         <p className="text-xs text-text-secondary mt-1">
-                          The field name inside each address object that uniquely identifies it — this is what gets used when placing an order against a saved address.
+                          The path to your addresses array, followed by the field name that uniquely identifies each address — e.g. <code className="bg-background px-1 py-0.5 rounded font-mono">addresses._id</code> or <code className="bg-background px-1 py-0.5 rounded font-mono">data.addresses.id</code>.
                         </p>
                       </div>
                     </div>
                   ) : (
                     <div className="space-y-6 animate-fade-in">
-                      <div>
-                        <div className="flex items-center gap-1.5 mb-1">
-                          <label className="block text-sm font-medium text-text-primary">Create Path</label>
-                          <div className="group relative">
-                            <Info className="w-4 h-4 text-text-secondary cursor-help" />
-                            <span className="pointer-events-none absolute bottom-full left-1/2 transform -translate-x-1/2 bg-secondary text-white text-[10px] rounded px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity w-48 text-center mb-1.5 z-10 font-sans shadow-lg">
-                              The endpoint used to submit customer address.
-                            </span>
-                          </div>
-                        </div>
-                        <Input
-                          placeholder="addresses"
-                          value={addrCreatePath}
-                          onChange={(e) => setAddrCreatePath(e.target.value.replace(/^\/+/, ""))}
-                          required
-                        />
-                      </div>
+                      <Input
+                        label="Create Path (Relative to base URL)"
+                        placeholder="addresses"
+                        value={addrCreatePath}
+                        onChange={(e) => setAddrCreatePath(e.target.value.replace(/^\/+/, ""))}
+                        required
+                      />
 
                       <div>
-                        <div className="flex items-center gap-1.5 mb-1.5">
-                          <label className="block text-sm font-medium text-text-primary">Required JSON Keys (Comma separated)</label>
-                          <div className="group relative">
-                            <Info className="w-4 h-4 text-text-secondary cursor-help" />
-                            <span className="pointer-events-none absolute bottom-full left-1/2 transform -translate-x-1/2 bg-secondary text-white text-[10px] rounded px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity w-48 text-center mb-1.5 z-10 font-sans shadow-lg">
-                              The key names your API expects (e.g. line1, city, pincode).
-                            </span>
-                          </div>
-                        </div>
                         <Input
+                          label="Required JSON Keys (Comma separated)"
                           placeholder="line1, line2, city, state, pincode"
                           value={addrCreateFields}
                           onChange={(e) => {
@@ -2399,7 +2023,6 @@ export default function OnboardingPage() {
                         />
                       </div>
 
-                      {/* Self-Certification Checkbox for Create Address */}
                       <div className="border-t border-border pt-4 bg-background p-4 rounded-xl space-y-2">
                         <label className="flex items-start gap-3 cursor-pointer select-none">
                           <input
@@ -2425,192 +2048,115 @@ export default function OnboardingPage() {
                           </div>
                         </label>
                       </div>
-
-                      {/* Optional Live Test Sample Values */}
-                      <div className="border-t border-border pt-4 space-y-4">
-                        <span className="text-xs font-bold text-text-secondary uppercase">Optional Live Test Address Values</span>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                          {addrCreateFields.split(",").map(k => k.trim()).filter(Boolean).map(keyName => (
-                            <div key={keyName}>
-                              <label className="block text-xs font-medium text-text-secondary mb-1">{keyName}</label>
-                              <input
-                                type="text"
-                                className="w-full bg-surface border border-border rounded-lg px-3 py-1.5 text-sm text-text-primary focus:outline-none focus:ring-1 focus:ring-primary font-sans"
-                                value={addrCreateTestInputs[keyName] || ""}
-                                onChange={(e) => {
-                                  setAddrCreateTestInputs(prev => ({
-                                    ...prev,
-                                    [keyName]: e.target.value
-                                  }));
-                                }}
-                              />
-                            </div>
-                          ))}
-                        </div>
-                      </div>
                     </div>
                   )}
                 </div>
               )}
 
-              {/* create order resource layout */}
               {activeResource === "createOrder" && (
                 <div className="space-y-6 animate-fade-in">
-                  <div>
-                    <div className="flex items-center gap-1.5 mb-1">
-                      <label className="block text-sm font-medium text-text-primary">Endpoint Path</label>
-                      <div className="group relative">
-                        <Info className="w-4 h-4 text-text-secondary cursor-help" />
-                        <span className="pointer-events-none absolute bottom-full left-1/2 transform -translate-x-1/2 bg-secondary text-white text-[10px] rounded px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity w-48 text-center mb-1.5 z-10 font-sans shadow-lg">
-                          The endpoint path to submit cart orders.
-                        </span>
-                      </div>
-                    </div>
+                  <Input
+                    label="Endpoint Path (Relative to base URL)"
+                    placeholder="orders"
+                    value={coPath}
+                    onChange={(e) => setCoPath(e.target.value.replace(/^\/+/, ""))}
+                    required
+                  />
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                     <Input
-                      placeholder="orders"
-                      value={coPath}
-                      onChange={(e) => setCoPath(e.target.value.replace(/^\/+/, ""))}
+                      label="Cart Wrapper Key"
+                      placeholder="cart"
+                      value={coCartKey}
+                      onChange={(e) => setCoCartKey(e.target.value)}
+                      required
+                    />
+                    <Input
+                      label="Item ID Key Name"
+                      placeholder="item_id"
+                      value={coItemIdField}
+                      onChange={(e) => setCoItemIdField(e.target.value)}
                       required
                     />
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                    <div>
-                      <div className="flex items-center gap-1.5 mb-1.5">
-                        <label className="block text-sm font-medium text-text-primary">Cart Wrapper Key</label>
-                        <div className="group relative">
-                          <Info className="w-4 h-4 text-text-secondary cursor-help" />
-                          <span className="pointer-events-none absolute bottom-full left-1/2 transform -translate-x-1/2 bg-secondary text-white text-[10px] rounded px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity w-48 text-center mb-1.5 z-10 font-sans shadow-lg">
-                            The JSON array wrapper key name (e.g. cart).
-                          </span>
-                        </div>
-                      </div>
-                      <Input
-                        placeholder="cart"
-                        value={coCartKey}
-                        onChange={(e) => setCoCartKey(e.target.value)}
-                        required
-                      />
-                    </div>
-                    <div>
-                      <div className="flex items-center gap-1.5 mb-1.5">
-                        <label className="block text-sm font-medium text-text-primary">Item ID key name</label>
-                        <div className="group relative">
-                          <Info className="w-4 h-4 text-text-secondary cursor-help" />
-                          <span className="pointer-events-none absolute bottom-full left-1/2 transform -translate-x-1/2 bg-secondary text-white text-[10px] rounded px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity w-48 text-center mb-1.5 z-10 font-sans shadow-lg">
-                            The JSON key representing target item ID.
-                          </span>
-                        </div>
-                      </div>
-                      <Input
-                        placeholder="item_id"
-                        value={coItemIdField}
-                        onChange={(e) => setCoItemIdField(e.target.value)}
-                        required
-                      />
-                    </div>
+                    <Input
+                      label="Price Key Name"
+                      placeholder="price"
+                      value={coPriceField}
+                      onChange={(e) => setCoPriceField(e.target.value)}
+                      required
+                    />
+                    <Input
+                      label="Quantity Key Name"
+                      placeholder="quantity"
+                      value={coQuantityField}
+                      onChange={(e) => setCoQuantityField(e.target.value)}
+                      required
+                    />
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                    <div>
-                      <label className="block text-sm font-medium text-text-primary mb-1.5">Price key name</label>
-                      <Input
-                        placeholder="price"
-                        value={coPriceField}
-                        onChange={(e) => setCoPriceField(e.target.value)}
-                        required
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-sm font-medium text-text-primary mb-1.5">Quantity key name</label>
-                      <Input
-                        placeholder="quantity"
-                        value={coQuantityField}
-                        onChange={(e) => setCoQuantityField(e.target.value)}
-                        required
-                      />
-                    </div>
+                  <div>
+                    <Input
+                      label="Address ID Key Name *"
+                      placeholder="address_id"
+                      value={coAddressIdField}
+                      onChange={(e) => setCoAddressIdField(e.target.value)}
+                      required
+                    />
                   </div>
 
-                  {/* Address ID key name (NEW Required Field) */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 border-t border-border pt-4">
-                    <div className="sm:col-span-2">
-                      <div className="flex items-center gap-1.5 mb-1.5">
-                        <label className="block text-sm font-medium text-text-primary">
-                          Address ID Key Name <span className="text-error">*</span>
-                        </label>
-                        <div className="group relative">
-                          <Info className="w-4 h-4 text-text-secondary cursor-help" />
-                          <span className="pointer-events-none absolute bottom-full left-1/2 transform -translate-x-1/2 bg-secondary text-white text-[10px] rounded px-2 py-1 opacity-0 group-hover:opacity-100 transition-opacity w-56 text-center mb-1.5 z-10 font-sans shadow-lg">
-                            The JSON key your API expects for the delivery address ID (e.g. address_id).
-                          </span>
-                        </div>
-                      </div>
-                      <Input
-                        placeholder="address_id"
-                        value={coAddressIdField}
-                        onChange={(e) => setCoAddressIdField(e.target.value)}
-                        required
-                      />
+                  {/* Verify Order Amount Inline Config Group */}
+                  <div className="border-t border-border pt-6 space-y-4 bg-background p-4 rounded-xl">
+                    <div>
+                      <h4 className="text-sm font-bold text-text-primary flex items-center gap-2">
+                        <span>Verify Order Amount Setup</span>
+                        <span className="text-[10px] bg-primary/10 text-primary px-2 py-0.5 rounded font-semibold">Safety Check</span>
+                      </h4>
+                      <p className="text-xs text-text-secondary mt-1">
+                        Used to independently confirm the exact amount to charge for an order, right before payment — a safety check against the create-order response alone.
+                      </p>
                     </div>
-                  </div>
 
-                  {/* Dynamic Additional Fields List */}
-                  <div className="border-t border-border pt-4 space-y-4">
-                    <div className="flex items-center justify-between">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <Input
+                        label="Verify Endpoint Path"
+                        placeholder="user/payments"
+                        value={voPath}
+                        onChange={(e) => setVoPath(e.target.value.replace(/^\/+/, ""))}
+                      />
                       <div>
-                        <label className="block text-sm font-bold text-text-primary">
-                          Additional Custom Fields (Optional)
+                        <label className="block text-sm font-medium text-text-primary mb-1.5">
+                          Method
                         </label>
-                        <p className="text-xs text-text-secondary mt-0.5">
-                          Static key/value pairs passed in every create-order payload (e.g. source: shopagent).
-                        </p>
+                        <select
+                          value={voMethod}
+                          onChange={(e) => setVoMethod(e.target.value)}
+                          className="w-full bg-surface border border-border rounded-lg px-3.5 py-2.5 text-base text-text-primary focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-colors cursor-pointer"
+                        >
+                          <option value="POST">POST</option>
+                          <option value="GET">GET</option>
+                        </select>
                       </div>
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        size="sm"
-                        onClick={handleAddAdditionalField}
-                        className="flex items-center gap-1 shrink-0"
-                      >
-                        <Plus className="w-3.5 h-3.5" />
-                        <span>Add additional field</span>
-                      </Button>
                     </div>
 
-                    {coAdditionalFields.length > 0 && (
-                      <div className="space-y-3">
-                        {coAdditionalFields.map((field, idx) => (
-                          <div key={idx} className="flex items-center gap-3 bg-background p-2.5 rounded-xl border border-border">
-                            <input
-                              type="text"
-                              placeholder="Field Name (Key)"
-                              value={field.key}
-                              onChange={(e) => handleUpdateAdditionalField(idx, e.target.value, field.value)}
-                              className="flex-1 bg-surface border border-border rounded-lg px-3 py-1.5 text-sm text-text-primary font-sans focus:outline-none focus:ring-1 focus:ring-primary"
-                            />
-                            <input
-                              type="text"
-                              placeholder="Field Value"
-                              value={field.value}
-                              onChange={(e) => handleUpdateAdditionalField(idx, field.key, e.target.value)}
-                              className="flex-1 bg-surface border border-border rounded-lg px-3 py-1.5 text-sm text-text-primary font-sans focus:outline-none focus:ring-1 focus:ring-primary"
-                            />
-                            <button
-                              type="button"
-                              onClick={() => handleRemoveAdditionalField(idx)}
-                              className="p-1.5 text-text-secondary hover:text-error hover:bg-error/10 rounded-lg transition-colors cursor-pointer"
-                              title="Remove field"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    )}
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <Input
+                        label="Order ID Body Key"
+                        placeholder="merchantOrderId"
+                        value={voOrderIdField}
+                        onChange={(e) => setVoOrderIdField(e.target.value)}
+                      />
+                      <Input
+                        label="Response Price Key"
+                        placeholder="price"
+                        value={voResponsePriceField}
+                        onChange={(e) => setVoResponsePriceField(e.target.value)}
+                      />
+                    </div>
                   </div>
 
-                  {/* Self-Certification Checkbox for Write Endpoint */}
                   <div className="border-t border-border pt-4 bg-background p-4 rounded-xl space-y-2">
                     <label className="flex items-start gap-3 cursor-pointer select-none">
                       <input
@@ -2634,100 +2180,91 @@ export default function OnboardingPage() {
                         <span className="text-sm font-semibold text-text-primary">
                           I confirm this endpoint is configured correctly and will accept requests in the documented shape.
                         </span>
-                        <p className="text-xs text-text-secondary mt-0.5">
-                          Self-certifying avoids sending live test orders to your production backend during onboarding.
-                        </p>
                       </div>
                     </label>
                   </div>
+                </div>
+              )}
 
-                  {/* Optional Live Test Sample Values */}
-                  <div className="border-t border-border pt-4 space-y-4">
-                    <span className="text-xs font-bold text-text-secondary uppercase">Optional Live Test Cart Item Values</span>
-                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                      <Input
-                        label="Sample Item ID"
-                        value={coTestItemId}
-                        onChange={(e) => setCoTestItemId(e.target.value)}
-                      />
-                      <Input
-                        label="Sample Price ($)"
-                        value={coTestPrice}
-                        onChange={(e) => setCoTestPrice(e.target.value.replace(/\D/g, ""))}
-                      />
-                      <Input
-                        label="Sample Quantity"
-                        value={coTestQuantity}
-                        onChange={(e) => setCoTestQuantity(e.target.value.replace(/\D/g, ""))}
-                      />
+              {activeResource === "verifyOrder" && (
+                <div className="space-y-6 animate-fade-in">
+                  <div>
+                    <h4 className="text-sm font-bold text-text-primary">Verify Order Amount Endpoint</h4>
+                    <p className="text-xs text-text-secondary mt-1">
+                      Used to independently confirm the exact amount to charge for an order, right before payment — a safety check against the create-order response alone.
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                    <Input
+                      label="Endpoint Path (Relative to base URL)"
+                      placeholder="user/payments"
+                      value={voPath}
+                      onChange={(e) => setVoPath(e.target.value.replace(/^\/+/, ""))}
+                      required
+                    />
+                    <div>
+                      <label className="block text-sm font-medium text-text-primary mb-1.5">
+                        HTTP Method
+                      </label>
+                      <select
+                        value={voMethod}
+                        onChange={(e) => setVoMethod(e.target.value)}
+                        className="w-full bg-surface border border-border rounded-lg px-3.5 py-2.5 text-base text-text-primary focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-colors cursor-pointer"
+                      >
+                        <option value="POST">POST</option>
+                        <option value="GET">GET</option>
+                        <option value="PUT">PUT</option>
+                      </select>
                     </div>
                   </div>
-                </div>
-              )}
 
-              {/* 3. TOKEN REUSE WARNING INFO BOX */}
-              {authEnabled && !sessionToken && (
-                <div className="p-3 bg-warning/10 border border-warning/20 rounded-lg text-xs text-warning flex items-start gap-2 animate-fade-in">
-                  <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
-                  <div>
-                    <p className="font-semibold">No Authentication Token Found</p>
-                    <p className="mt-0.5">Please test customer login first to generate a token, or proceed to test without tokens attached.</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                    <Input
+                      label="Order ID Body Key"
+                      placeholder="merchantOrderId"
+                      value={voOrderIdField}
+                      onChange={(e) => setVoOrderIdField(e.target.value)}
+                      required
+                    />
+                    <Input
+                      label="Response Price Key"
+                      placeholder="price"
+                      value={voResponsePriceField}
+                      onChange={(e) => setVoResponsePriceField(e.target.value)}
+                      required
+                    />
                   </div>
                 </div>
               )}
 
-              {/* JSON RESPONSE BODY INLINE VIEWER */}
               {modalTestResponse && (
                 <div className="space-y-3 border-t border-border pt-6 animate-fade-in font-sans">
-                  {/* ADDRESS ID KEY VERIFICATION BANNER */}
-                  {activeResource === "addresses" && addrActiveTab === "fetch" && (() => {
-                    const rawItems = getNestedValue(modalTestResponse, addrFetchResponseKey) || (Array.isArray(modalTestResponse) ? modalTestResponse : []);
-                    if (!Array.isArray(rawItems)) {
-                      return (
-                        <div className="p-3 bg-error/10 border border-error/20 rounded-xl text-xs text-error flex items-center gap-2">
-                          <XCircle className="w-4 h-4 shrink-0 text-error" />
-                          <span>The key <strong>"{addrFetchResponseKey}"</strong> did not resolve to an array in the server response.</span>
-                        </div>
-                      );
-                    }
-                    if (rawItems.length === 0) {
-                      return (
-                        <div className="p-3 bg-warning/10 border border-warning/20 rounded-xl text-xs text-warning flex items-center gap-2">
-                          <AlertTriangle className="w-4 h-4 shrink-0 text-warning" />
-                          <span>Response returned 0 address items. Add sample addresses on your backend to verify key matching.</span>
-                        </div>
-                      );
-                    }
-                    const configuredKey = addrFetchIdField.trim();
-                    const matchingItems = rawItems.filter(item => item && typeof item === "object" && configuredKey in item && item[configuredKey] !== null && item[configuredKey] !== undefined);
-
-                    if (matchingItems.length > 0) {
-                      const sampleVal = String(matchingItems[0][configuredKey]);
-                      return (
-                        <div className="p-3 bg-success/10 border border-success/20 rounded-xl text-xs text-success flex items-start gap-2.5">
-                          <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5 text-success" />
-                          <div>
-                            <p className="font-bold text-success">
-                              Address ID Key Verified!
-                            </p>
-                            <p className="mt-0.5 text-success/90">
-                              Found key <code className="px-1 py-0.5 bg-success/20 rounded font-mono font-bold">{configuredKey}</code> in {matchingItems.length} of {rawItems.length} address objects (sample ID: <code className="px-1 py-0.5 bg-success/20 rounded font-mono">{sampleVal}</code>).
-                            </p>
-                          </div>
-                        </div>
-                      );
-                    }
-
+                  {activeResource === "addresses" && modalTestStatus === "success" && (() => {
+                    const addressList = getNestedValue(modalTestResponse, parsedAddressObj.response_key);
+                    const count = Array.isArray(addressList) ? addressList.length : (addressList ? 1 : 0);
                     return (
-                      <div className="p-3 bg-error/10 border border-error/20 rounded-xl text-xs text-error flex items-start gap-2.5">
-                        <XCircle className="w-4 h-4 shrink-0 mt-0.5 text-error" />
+                      <div className={`p-4 rounded-xl border flex items-start gap-3 animate-fade-in ${
+                        count > 0 ? "bg-success/10 border-success/30" : "bg-warning/10 border-warning/30"
+                      }`}>
+                        {count > 0 ? (
+                          <CheckCircle2 className="w-5 h-5 text-success shrink-0 mt-0.5" />
+                        ) : (
+                          <AlertTriangle className="w-5 h-5 text-warning shrink-0 mt-0.5" />
+                        )}
                         <div>
-                          <p className="font-bold text-error">
-                            Address ID Key Mismatch!
+                          <h4 className={`text-sm font-bold ${count > 0 ? "text-success" : "text-warning"}`}>
+                            {count > 0 ? "Key Configuration Verified!" : `No Addresses Found Under Key '${parsedAddressObj.response_key}'`}
+                          </h4>
+                          <p className="text-xs text-text-primary mt-1">
+                            <strong className="font-bold">{count} address{count === 1 ? "" : "es"}</strong> found against your key <code className="bg-background px-1.5 py-0.5 rounded font-mono text-[11px]">{parsedAddressObj.response_key}</code>.
                           </p>
-                          <p className="mt-0.5 text-error/90">
-                            Configured key <code className="px-1 py-0.5 bg-error/20 rounded font-mono font-bold">{configuredKey}</code> was <strong>NOT found</strong> in any of the {rawItems.length} address objects returned by your API. Please update your Address ID Key configuration.
-                          </p>
+                          {count > 0 && Array.isArray(addressList) && addressList[0] && parsedAddressObj.id_field && (
+                            <p className="text-[11px] text-text-secondary mt-1">
+                              ID Key (<code className="bg-background px-1 py-0.5 rounded font-mono">{parsedAddressObj.id_field}</code>):{" "}
+                              <strong className="text-text-primary font-mono">{String(addressList[0][parsedAddressObj.id_field] ?? addressList[0]._id ?? addressList[0].id ?? "verified")}</strong>
+                            </p>
+                          )}
                         </div>
                       </div>
                     );
@@ -2737,24 +2274,16 @@ export default function OnboardingPage() {
                     <label className="block text-xs font-bold text-text-secondary uppercase">
                       Raw Response JSON
                     </label>
-                    <div className="flex items-center gap-1.5">
-                      {modalTestStatus === "success" ? (
-                        <span className="inline-flex items-center gap-1 text-[10px] text-success bg-success/10 px-2 py-0.5 rounded border border-success/20 font-semibold font-sans">
-                          <Check className="w-3 h-3" /> 200 Success
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1 text-[10px] text-error bg-error/10 px-2 py-0.5 rounded border border-error/20 font-semibold font-sans">
-                          <X className="w-3 h-3" /> Error Code
-                        </span>
-                      )}
-                    </div>
+                    <span className={`inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded font-semibold ${modalTestStatus === "success" ? "text-success bg-success/10 border border-success/20" : "text-error bg-error/10 border border-error/20"
+                      }`}>
+                      {modalTestStatus === "success" ? "200 Success" : "Error Response"}
+                    </span>
                   </div>
                   <pre className="p-4 bg-background border border-border rounded-xl text-xs font-mono text-text-primary max-h-48 overflow-auto select-all">
                     {JSON.stringify(modalTestResponse, null, 2)}
                   </pre>
                 </div>
               )}
-
             </div>
 
             {/* Modal Footer */}
@@ -2767,65 +2296,80 @@ export default function OnboardingPage() {
                 Close
               </Button>
 
-              {activeResource === "createOrder" || (activeResource === "addresses" && addrActiveTab === "create") ? (
-                <div className="flex gap-2">
-                  <Button
-                    type="button"
-                    variant="secondary"
-                    onClick={() => handleSaveAndTestResource(activeResource)}
-                    disabled={modalTestLoading || (activeResource === "createOrder" && !coAddressIdField.trim())}
-                    className="flex items-center gap-1.5"
-                  >
-                    {modalTestLoading ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <Play className="w-4 h-4" />
-                    )}
-                    <span>Optional Live Test</span>
-                  </Button>
+              <div className="flex gap-2">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => handleSaveAndTestResource(activeResource)}
+                  disabled={modalTestLoading}
+                  className="flex items-center gap-1.5"
+                >
+                  {modalTestLoading ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Play className="w-4 h-4" />
+                  )}
+                  <span>Live Test</span>
+                </Button>
 
-                  <Button
-                    type="button"
-                    variant="primary"
-                    onClick={() => {
-                      if (activeResource === "createOrder" && !coAddressIdField.trim()) {
-                        toast.error("Address ID key name is required.");
-                        return;
-                      }
-                      if (activeResource === "addresses" && !addrFetchIdField.trim()) {
-                        toast.error("Address ID Key is required for addresses endpoint.");
-                        return;
-                      }
-                      setActiveResource(null);
-                      toast.success("Endpoint configuration updated.");
-                    }}
-                  >
-                    Save & Done
-                  </Button>
-                </div>
-              ) : (
                 <Button
                   type="button"
                   variant="primary"
-                  onClick={() => handleSaveAndTestResource(activeResource)}
-                  disabled={modalTestLoading}
-                  className="flex items-center gap-2"
-                >
-                  {modalTestLoading ? (
-                    <>
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      <span>Testing...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Play className="w-4 h-4 shrink-0" />
-                      <span>Save & Live Test</span>
-                    </>
-                  )}
-                </Button>
-              )}
-            </div>
+                  onClick={() => {
+                    if (activeResource === "addresses" && !parsedAddressObj.isValid) {
+                      toast.error("Address path must be formatted as 'addresses._id'");
+                      return;
+                    }
 
+                    // Save resource state via autosave
+                    let patchData: Partial<OnboardingData> = {};
+                    if (activeResource === "products") {
+                      patchData.products_config = { path: prodPath, method: "GET", payload_key: prodPayloadKey, response_key: prodResponseKey };
+                    } else if (activeResource === "orderHistory") {
+                      patchData.order_history_config = { path: ohPath, method: "GET", response_key: ohResponseKey };
+                    } else if (activeResource === "customerProfile") {
+                      patchData.customer_profile_config = { path: cpPath, method: "GET" };
+                    } else if (activeResource === "addresses") {
+                      patchData.addresses_config = {
+                        supports_creation: addrSupportsCreation,
+                        fetch: { path: addrFetchPath, method: "GET", response_key: parsedAddressObj.response_key, id_field: parsedAddressObj.id_field },
+                        create: addrSupportsCreation ? { path: addrCreatePath, method: "POST", field_mapping: addrCreateFields.split(",").map(k => k.trim()).filter(Boolean) } : null
+                      };
+                    } else if (activeResource === "createOrder") {
+                      patchData.create_order_config = {
+                        path: coPath,
+                        method: "POST",
+                        cart_key: coCartKey,
+                        item_id_field: coItemIdField,
+                        price_field: coPriceField,
+                        quantity_field: coQuantityField,
+                        address_id_field: coAddressIdField,
+                        additional_fields: coAdditionalFields.filter(f => f.key.trim() !== "")
+                      };
+                      patchData.verify_order_config = {
+                        path: voPath,
+                        method: voMethod,
+                        order_id_field: voOrderIdField,
+                        response_price_field: voResponsePriceField
+                      };
+                    } else if (activeResource === "verifyOrder") {
+                      patchData.verify_order_config = {
+                        path: voPath,
+                        method: voMethod,
+                        order_id_field: voOrderIdField,
+                        response_price_field: voResponsePriceField
+                      };
+                    }
+
+                    handleAutosave("endpoints", patchData);
+                    setActiveResource(null);
+                    toast.success("Endpoint configuration updated.");
+                  }}
+                >
+                  Save & Done
+                </Button>
+              </div>
+            </div>
           </div>
         </div>
       )}

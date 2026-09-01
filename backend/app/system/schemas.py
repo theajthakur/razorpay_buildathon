@@ -18,13 +18,27 @@ class TokenDeliveryConfig(BaseModel):
     cookie_name: Optional[str] = None
 
 class AuthConfigSchema(BaseModel):
-    auth_url: str
+    path: str = ""
+    auth_url: Optional[str] = None
     method: str  # GET/POST/PUT/PATCH
     identifier_field: str
     identifier_type: str  # "email" | "mobile" | "text"
     password_field: str
     token_path: str
     token_delivery: TokenDeliveryConfig
+
+    @model_validator(mode="before")
+    @classmethod
+    def ensure_path(cls, data: Any) -> Any:
+        if isinstance(data, dict):
+            p = data.get("path") or data.get("auth_url") or ""
+            data["path"] = p
+            data["auth_url"] = p
+        elif hasattr(data, "__dict__"):
+            p = getattr(data, "path", None) or getattr(data, "auth_url", None) or ""
+            setattr(data, "path", p)
+            setattr(data, "auth_url", p)
+        return data
 
 # STEP 2 PER-RESOURCE CONFIG SCHEMAS
 class ProductsConfigSchema(BaseModel):
@@ -72,6 +86,12 @@ class CreateOrderConfigSchema(BaseModel):
     address_id_field: Optional[str] = "address_id"
     additional_fields: Optional[List[AdditionalFieldSchema]] = []
 
+class VerifyOrderConfigSchema(BaseModel):
+    path: str
+    method: str = "POST"
+    order_id_field: str = "merchantOrderId"
+    response_price_field: str = "price"
+
 class BrandingConfigSchema(BaseModel):
     brand_color: Optional[str] = None
     logo_url: Optional[str] = None
@@ -88,6 +108,7 @@ class OnboardingUpsertRequest(BaseModel):
     customer_profile_config: Optional[CustomerProfileConfigSchema] = None
     addresses_config: Optional[AddressesConfigSchema] = None
     create_order_config: Optional[CreateOrderConfigSchema] = None
+    verify_order_config: Optional[VerifyOrderConfigSchema] = None
     
     bank_account: Optional[str] = None
     ifsc: Optional[str] = None
@@ -96,6 +117,28 @@ class OnboardingUpsertRequest(BaseModel):
     # Branding & Webhook
     branding_config: Optional[BrandingConfigSchema] = None
     webhook_url: Optional[str] = None
+    webhook_path: Optional[str] = None
+
+class OnboardingPartialUpdateRequest(BaseModel):
+    base_url: Optional[str] = None
+    auth_enabled: Optional[bool] = None
+    auth_disabled_ack: Optional[bool] = None
+    auth_config: Optional[AuthConfigSchema] = None
+    
+    products_config: Optional[ProductsConfigSchema] = None
+    order_history_config: Optional[OrderHistoryConfigSchema] = None
+    customer_profile_config: Optional[CustomerProfileConfigSchema] = None
+    addresses_config: Optional[AddressesConfigSchema] = None
+    create_order_config: Optional[CreateOrderConfigSchema] = None
+    verify_order_config: Optional[VerifyOrderConfigSchema] = None
+    
+    bank_account: Optional[str] = None
+    ifsc: Optional[str] = None
+    branch_name: Optional[str] = None
+    
+    branding_config: Optional[BrandingConfigSchema] = None
+    webhook_url: Optional[str] = None
+    webhook_path: Optional[str] = None
 
 class OnboardingResponse(BaseModel):
     user_id: str
@@ -109,6 +152,7 @@ class OnboardingResponse(BaseModel):
     customer_profile_config: Optional[CustomerProfileConfigSchema] = None
     addresses_config: Optional[AddressesConfigSchema] = None
     create_order_config: Optional[CreateOrderConfigSchema] = None
+    verify_order_config: Optional[VerifyOrderConfigSchema] = None
     
     bank_account: Optional[str] = None
     ifsc: Optional[str] = None
@@ -116,6 +160,7 @@ class OnboardingResponse(BaseModel):
     
     branding_config: Optional[BrandingConfigSchema] = None
     webhook_url: Optional[str] = None
+    webhook_path: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 
@@ -129,6 +174,7 @@ class OnboardingResponse(BaseModel):
             "customer_profile_config",
             "addresses_config",
             "create_order_config",
+            "verify_order_config",
             "branding_config",
         ]
         if isinstance(data, dict):
@@ -158,6 +204,8 @@ class TestEndpointRequest(BaseModel):
     payload: Optional[Dict[str, Any]] = None
 
 class TestCustomerAuthRequest(BaseModel):
-    auth_url: str
+    base_url: Optional[str] = None
+    auth_url: Optional[str] = None
+    auth_path: Optional[str] = None
     auth_method: str
     payload: Dict[str, Any]

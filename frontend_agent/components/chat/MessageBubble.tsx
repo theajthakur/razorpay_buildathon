@@ -7,6 +7,7 @@ import { useBranding } from "@/lib/context/BrandingContext";
 import ProductCardGrid from "./ProductCardGrid";
 import ProfileCard from "./ProfileCard";
 import OrderHistoryCard from "./OrderHistoryCard";
+import OrderConfirmationCard from "./OrderConfirmationCard";
 import { User } from "lucide-react";
 
 interface MessageBubbleProps {
@@ -20,6 +21,8 @@ function renderMessageExtra(message: ChatMessage) {
       return <ProfileCard profile={message.metadata?.profile} />;
     case "order_history_card":
       return <OrderHistoryCard orders={message.metadata?.orders} count={message.metadata?.count} />;
+    case "initiate_payment":
+      return <OrderConfirmationCard metadata={message.metadata} />;
     default:
       return message.products && message.products.length > 0 ? (
         <ProductCardGrid products={message.products} />

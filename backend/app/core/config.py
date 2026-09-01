@@ -12,6 +12,8 @@ class Settings(BaseSettings):
     RAZORPAY_SECRET_KEY: str = ""
     RAZORPAY_CLIENT_ID: str = ""
     RAZORPAY_CLIENT_SECRET: str = ""
+    RAZORPAY_KEY_ID: str = ""
+    RAZORPAY_KEY_SECRET: str = ""
     CLERK_WEBHOOK_SECRET: str = ""
     CLERK_JWKS_URL: str = "https://pumped-caiman-79.clerk.accounts.dev/.well-known/jwks.json"
 
@@ -26,8 +28,6 @@ class Settings(BaseSettings):
     GCP_LOCATION: str = "us-central1"
     GEMINI_MODEL: str = "gemini-2.5-flash"
 
-
-
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
@@ -37,6 +37,14 @@ class Settings(BaseSettings):
     @property
     def cors_origins_list(self) -> List[str]:
         return [origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()]
+
+    @property
+    def razorpay_key_id(self) -> str:
+        return self.RAZORPAY_KEY_ID or self.RAZORPAY_CLIENT_ID
+
+    @property
+    def razorpay_key_secret(self) -> str:
+        return self.RAZORPAY_KEY_SECRET or self.RAZORPAY_SECRET_KEY or self.RAZORPAY_CLIENT_SECRET
 
 @lru_cache
 def get_settings() -> Settings:
