@@ -2,7 +2,10 @@ import apiClient from "./client";
 
 export interface ClerkUserPayload {
   id: string;
-  email_addresses: { email_address: string }[];
+  emailAddresses?: { emailAddress: string }[];
+  email_addresses?: { email_address: string }[];
+  firstName?: string | null;
+  lastName?: string | null;
   first_name?: string | null;
   last_name?: string | null;
 }
@@ -20,15 +23,17 @@ export interface UserAccountResponse {
  * to the backend's webhook receiver to ensure the DB row exists.
  */
 export async function syncClerkUser(user: ClerkUserPayload): Promise<void> {
+  const emails = user.emailAddresses
+    ? user.emailAddresses.map((addr) => ({ email_address: addr.emailAddress }))
+    : (user.email_addresses || []).map((addr) => ({ email_address: addr.email_address }));
+
   const payload = {
     type: "user.created",
     data: {
       id: user.id,
-      email_addresses: user.email_addresses.map((addr) => ({
-        email_address: addr.email_address,
-      })),
-      first_name: user.first_name || "",
-      last_name: user.last_name || "",
+      email_addresses: emails,
+      first_name: user.firstName || user.first_name || "",
+      last_name: user.lastName || user.last_name || "",
     },
   };
 
@@ -60,3 +65,11 @@ export async function fetchCurrentUser(): Promise<UserAccountResponse> {
   const response = await apiClient.get<UserAccountResponse>("/system/accounts/me");
   return response.data;
 }
+
+/**
+ * Alias/Wrapper for syncClerkUser to provision the user if not found in DB.
+ */
+export async function syncAndProvisionUser(user: any): Promise<void> {
+  return syncClerkUser(user);
+}
+
