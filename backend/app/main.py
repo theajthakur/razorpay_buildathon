@@ -7,6 +7,7 @@ from app.core.logging_config import setup_logging, get_logger
 from app.system.router import router as system_router
 from app.agentic.router import router as agentic_router, public_router
 from app.dashboard.router import router as dashboard_router
+from app.merchant.router import router as merchant_router
 
 setup_logging()
 logger = get_logger("main")
@@ -40,6 +41,8 @@ app.include_router(system_router, prefix="/system", tags=["System"])
 app.include_router(agentic_router, prefix="/agentic", tags=["Agentic"])
 app.include_router(public_router, prefix="/api/public", tags=["Public"])
 app.include_router(dashboard_router, prefix="/api/dashboard", tags=["Dashboard"])
+app.include_router(merchant_router, prefix="/merchant", tags=["Merchant API"])
+app.include_router(merchant_router, prefix="/api/merchant", tags=["Merchant API"])
 
 @app.get("/")
 def read_root():

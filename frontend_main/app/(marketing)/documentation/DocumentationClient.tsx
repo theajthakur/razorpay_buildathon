@@ -37,12 +37,12 @@ function HighlightedJson({ code }: { code: string }) {
         } else {
           cls = "text-accent font-semibold"; // number
         }
-        
+
         if (/:$/.test(match)) {
           const keyPart = match.slice(0, -1);
           return `<span class="${cls}">${keyPart}</span><span class="text-text-secondary">:</span>`;
         }
-        
+
         return `<span class="${cls}">${match}</span>`;
       }
     );
@@ -161,7 +161,7 @@ export default function DocumentationClient({ rawMarkdown }: DocumentationClient
   const handleScrollTo = (e: React.MouseEvent, id: string) => {
     e.preventDefault();
     setMobileMenuOpen(false);
-    
+
     if (id === "overview") {
       window.scrollTo({ top: 0, behavior: "smooth" });
       return;
@@ -184,7 +184,7 @@ export default function DocumentationClient({ rawMarkdown }: DocumentationClient
 
   return (
     <>
-      
+
       {/* Table of Contents: Mobile Floating Drawer Toggle */}
       <div className="lg:hidden fixed bottom-6 right-6 z-40">
         <button
@@ -202,7 +202,7 @@ export default function DocumentationClient({ rawMarkdown }: DocumentationClient
           <div className="w-72 max-w-[80vw] bg-surface h-full p-6 shadow-2xl flex flex-col border-l border-border animate-in slide-in-from-right duration-200">
             <div className="flex items-center justify-between border-b border-border pb-4 mb-6">
               <h3 className="font-heading font-bold text-lg text-text-primary">On This Page</h3>
-              <button 
+              <button
                 onClick={() => setMobileMenuOpen(false)}
                 className="text-text-secondary hover:text-text-primary cursor-pointer text-sm font-semibold"
               >
@@ -215,11 +215,10 @@ export default function DocumentationClient({ rawMarkdown }: DocumentationClient
                   key={heading.id}
                   href={`#${heading.id}`}
                   onClick={(e) => handleScrollTo(e, heading.id)}
-                  className={`block text-sm font-medium py-1.5 px-2.5 rounded-lg border-l-2 transition-all ${
-                    activeId === heading.id
+                  className={`block text-sm font-medium py-1.5 px-2.5 rounded-lg border-l-2 transition-all ${activeId === heading.id
                       ? "border-primary text-primary bg-primary-light/50 pl-3.5"
                       : "border-transparent text-text-secondary hover:text-text-primary"
-                  }`}
+                    }`}
                 >
                   {heading.text}
                 </a>
@@ -231,7 +230,7 @@ export default function DocumentationClient({ rawMarkdown }: DocumentationClient
 
       {/* Left Column: Content Area */}
       <div className="flex-1 max-w-full lg:max-w-[72ch] min-w-0">
-        
+
         {/* Copy for AI Action Bar */}
         <div className="mb-8 p-4 rounded-xl bg-surface border border-border flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 shadow-2xs">
           <div className="flex items-start gap-3">
@@ -245,11 +244,10 @@ export default function DocumentationClient({ rawMarkdown }: DocumentationClient
           </div>
           <button
             onClick={handleCopyForAI}
-            className={`px-4 py-2 rounded-lg font-medium text-sm flex items-center justify-center gap-2 cursor-pointer transition-all duration-200 shadow-2xs border ${
-              copiedAll
+            className={`px-4 py-2 rounded-lg font-medium text-sm flex items-center justify-center gap-2 cursor-pointer transition-all duration-200 shadow-2xs border ${copiedAll
                 ? "bg-success border-success text-text-on-primary"
                 : "bg-primary border-primary text-text-on-primary hover:bg-primary-hover hover:border-primary-hover"
-            }`}
+              }`}
           >
             {copiedAll ? (
               <>
@@ -267,7 +265,7 @@ export default function DocumentationClient({ rawMarkdown }: DocumentationClient
 
         {/* Documentation Content rendered directly as React Elements */}
         <article className="prose max-w-none">
-          
+
           {/* Overview */}
           <h1 id="overview" className="font-heading text-4xl font-extrabold text-text-primary tracking-tight mb-6 scroll-mt-24">
             ShopAgent Integration Guide
@@ -312,7 +310,7 @@ export default function DocumentationClient({ rawMarkdown }: DocumentationClient
 
           <p className="text-base text-text-primary font-bold mt-8 mb-2">Standard error format</p>
           <CodeBlock className="language-json">
-{`{
+            {`{
   "error": {
     "code": "invalid_request",
     "message": "merchant_order_id is required"
@@ -383,7 +381,7 @@ export default function DocumentationClient({ rawMarkdown }: DocumentationClient
             Order Lifecycle
           </h2>
           <CodeBlock>
-{`pending → confirmed
+            {`pending → confirmed
         → failed
         → flagged_amount_mismatch`}
           </CodeBlock>
@@ -447,7 +445,7 @@ export default function DocumentationClient({ rawMarkdown }: DocumentationClient
             The webhook body is intentionally minimal — treat it as a <strong>trigger</strong>, not a data source. Full payment details must always be pulled via <a href="#verify-order" onClick={(e) => handleScrollTo(e, "verify-order")} className="text-primary hover:text-primary-hover font-medium underline transition-colors">Verify Order</a>, never trusted from the webhook body itself.
           </p>
           <CodeBlock className="language-json">
-{`{
+            {`{
   "event": "order.payment_completed",
   "event_id": "evt_9f8a3b2c1d",
   "merchant_order_id": "ORD1234"
@@ -528,7 +526,7 @@ export default function DocumentationClient({ rawMarkdown }: DocumentationClient
             Sent as query parameters, authenticated with your API key.
           </p>
           <CodeBlock>
-{`GET /merchant/orders/verify?merchant_order_id=ORD1234
+            {`GET /merchant/orders/verify?merchant_order_id=ORD1234
 Authorization: Bearer <YOUR_SHOPAGENT_API_KEY>`}
           </CodeBlock>
 
@@ -559,7 +557,7 @@ Authorization: Bearer <YOUR_SHOPAGENT_API_KEY>`}
             Response structure
           </h3>
           <CodeBlock className="language-json">
-{`{
+            {`{
   "merchant_order_id": "ORD1234",
   "agent_order_id": "shopagent_ord_88221",
   "payment_status": "captured",
@@ -727,16 +725,14 @@ Authorization: Bearer <YOUR_SHOPAGENT_API_KEY>`}
                 key={heading.id}
                 href={`#${heading.id}`}
                 onClick={(e) => handleScrollTo(e, heading.id)}
-                className={`text-sm font-medium transition-all duration-200 flex items-center gap-2 group py-0.5 ${
-                  activeId === heading.id
+                className={`text-sm font-medium transition-all duration-200 flex items-center gap-2 group py-0.5 ${activeId === heading.id
                     ? "text-primary pl-1 font-semibold"
                     : "text-text-secondary hover:text-text-primary"
-                }`}
+                  }`}
               >
-                <ChevronRight 
-                  className={`w-3.5 h-3.5 text-primary shrink-0 transition-all duration-200 ${
-                    activeId === heading.id ? "opacity-100 translate-x-0" : "opacity-0 -translate-x-1"
-                  }`} 
+                <ChevronRight
+                  className={`w-3.5 h-3.5 text-primary shrink-0 transition-all duration-200 ${activeId === heading.id ? "opacity-100 translate-x-0" : "opacity-0 -translate-x-1"
+                    }`}
                 />
                 <span className="truncate">{heading.text}</span>
               </a>
