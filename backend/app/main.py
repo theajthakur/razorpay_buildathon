@@ -2,7 +2,8 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 from app.core.config import get_settings
-from app.core.database import engine
+from app.core.database import engine, Base
+import app.system.models  # Registers models with Base metadata
 from app.core.logging_config import setup_logging, get_logger
 from app.system.router import router as system_router
 from app.agentic.router import router as agentic_router, public_router
@@ -20,6 +21,8 @@ app = FastAPI(title="Razorpay Buildathon Backend")
 def on_startup():
     logger.info("ShopAgent Backend initialized successfully")
     try:
+        Base.metadata.create_all(bind=engine)
+        logger.info("Database tables created/verified successfully.")
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE onboardings ADD COLUMN IF NOT EXISTS verify_order_config JSON;"))
             conn.execute(text("ALTER TABLE onboardings ADD COLUMN IF NOT EXISTS webhook_path VARCHAR;"))
