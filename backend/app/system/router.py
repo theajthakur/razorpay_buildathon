@@ -79,8 +79,21 @@ async def clerk_webhook(
                 webhook_logger.warning("Clerk webhook failed: invalid JSON body")
                 raise HTTPException(status_code=400, detail="Invalid JSON body")
 
+        if isinstance(payload, (str, bytes)):
+            try:
+                payload = json.loads(payload)
+            except Exception:
+                payload = None
+
+        if not isinstance(payload, dict):
+            try:
+                payload = json.loads(body_str)
+            except json.JSONDecodeError:
+                webhook_logger.warning("Clerk webhook failed: invalid JSON body")
+                raise HTTPException(status_code=400, detail="Invalid JSON body")
+
         event_type = payload.get("type")
-        event_data = payload.get("data", {})
+        event_data = payload.get("data") or {}
         webhook_logger.info(f"Clerk webhook payload parsed: event_type={event_type}, user_id={event_data.get('id')}")
 
         # 2. Event Routing
