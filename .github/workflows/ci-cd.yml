@@ -35,10 +35,13 @@ jobs:
 
       - name: Run Pytest Test Suite
         env:
+          PYTHONPATH: "backend"
           DATABASE_URL: "sqlite:///:memory:"
           API_KEY_HMAC_SECRET: "test_secret_hmac_12345678901234567890123456789012"
           JWT_SECRET: "test_jwt_secret_12345678901234567890123456789012"
           MERCHANT_TOKEN_ENCRYPTION_KEY: "Y4j_PL8CU6g4fFlJTSOA1zs3VWh2nV6Jd3hs-sLNRY8="
+          RAZORPAY_KEY_ID: "rzp_test_mockkey123"
+          RAZORPAY_KEY_SECRET: "mock_secret_key_123456"
         run: |
           python -m pytest backend/app/tests -v
 

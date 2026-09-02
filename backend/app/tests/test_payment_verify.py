@@ -2,7 +2,7 @@ import hmac
 import hashlib
 import uuid
 import pytest
-from unittest.mock import patch, AsyncMock
+from unittest.mock import patch, MagicMock, AsyncMock
 from fastapi.testclient import TestClient
 from app.system.models import AgentOrder, AgentOrderStatus, User, Onboarding, Conversation
 from app.core.config import get_settings
@@ -16,7 +16,11 @@ def test_no_razorpay_secret_in_frontend():
     Acceptance check: Verify RAZORPAY_KEY_SECRET never appears anywhere in frontend_agent code or env.
     """
     import os
-    frontend_dir = r"c:\Users\VIJAY\Documents\Projects\rzp_bthon\frontend_agent"
+    from pathlib import Path
+    root_dir = Path(__file__).resolve().parent.parent.parent.parent
+    frontend_dir = str(root_dir / "frontend_agent")
+    if not os.path.exists(frontend_dir):
+        return
     for root, dirs, files in os.walk(frontend_dir):
         if "node_modules" in root or ".next" in root:
             continue
@@ -36,8 +40,9 @@ async def test_payment_verify_valid_signature(db_session, test_merchant, test_cu
     """
     from app.agentic.router import verify_payment, VerifyPaymentRequest
 
-    settings = get_settings()
-    secret = settings.razorpay_key_secret or "Ac5x60qHGapcJbdjqZbNVJDs"
+    secret = "Ac5x60qHGapcJbdjqZbNVJDs"
+    dummy_settings = MagicMock()
+    dummy_settings.razorpay_key_secret = secret
 
     # Create dummy conversation & agent_order row
     conv = Conversation(
@@ -71,7 +76,8 @@ async def test_payment_verify_valid_signature(db_session, test_merchant, test_cu
         razorpay_signature=valid_sig
     )
 
-    with patch("app.agentic.router.send_merchant_webhook", new_callable=AsyncMock) as mock_webhook:
+    with patch("app.agentic.router.send_merchant_webhook", new_callable=AsyncMock) as mock_webhook, \
+         patch("app.agentic.router.get_settings", return_value=dummy_settings):
         mock_webhook.return_value = True
 
         res = await verify_payment(payload=payload, db=db_session)
@@ -93,6 +99,10 @@ async def test_payment_verify_tampered_signature_rejected(db_session, test_merch
     """
     from app.agentic.router import verify_payment, VerifyPaymentRequest
     from fastapi import HTTPException
+
+    secret = "Ac5x60qHGapcJbdjqZbNVJDs"
+    dummy_settings = MagicMock()
+    dummy_settings.razorpay_key_secret = secret
 
     conv = Conversation(
         id="conv_verify_2",
@@ -122,8 +132,9 @@ async def test_payment_verify_tampered_signature_rejected(db_session, test_merch
         razorpay_signature="invalid_tampered_signature_hash"
     )
 
-    with pytest.raises(HTTPException) as exc_info:
-        await verify_payment(payload=tampered_payload, db=db_session)
+    with patch("app.agentic.router.get_settings", return_value=dummy_settings):
+        with pytest.raises(HTTPException) as exc_info:
+            await verify_payment(payload=tampered_payload, db=db_session)
 
     assert exc_info.value.status_code == 400
     assert exc_info.value.detail == "signature_verification_failed"

@@ -46,9 +46,14 @@ async def test_razorpay_order_creation_failure_marks_order_failed(db_session, te
     session_ctx = {"customer_ref": test_customer_user.email}
     args_ctx = {"address_id": "addr_123"}
 
+    dummy_settings = MagicMock()
+    dummy_settings.razorpay_key_id = "rzp_test_123"
+    dummy_settings.razorpay_key_secret = "test_secret_123"
+
     # Mock execute_fetch_addresses and call_merchant_api
     with patch("app.agentic.router.execute_fetch_addresses", new_callable=AsyncMock) as mock_fetch_addrs, \
          patch("app.agentic.router.call_merchant_api", new_callable=AsyncMock) as mock_merchant_api, \
+         patch("app.agentic.router.get_settings", return_value=dummy_settings), \
          patch("razorpay.Client") as mock_rzp_cls, \
          patch("app.agentic.router.orders_logger") as mock_logger:
 

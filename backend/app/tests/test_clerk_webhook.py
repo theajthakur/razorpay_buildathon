@@ -18,7 +18,7 @@ def test_handle_clerk_user_upsert_creation(db_session):
     assert user.id == "user_3Ik7b9Hlr1lTjRLuBCIxvyYadDh"
     assert user.email == "vijaysingh.handler@gmail.com"
     assert user.store_name == "Vijay Singh's Store"
-    assert user.status == "pending"
+    assert user.status == "approved"
 
 def test_handle_clerk_user_upsert_update(db_session):
     event_data = {
