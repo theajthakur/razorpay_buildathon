@@ -69,6 +69,10 @@ def handle_clerk_user_upsert(db: Session, event_data: dict) -> User:
     full_name = f"{first_name} {last_name}".strip()
     store_name = f"{full_name}'s Store" if full_name else "Merchant Store"
 
+    custom_store_name = event_data.get("store_name") or event_data.get("unsafe_metadata", {}).get("store_name")
+    if custom_store_name:
+        store_name = custom_store_name
+
     # Query existing user by Clerk ID
     db_user = db.query(User).filter(User.id == clerk_id).first()
     if not db_user:
@@ -76,14 +80,17 @@ def handle_clerk_user_upsert(db: Session, event_data: dict) -> User:
             id=clerk_id,
             email=email,
             store_name=store_name,
-            status="pending"
+            status="approved"
         )
         db.add(db_user)
     else:
         # Update fields if existing
-        db_user.email = email
-        if not db_user.store_name:
+        if email:
+            db_user.email = email
+        if store_name and (not db_user.store_name or db_user.store_name == "Merchant Store"):
             db_user.store_name = store_name
+        if db_user.status == "pending":
+            db_user.status = "approved"
 
     db.commit()
     db.refresh(db_user)

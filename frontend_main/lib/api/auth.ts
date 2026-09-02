@@ -8,6 +8,8 @@ export interface ClerkUserPayload {
   lastName?: string | null;
   first_name?: string | null;
   last_name?: string | null;
+  storeName?: string | null;
+  store_name?: string | null;
 }
 
 export interface UserAccountResponse {
@@ -34,6 +36,7 @@ export async function syncClerkUser(user: ClerkUserPayload): Promise<void> {
       email_addresses: emails,
       first_name: user.firstName || user.first_name || "",
       last_name: user.lastName || user.last_name || "",
+      store_name: user.storeName || user.store_name || "",
     },
   };
 

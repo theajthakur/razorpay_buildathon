@@ -63,3 +63,52 @@ def extract_by_path(data: dict, path: str, default=None):
 def get_value_by_path(d: dict, path: str, default=None):
     return extract_by_path(d, path, default=default)
 
+def find_list_in_dict(obj, target_key: str | None = None) -> list | None:
+    """
+    Recursively searches obj (dict/list) for a list matching target_key (or dot path),
+    or any list containing dictionary items.
+    """
+    if isinstance(obj, list):
+        return obj
+
+    if not isinstance(obj, dict):
+        return None
+
+    # 1. If dot-notation path like 'data.products' is passed
+    if target_key:
+        extracted = extract_by_path(obj, target_key)
+        if isinstance(extracted, list):
+            return extracted
+
+    # 2. Check if target_key exists directly at this level
+    if target_key and target_key in obj:
+        val = obj[target_key]
+        if isinstance(val, list):
+            return val
+        if isinstance(val, dict):
+            res = find_list_in_dict(val, target_key)
+            if res is not None:
+                return res
+
+    # 3. Check for common container keys if target_key wasn't found at top level
+    for candidate_key in [target_key, "products", "items", "data", "results", "catalog", "menu", "records"]:
+        if candidate_key and candidate_key in obj:
+            val = obj[candidate_key]
+            if isinstance(val, list):
+                return val
+            if isinstance(val, dict):
+                res = find_list_in_dict(val, target_key)
+                if res is not None:
+                    return res
+
+    # 4. Deep search all dict values for any list of dicts
+    for k, val in obj.items():
+        if isinstance(val, list) and len(val) > 0 and isinstance(val[0], dict):
+            return val
+        if isinstance(val, dict):
+            res = find_list_in_dict(val, target_key)
+            if res is not None:
+                return res
+
+    return None
+

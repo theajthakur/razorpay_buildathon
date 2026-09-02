@@ -79,6 +79,14 @@ export default function LoginPage() {
 
           if (signIn.id) {
             loginUser(signIn.id);
+            try {
+              await syncClerkUser({
+                id: signIn.id,
+                email_addresses: [{ email_address: email }],
+              });
+            } catch (syncErr) {
+              console.error("Login user DB sync warning:", syncErr);
+            }
           }
           window.location.href = "/dashboard";
           return;

@@ -70,18 +70,30 @@ def get_current_user(
         )
     
     user = db.query(User).filter(User.id == clerk_id).first()
+    email_from_jwt = payload.get("email") or payload.get("primary_email") or ""
     
-    # Auto-Heal: If database was reset but browser session remains active
+    # Auto-Heal: If user authenticated via valid Clerk JWT but row is not yet in DB
     if not user:
         user = User(
             id=clerk_id,
-            email=payload.get("email") or f"{clerk_id}@merchant.local",
-            store_name="Synced Store",
-            status="pending"
+            email=email_from_jwt or f"{clerk_id}@merchant.local",
+            store_name="Merchant Store",
+            status="approved"
         )
         db.add(user)
         db.commit()
         db.refresh(user)
+    else:
+        modified = False
+        if email_from_jwt and (not user.email or user.email.endswith("@merchant.local")):
+            user.email = email_from_jwt
+            modified = True
+        if user.status == "pending":
+            user.status = "approved"
+            modified = True
+        if modified:
+            db.commit()
+            db.refresh(user)
         
     return user
 

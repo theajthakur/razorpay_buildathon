@@ -33,6 +33,9 @@ async def call_merchant_api(
                     safe_json_body[key] = "<redacted>"
 
     method_upper = method.upper()
+    _merchant_logger.info(
+        f"[{context}] Merchant API Request: {method_upper} {url} | Params: {params} | Body: {safe_json_body} | Headers: {safe_headers_summary}"
+    )
 
     async with httpx.AsyncClient() as client:
         try:
@@ -54,11 +57,19 @@ async def call_merchant_api(
             )
             raise
 
+    body_preview = resp.text[:2000]
     if resp.status_code >= 400:
-        body_preview = resp.text[:2000]  # cap logged body length to 2000 chars
         _merchant_logger.error(
             f"[{context}] Merchant API error: {method_upper} {url} -> {resp.status_code}\n"
+            f"  Params sent: {params}\n"
             f"  Headers sent: {safe_headers_summary}\n"
+            f"  Request body: {safe_json_body}\n"
+            f"  Response body: {body_preview}"
+        )
+    else:
+        _merchant_logger.info(
+            f"[{context}] Merchant API Response: {method_upper} {url} -> {resp.status_code}\n"
+            f"  Params sent: {params}\n"
             f"  Request body: {safe_json_body}\n"
             f"  Response body: {body_preview}"
         )

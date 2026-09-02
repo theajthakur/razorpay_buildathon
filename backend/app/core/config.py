@@ -43,6 +43,13 @@ class Settings(BaseSettings):
     GCP_PROJECT_ID: str = "learncloud-501101"
     GCP_LOCATION: str = "us-central1"
     GEMINI_MODEL: str = "gemini-2.5-flash"
+    GEMINI_API_KEY: str = ""
+    GOOGLE_API_KEY: str = ""
+
+    @property
+    def effective_gemini_api_key(self) -> str:
+        import os
+        return self.GEMINI_API_KEY or self.GOOGLE_API_KEY or os.environ.get("GEMINI_API_KEY", "") or os.environ.get("GOOGLE_API_KEY", "")
 
     model_config = SettingsConfigDict(
         env_file=".env",
