@@ -1,12 +1,28 @@
 from functools import lru_cache
 from typing import List
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
-    DATABASE_URL: str
+    POSTGRES_USER: str = "postgres"
+    POSTGRES_PASSWORD: str = "1234"
+    POSTGRES_HOST: str = "localhost"
+    POSTGRES_PORT: str = "5433"
+    POSTGRES_DB: str = "razorpay"
+
+    DATABASE_URL: str = ""
     API_KEY_HMAC_SECRET: str
     JWT_SECRET: str
     MERCHANT_TOKEN_ENCRYPTION_KEY: str
+
+    @model_validator(mode="after")
+    def assemble_db_url(self) -> "Settings":
+        if not self.DATABASE_URL:
+            self.DATABASE_URL = (
+                f"postgresql://{self.POSTGRES_USER}:{self.POSTGRES_PASSWORD}"
+                f"@{self.POSTGRES_HOST}:{self.POSTGRES_PORT}/{self.POSTGRES_DB}"
+            )
+        return self
 
     CORS_ORIGINS: str = "http://localhost:3000,http://localhost:3001"
     RAZORPAY_SECRET_KEY: str = ""

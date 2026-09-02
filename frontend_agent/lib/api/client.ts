@@ -15,8 +15,11 @@ const MAX_RETRIES = 3;
 const TIMEOUT_MS = 10000; // 10 seconds
 
 // Create configured axios instance
+const rawBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
+const sanitizedBaseUrl = rawBaseUrl.replace(/^"+|"+$/g, "").trim();
+
 const apiClient: AxiosInstance = axios.create({
-  baseURL: process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000",
+  baseURL: sanitizedBaseUrl,
   timeout: TIMEOUT_MS,
   headers: {
     "Content-Type": "application/json",
