@@ -299,9 +299,14 @@ class TestAddressOrderTools(unittest.TestCase):
         count = self.db.query(AgentOrder).filter(AgentOrder.merchant_id == self.test_user_id).count()
         self.assertEqual(count, 0)
 
+    @patch("razorpay.Client")
     @patch("app.agentic.router.execute_fetch_addresses")
     @patch("httpx.AsyncClient.request")
-    def test_execute_create_order_success(self, mock_request, mock_fetch_addresses):
+    def test_execute_create_order_success(self, mock_request, mock_fetch_addresses, mock_rzp_client):
+        mock_rzp_instance = MagicMock()
+        mock_rzp_instance.order.create.return_value = {"id": "order_rzp_mock_123"}
+        mock_rzp_client.return_value = mock_rzp_instance
+
         mock_fetch_addresses.return_value = {
             "addresses": [{"id": "addr_777", "city": "Bengaluru"}]
         }

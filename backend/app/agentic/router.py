@@ -270,16 +270,15 @@ create_order_func = FunctionDeclaration(
     name="create_order",
     description=(
         "Place an order using the customer's current cart and a delivery address. "
-        "address_id must be a real address ID — but note that this is validated "
-        "server-side regardless, so an incorrect value will be safely rejected and "
-        "you'll receive the customer's real saved addresses back to correct it. "
+        "address_id can be a real address ID, an alias like 'a1', 'a2', '1', '2', "
+        "or a keyword like 'default' or 'home'. "
         "Only call this when the customer has explicitly confirmed they want to "
         "complete the purchase."
     ),
     parameters={
         "type": "object",
         "properties": {
-            "address_id": {"type": "string", "description": "A valid address ID from a prior fetch_addresses call."},
+            "address_id": {"type": "string", "description": "Address ID, alias ('a1', 'a2', '1'), or label from saved addresses."},
         },
         "required": ["address_id"],
     },
@@ -629,23 +628,32 @@ async def execute_fetch_addresses(merchant_id: str, session: dict, db: Session) 
             if id_field in item and item[id_field] is not None:
                 raw_id = item[id_field]
         else:
-            for cand in ["id", "_id", "address_id"]:
+            for cand in ["id", "_id", "address_id", "addressId"]:
                 if cand in item and item[cand] is not None:
                     raw_id = item[cand]
                     break
 
         if raw_id is None:
-            agent_logger.warning(f"fetch_addresses: item missing configured id_field '{id_field or 'id/_id/address_id'}', skipping: {item!r}")
-            continue
+            if id_field:
+                agent_logger.warning(f"fetch_addresses: item missing configured id_field '{id_field}', skipping: {item!r}")
+                continue
+            else:
+                raw_id = f"addr_{len(addresses) + 1}"
 
         try:
-            addr = {"id": str(raw_id)}
+            addr = {
+                "id": str(raw_id),
+                "alias_id": f"a{len(addresses) + 1}",
+                "index_id": str(len(addresses) + 1),
+            }
             for field, candidates in ADDRESS_FIELD_CANDIDATES.items():
                 try:
                     addr[field] = _pick(item, candidates, field)
                 except KeyError:
                     if field != "is_default":
                         addr[field] = ""
+            city_or_flat = addr.get("city") or addr.get("flat_no") or "Saved Address"
+            addr["label"] = f"Address {len(addresses) + 1} ({city_or_flat})"
             addresses.append(addr)
         except Exception as e:
             agent_logger.debug(f"Skipping malformed address item: {e}")
@@ -702,6 +710,69 @@ async def execute_create_address(merchant_id: str, session: dict, args: dict, db
     return {"status": "created", "response": resp.json()}
 
 
+def resolve_address(supplied_id: str, addresses: list) -> dict | None:
+    """
+    Robust multi-strategy matcher that maps any supplied address identifier
+    (real ID, alias 'a1', 'a2', index '1', '2', keyword 'default'/'home', or text match)
+    to a valid address dictionary from the merchant's saved addresses.
+    """
+    if not addresses:
+        return None
+
+    s = (supplied_id or "").strip()
+    s_lower = s.lower()
+
+    # Strategy 1: Exact match on real merchant 'id'
+    for addr in addresses:
+        if str(addr.get("id")) == s:
+            return addr
+
+    # Strategy 2: Match on 'alias_id' (e.g. "a1", "a2") or 'index_id' ("1", "2")
+    for addr in addresses:
+        if str(addr.get("alias_id")).lower() == s_lower or str(addr.get("index_id")) == s:
+            return addr
+
+    # Strategy 3: Handle index strings like "a1", "a2", "1", "2", "address 1", "#1", "opt 1", "option 1"
+    import re
+    digits = re.findall(r'\d+', s)
+    if digits:
+        try:
+            idx = int(digits[0]) - 1  # 1-based index to 0-based
+            if 0 <= idx < len(addresses):
+                return addresses[idx]
+        except Exception:
+            pass
+
+    # Strategy 4: Handle keywords like "default", "primary", "saved", "current", "my_address", "my address", "first", "home", ""
+    if s_lower in ["default", "primary", "saved", "current", "my_address", "my address", "first", "home", ""]:
+        for addr in addresses:
+            if addr.get("is_default") is True:
+                return addr
+        return addresses[0]
+
+    if s_lower in ["second", "next"]:
+        if len(addresses) > 1:
+            return addresses[1]
+
+    # Strategy 5: Text / City / Street / Label match (ignoring pure numbers to prevent pincode false matches)
+    if len(s_lower) >= 2 and not s_lower.isdigit():
+        for addr in addresses:
+            text_blob = " ".join([
+                str(addr.get("city", "")),
+                str(addr.get("street", "")),
+                str(addr.get("flat_no", "")),
+                str(addr.get("state", "")),
+                str(addr.get("label", ""))
+            ]).lower()
+            if s_lower in text_blob or any(part in text_blob for part in s_lower.split() if len(part) >= 3):
+                return addr
+
+    # Strategy 6: Single address fallback — if customer has only 1 saved address and supplied_id is empty or an alias/keyword
+    if len(addresses) == 1 and (not s or s_lower in ["a1", "1", "default", "primary", "home", "my_address", "my address", "first"]):
+        return addresses[0]
+
+    return None
+
 async def execute_create_order(merchant_id: str, session: dict, conversation_id: str, args: dict, db: Session) -> dict:
     customer_email = session["customer_ref"]
 
@@ -717,19 +788,17 @@ async def execute_create_order(merchant_id: str, session: dict, conversation_id:
         orders_logger.warning(f"Checkout aborted (cart empty): merchant={merchant_id}, customer={customer_email}")
         return {"error": "cart_empty", "message": "Your cart is empty. Please add products before checking out."}
 
-    # 2. ALWAYS fetch real addresses here — unconditionally, regardless of
-    #    whether fetch_addresses was called earlier in the conversation.
-    #    This is the fix: address validity is never assumed, only ever checked
-    #    fresh, right here, every time create_order runs.
+    # 2. ALWAYS fetch real addresses here — unconditionally
     address_result = await execute_fetch_addresses(merchant_id, session, db)
-    valid_addresses = {str(addr["id"]): addr for addr in address_result.get("addresses", []) if "id" in addr}
+    raw_addresses = address_result.get("addresses", [])
 
     supplied_id = str(args.get("address_id", "")).strip()
+    selected_address = resolve_address(supplied_id, raw_addresses)
 
-    if supplied_id not in valid_addresses:
+    if not selected_address:
         orders_logger.warning(
-            f"create_order: address_id='{supplied_id}' not found among "
-            f"{len(valid_addresses)} real addresses for customer={customer_email} — "
+            f"create_order: address_id='{supplied_id}' could not be matched among "
+            f"{len(raw_addresses)} real addresses for customer={customer_email} — "
             f"rejecting before any merchant API call."
         )
         return {
@@ -738,11 +807,14 @@ async def execute_create_order(merchant_id: str, session: dict, conversation_id:
                 "I couldn't match that to one of your saved addresses. "
                 "Here are your saved addresses — please tell me which one to use."
             ),
-            "addresses": address_result.get("addresses", []),
+            "addresses": raw_addresses,
         }
 
-    selected_address = valid_addresses[supplied_id]
-    orders_logger.info(f"create_order: address validated — using address_id={supplied_id} ({selected_address.get('city', '?')})")
+    real_address_id = selected_address["id"]
+    orders_logger.info(
+        f"create_order: address resolved — supplied='{supplied_id}', "
+        f"matched real_id='{real_address_id}' ({selected_address.get('city', '?')})"
+    )
 
     onboarding = db.query(Onboarding).filter(Onboarding.user_id == merchant_id).first()
     if not onboarding or not onboarding.create_order_config:
@@ -791,7 +863,7 @@ async def execute_create_order(merchant_id: str, session: dict, conversation_id:
             }
             for item in cart_items
         ],
-        address_id_field: supplied_id
+        address_id_field: real_address_id
     }
 
     if isinstance(additional_fields, list):
