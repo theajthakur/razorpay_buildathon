@@ -43,7 +43,7 @@ jobs:
   deploy:
     name: Deploy to GCP VPS
     needs: test-backend
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: (github.ref == 'refs/heads/main' && github.event_name == 'push') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
 
     steps:
@@ -59,4 +59,4 @@ jobs:
           ssh-keyscan -H "$SERVER_HOST" >> ~/.ssh/known_hosts
           ssh -i ~/.ssh/github_actions \
             "$SERVER_USER@$SERVER_HOST" \
-            "cd ~/shopagent_ai && git pull origin main && docker compose up -d --build"
+            "cd ~/shopagent_ai && git pull origin main && cd backend && (docker compose up -d --build || docker-compose up -d --build)"
