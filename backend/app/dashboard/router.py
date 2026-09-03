@@ -327,7 +327,7 @@ def update_merchant_settings(
     if not onboarding:
         onboarding = Onboarding(
             user_id=current_user.id,
-            base_url="http://placeholder",
+            base_url="https://ponion-backend.onrender.com",
             auth_enabled=True,
             branding_config={}
         )

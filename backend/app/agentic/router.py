@@ -18,6 +18,7 @@ from vertexai.generative_models import GenerativeModel, Part, Content, FunctionD
 from app.agentic.dependencies import resolve_merchant_by_host
 from app.agentic.crypto import encrypt_merchant_token
 from app.agentic.auth_utils import resolve_session_expiry, get_value_by_path, extract_by_path
+from app.agentic.field_mappings import extract_order_history, extract_addresses, extract_customer_profile, parse_address_response_path
 from app.agentic.deps import get_current_session, get_merchant_token, get_merchant_auth_headers
 from app.agentic.merchant_api import call_merchant_api
 from app.core.logging_config import get_logger
@@ -118,6 +119,7 @@ TOOL_TO_STAGE = {
     "fetch_addresses": "fetching_addresses",
     "create_address": "saving_address",
     "create_order": "creating_order",
+    "retry_payment": "retrying_payment",
     "get_order_history": "checking_orders",
     "get_customer_profile": "fetching_profile",
 }
@@ -133,6 +135,7 @@ STAGE_LABELS = {
     "fetching_addresses": "Fetching addresses…",
     "saving_address": "Saving address…",
     "creating_order": "Processing checkout…",
+    "retrying_payment": "Retrying payment…",
     "checking_orders": "Looking up your orders…",
     "fetching_profile": "Retrieving account details…",
     "final_touches": "Putting it together…",
@@ -296,6 +299,25 @@ get_customer_profile_func = FunctionDeclaration(
     parameters={"type": "object", "properties": {}},
 )
 
+retry_payment_func = FunctionDeclaration(
+    name="retry_payment",
+    description=(
+        "Retry payment for an existing agent order when the previous payment attempt failed "
+        "or is awaiting payment. Use this when the customer asks to retry payment, try paying again, "
+        "or pay for an existing order. Do NOT call create_order again for a failed payment."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "agent_order_id": {
+                "type": "string",
+                "description": "Optional agent_order_id to retry payment for. If omitted, retries the latest unpaid or failed order.",
+            },
+        },
+        "required": [],
+    },
+)
+
 async def build_tools_for_merchant(merchant_id: str, db: Session) -> Tool:
     onboarding = db.query(Onboarding).filter(Onboarding.user_id == merchant_id).first()
     
@@ -308,6 +330,7 @@ async def build_tools_for_merchant(merchant_id: str, db: Session) -> Tool:
         remove_from_cart_func,
         fetch_addresses_func,
         create_order_func,
+        retry_payment_func,
     ]
 
     if onboarding and onboarding.addresses_config and isinstance(onboarding.addresses_config, dict):
@@ -611,53 +634,102 @@ async def execute_fetch_addresses(merchant_id: str, session: dict, db: Session) 
     resp.raise_for_status()
 
     json_data = resp.json()
-    raw_items = extract_by_path(json_data, response_key, default=[])
-    if not isinstance(raw_items, list):
-        if isinstance(json_data, list):
-            raw_items = json_data
-        else:
-            raw_items = []
+    extracted_addrs = extract_addresses(json_data, fetch_cfg)
+
+    id_field_cfg = fetch_cfg.get("id_field")
+    if not id_field_cfg and fetch_cfg.get("response_path"):
+        _, id_field_cfg = parse_address_response_path(fetch_cfg["response_path"])
 
     addresses = []
-    for item in raw_items:
-        if not isinstance(item, dict):
-            continue
+    if extracted_addrs:
+        for idx, ext in enumerate(extracted_addrs):
+            raw_id = ext.get("address_id")
+            item_raw = ext.get("item") or {}
+            if raw_id is None and isinstance(item_raw, dict):
+                if id_field_cfg and id_field_cfg in item_raw and item_raw[id_field_cfg] is not None:
+                    raw_id = item_raw[id_field_cfg]
+                elif not id_field_cfg:
+                    for cand in ["id", "_id", "address_id", "addressId"]:
+                        if cand in item_raw and item_raw[cand] is not None:
+                            raw_id = item_raw[cand]
+                            break
 
-        raw_id = None
-        if id_field:
-            if id_field in item and item[id_field] is not None:
-                raw_id = item[id_field]
-        else:
-            for cand in ["id", "_id", "address_id", "addressId"]:
-                if cand in item and item[cand] is not None:
-                    raw_id = item[cand]
-                    break
+            if raw_id is None:
+                if id_field_cfg:
+                    agent_logger.warning(f"fetch_addresses: item missing configured id_field '{id_field_cfg}', skipping: {item_raw!r}")
+                    continue
+                else:
+                    raw_id = f"addr_{len(addresses) + 1}"
 
-        if raw_id is None:
-            if id_field:
-                agent_logger.warning(f"fetch_addresses: item missing configured id_field '{id_field}', skipping: {item!r}")
-                continue
-            else:
-                raw_id = f"addr_{len(addresses) + 1}"
-
-        try:
             addr = {
                 "id": str(raw_id),
-                "alias_id": f"a{len(addresses) + 1}",
-                "index_id": str(len(addresses) + 1),
+                "alias_id": f"a{idx + 1}",
+                "index_id": str(idx + 1),
             }
-            for field, candidates in ADDRESS_FIELD_CANDIDATES.items():
-                try:
-                    addr[field] = _pick(item, candidates, field)
-                except KeyError:
-                    if field != "is_default":
-                        addr[field] = ""
-            city_or_flat = addr.get("city") or addr.get("flat_no") or "Saved Address"
-            addr["label"] = f"Address {len(addresses) + 1} ({city_or_flat})"
+            if isinstance(item_raw, dict):
+                for field, candidates in ADDRESS_FIELD_CANDIDATES.items():
+                    try:
+                        addr[field] = _pick(item_raw, candidates, field)
+                    except KeyError:
+                        if field != "is_default":
+                            addr[field] = ""
+
+            display_str = ext.get("address_string")
+            if display_str:
+                addr["address_string"] = str(display_str)
+                addr["label"] = f"Address {idx + 1} ({display_str})"
+            else:
+                city_or_flat = addr.get("city") or addr.get("flat_no") or "Saved Address"
+                addr["label"] = f"Address {idx + 1} ({city_or_flat})"
             addresses.append(addr)
-        except Exception as e:
-            agent_logger.debug(f"Skipping malformed address item: {e}")
-            continue
+
+    if not addresses:
+        response_key = fetch_cfg.get("response_key", "addresses")
+        id_field = fetch_cfg.get("id_field")
+        raw_items = extract_by_path(json_data, response_key, default=[])
+        if not isinstance(raw_items, list):
+            if isinstance(json_data, list):
+                raw_items = json_data
+            else:
+                raw_items = []
+
+        for item in raw_items:
+            if not isinstance(item, dict):
+                continue
+            raw_id = None
+            if id_field:
+                if id_field in item and item[id_field] is not None:
+                    raw_id = item[id_field]
+            else:
+                for cand in ["id", "_id", "address_id", "addressId"]:
+                    if cand in item and item[cand] is not None:
+                        raw_id = item[cand]
+                        break
+            if raw_id is None:
+                if id_field:
+                    agent_logger.warning(f"fetch_addresses: item missing configured id_field '{id_field}', skipping: {item!r}")
+                    continue
+                else:
+                    raw_id = f"addr_{len(addresses) + 1}"
+
+            try:
+                addr = {
+                    "id": str(raw_id),
+                    "alias_id": f"a{len(addresses) + 1}",
+                    "index_id": str(len(addresses) + 1),
+                }
+                for field, candidates in ADDRESS_FIELD_CANDIDATES.items():
+                    try:
+                        addr[field] = _pick(item, candidates, field)
+                    except KeyError:
+                        if field != "is_default":
+                            addr[field] = ""
+                city_or_flat = addr.get("city") or addr.get("flat_no") or "Saved Address"
+                addr["label"] = f"Address {len(addresses) + 1} ({city_or_flat})"
+                addresses.append(addr)
+            except Exception as e:
+                agent_logger.debug(f"Skipping malformed address item: {e}")
+                continue
 
     agent_logger.info(f"Addresses fetched: merchant={merchant_id}, count={len(addresses)}")
     return {"addresses": addresses, "count": len(addresses)}
@@ -992,7 +1064,9 @@ async def execute_create_order(merchant_id: str, session: dict, conversation_id:
         "razorpay_order_id": razorpay_order_id,
         "amount": order_total,
         "currency": currency,
-        "key_id": key_id
+        "key_id": key_id,
+        "payment_status": AgentOrderStatus.AWAITING_PAYMENT.value,
+        "failure_reason": None
     }
 
     return {
@@ -1004,6 +1078,194 @@ async def execute_create_order(merchant_id: str, session: dict, conversation_id:
         "currency": currency,
         "payment_metadata": payment_metadata,
         "message": "Order successfully created! Please proceed to payment to complete your order."
+    }
+
+
+def hydrate_payment_metadata(metadata: Optional[dict], db: Session) -> Optional[dict]:
+    """
+    Hydrates message metadata with authoritative DB payment state so historical
+    messages reflect the current order/payment status instead of stale initiation actions.
+    """
+    if not metadata or not isinstance(metadata, dict):
+        return metadata
+
+    agent_order_id = metadata.get("agent_order_id")
+    razorpay_order_id = metadata.get("razorpay_order_id")
+    merchant_order_id = metadata.get("merchant_order_id")
+
+    order = None
+    if agent_order_id:
+        order = db.query(AgentOrder).filter(AgentOrder.id == agent_order_id).first()
+    elif razorpay_order_id:
+        order = db.query(AgentOrder).filter(AgentOrder.razorpay_order_id == razorpay_order_id).first()
+    elif merchant_order_id:
+        order = db.query(AgentOrder).filter(AgentOrder.merchant_order_id == merchant_order_id).order_by(AgentOrder.created_at.desc()).first()
+
+    if not order:
+        return metadata
+
+    settings = get_settings()
+    key_id = settings.razorpay_key_id or metadata.get("key_id", "")
+
+    hydrated = dict(metadata)
+    hydrated["agent_order_id"] = order.id
+    if order.merchant_order_id:
+        hydrated["merchant_order_id"] = order.merchant_order_id
+    if order.razorpay_order_id:
+        hydrated["razorpay_order_id"] = order.razorpay_order_id
+    hydrated["payment_status"] = order.status
+    hydrated["failure_reason"] = order.failure_reason
+    if order.razorpay_payment_id:
+        hydrated["razorpay_payment_id"] = order.razorpay_payment_id
+        hydrated["payment_id"] = order.razorpay_payment_id
+    if order.order_total is not None:
+        hydrated["amount"] = float(order.order_total)
+    hydrated["currency"] = order.currency or metadata.get("currency", "INR")
+    if key_id:
+        hydrated["key_id"] = key_id
+
+    return hydrated
+
+
+async def execute_retry_payment(
+    merchant_id: str,
+    session: dict,
+    conversation_id: str,
+    args: dict,
+    db: Session
+) -> dict:
+    """
+    Retries payment for an existing AgentOrder.
+    Operates against existing order record; does not create a duplicate merchant order.
+    """
+    customer_email = session["customer_ref"]
+    agent_order_id = args.get("agent_order_id")
+
+    query = db.query(AgentOrder).filter(
+        AgentOrder.merchant_id == merchant_id,
+        AgentOrder.customer_ref == customer_email
+    )
+    if agent_order_id:
+        order = query.filter(AgentOrder.id == agent_order_id).first()
+    else:
+        if conversation_id:
+            order = query.filter(AgentOrder.conversation_id == conversation_id).order_by(AgentOrder.created_at.desc()).first()
+        if not order:
+            order = query.order_by(AgentOrder.created_at.desc()).first()
+
+    if not order:
+        orders_logger.warning(f"retry_payment: no AgentOrder found for merchant={merchant_id}, customer={customer_email}")
+        return {
+            "error": "order_not_found",
+            "message": "No existing order found to retry payment for."
+        }
+
+    settings = get_settings()
+    key_id = settings.razorpay_key_id
+    key_secret = settings.razorpay_key_secret
+
+    # Check 1: Already completed (Idempotency)
+    if order.status == AgentOrderStatus.PAYMENT_CAPTURED.value:
+        payment_meta = {
+            "action": "initiate_payment",
+            "agent_order_id": order.id,
+            "merchant_order_id": order.merchant_order_id,
+            "razorpay_order_id": order.razorpay_order_id,
+            "razorpay_payment_id": order.razorpay_payment_id,
+            "payment_id": order.razorpay_payment_id,
+            "amount": float(order.order_total) if order.order_total is not None else 0.0,
+            "currency": order.currency,
+            "key_id": key_id,
+            "payment_status": AgentOrderStatus.PAYMENT_CAPTURED.value,
+            "failure_reason": None
+        }
+        return {
+            "status": "already_completed",
+            "payment_status": AgentOrderStatus.PAYMENT_CAPTURED.value,
+            "payment_metadata": payment_meta,
+            "message": "Payment for this order has already been completed."
+        }
+
+    # Check 2: Currently awaiting payment with valid Razorpay order
+    if order.status == AgentOrderStatus.AWAITING_PAYMENT.value and order.razorpay_order_id:
+        payment_meta = {
+            "action": "initiate_payment",
+            "agent_order_id": order.id,
+            "merchant_order_id": order.merchant_order_id,
+            "razorpay_order_id": order.razorpay_order_id,
+            "amount": float(order.order_total) if order.order_total is not None else 0.0,
+            "currency": order.currency,
+            "key_id": key_id,
+            "payment_status": AgentOrderStatus.AWAITING_PAYMENT.value,
+            "failure_reason": None
+        }
+        return {
+            "status": "awaiting_payment",
+            "payment_status": AgentOrderStatus.AWAITING_PAYMENT.value,
+            "payment_metadata": payment_meta,
+            "message": "Payment is pending for your order. Please complete payment below."
+        }
+
+    # Check 3: Failed or missing Razorpay order -> recreate Razorpay order
+    if not key_id or not key_secret:
+        orders_logger.error(f"retry_payment FAILED: Razorpay credentials missing for order {order.id}")
+        return {
+            "error": "payment_initiation_failed",
+            "message": "Payment system credentials are not configured. Unable to retry payment."
+        }
+
+    order_total = float(order.order_total) if order.order_total is not None else 0.0
+    currency = order.currency or "INR"
+
+    try:
+        import razorpay
+        rzp_client = razorpay.Client(auth=(key_id, key_secret))
+        rzp_order = rzp_client.order.create(data={
+            "amount": int(round(order_total * 100)),
+            "currency": currency,
+            "receipt": str(order.id),
+            "notes": {
+                "agent_order_id": str(order.id),
+                "merchant_order_id": str(order.merchant_order_id),
+                "merchant_id": str(merchant_id),
+                "is_retry": "true"
+            }
+        })
+        new_rzp_id = rzp_order.get("id")
+        if not new_rzp_id:
+            raise ValueError("Razorpay client returned response without order id")
+    except Exception as e:
+        orders_logger.error(f"Razorpay retry order creation failed for order={order.id}: {e}")
+        order.status = AgentOrderStatus.FAILED.value
+        order.failure_reason = f"retry_razorpay_error: {e}"
+        db.commit()
+        return {
+            "error": "payment_retry_failed",
+            "message": f"Could not set up payment retry: {e}"
+        }
+
+    order.razorpay_order_id = new_rzp_id
+    order.status = AgentOrderStatus.AWAITING_PAYMENT.value
+    order.failure_reason = None
+    db.commit()
+    orders_logger.info(f"Payment retry initiated: agent_order_id={order.id}, razorpay_order_id={new_rzp_id}")
+
+    payment_meta = {
+        "action": "initiate_payment",
+        "agent_order_id": order.id,
+        "merchant_order_id": order.merchant_order_id,
+        "razorpay_order_id": new_rzp_id,
+        "amount": order_total,
+        "currency": currency,
+        "key_id": key_id,
+        "payment_status": AgentOrderStatus.AWAITING_PAYMENT.value,
+        "failure_reason": None
+    }
+    return {
+        "status": "payment_reinitiated",
+        "payment_status": AgentOrderStatus.AWAITING_PAYMENT.value,
+        "payment_metadata": payment_meta,
+        "message": "Payment has been re-initiated! Please click Pay Now to complete your purchase."
     }
 
 
@@ -1136,7 +1398,35 @@ async def verify_payment(
         )
     )
 
-    return {"status": "captured", "agent_order_id": order.id, "razorpay_payment_id": payload.razorpay_payment_id}
+    return {
+        "status": "captured",
+        "agent_order_id": order.id,
+        "merchant_order_id": order.merchant_order_id,
+        "razorpay_order_id": order.razorpay_order_id,
+        "razorpay_payment_id": payload.razorpay_payment_id,
+        "payment_id": payload.razorpay_payment_id,
+        "payment_status": AgentOrderStatus.PAYMENT_CAPTURED.value,
+        "amount": float(order.order_total) if order.order_total is not None else 0.0,
+        "currency": order.currency,
+        "message": "Payment verified and captured successfully."
+    }
+
+
+class RetryPaymentApiRequest(BaseModel):
+    agent_order_id: Optional[str] = None
+
+
+@router.post("/payments/retry")
+async def retry_payment_endpoint(
+    payload: RetryPaymentApiRequest,
+    session: dict = Depends(get_current_session),
+    db: Session = Depends(get_db)
+):
+    """
+    Direct API endpoint to retry payment for an existing agent order.
+    """
+    args = {"agent_order_id": payload.agent_order_id} if payload.agent_order_id else {}
+    return await execute_retry_payment(session["merchant_id"], session, "", args, db)
 
 ORDER_FIELD_CANDIDATES = {
     "order_id": ["order_id", "id", "_id"],
@@ -1177,33 +1467,51 @@ async def execute_get_order_history(merchant_id: str, session: dict, db: Session
     resp.raise_for_status()
 
     json_data = resp.json()
-    raw_orders = extract_by_path(json_data, response_key, default=[])
-    if not isinstance(raw_orders, list):
-        if isinstance(json_data, list):
-            raw_orders = json_data
-        else:
-            raw_orders = []
+    extracted_items = extract_order_history(json_data, config)
 
     orders = []
-    for item in raw_orders:
+    for idx, item in enumerate(extracted_items):
         if not isinstance(item, dict):
             continue
-        try:
-            order_data = {}
-            for field, candidates in ORDER_FIELD_CANDIDATES.items():
-                try:
-                    order_data[field] = _pick(item, candidates, field)
-                except KeyError:
-                    if field == "items":
-                        order_data[field] = []
-                    elif field == "total":
-                        order_data[field] = 0.0
-                    else:
-                        order_data[field] = "N/A" if field != "order_id" else f"ord_{len(orders)+1}"
-            orders.append(order_data)
-        except Exception as e:
-            agent_logger.debug(f"Skipping malformed order item: {e}")
-            continue
+        order_id = str(item.get("id") or item.get("order_id") or f"ord_{idx + 1}")
+        order_data = {
+            "order_id": order_id,
+            "status": item.get("status") or "Completed",
+            "total": float(item.get("price") or item.get("total") or 0.0) if item.get("price") is not None or item.get("total") is not None else 0.0,
+            "created_at": item.get("created_at") or item.get("date") or "N/A",
+            "items": item.get("items") if isinstance(item.get("items"), list) else [],
+        }
+        for k, v in item.items():
+            if k not in order_data and v is not None:
+                order_data[k] = v
+        orders.append(order_data)
+
+    if not orders:
+        array_key = config.get("array_path") or config.get("response_key", "orders")
+        raw_orders = extract_by_path(json_data, array_key, default=[])
+        if not isinstance(raw_orders, list) and isinstance(json_data, list):
+            raw_orders = json_data
+        if not isinstance(raw_orders, list):
+            raw_orders = []
+        for item in raw_orders:
+            if not isinstance(item, dict):
+                continue
+            try:
+                order_data = {}
+                for field, candidates in ORDER_FIELD_CANDIDATES.items():
+                    try:
+                        order_data[field] = _pick(item, candidates, field)
+                    except KeyError:
+                        if field == "items":
+                            order_data[field] = []
+                        elif field == "total":
+                            order_data[field] = 0.0
+                        else:
+                            order_data[field] = "N/A" if field != "order_id" else f"ord_{len(orders)+1}"
+                orders.append(order_data)
+            except Exception as e:
+                agent_logger.debug(f"Skipping malformed order item: {e}")
+                continue
 
     agent_logger.info(f"Order history fetched: merchant={merchant_id}, count={len(orders)}")
     return {"orders": orders, "count": len(orders)}
@@ -1284,6 +1592,10 @@ Rules:
   2. If the customer hasn't specified an address and one of their fetched addresses has is_default: true, use that one directly rather than asking — but still confirm the order itself before placing it.
   3. If the merchant supports saving addresses (create_address is available), you can offer to save a new address for them. If create_address is not available, ask them to add their address on the store's website.
   4. CRITICAL: Never call create_order without explicit customer confirmation (e.g., "Yes, buy now", "Place my order", "Confirm checkout"). Do not place an order on ambiguous messages like "these look nice" or "tell me more".
+- PAYMENT & RETRY RULES:
+  1. If an order's payment status is payment_captured, inform the customer that their payment is already complete. Never ask them to pay again or initiate payment.
+  2. If an order's payment status is awaiting_payment, present the payment action.
+  3. If an order's payment status is failed or a previous payment failed, call retry_payment to retry payment for the existing order. Do NOT call create_order again or create a duplicate order when a payment fails.
 - Keep replies conversational, persuasive, and short. A sentence or two of high-energy framing is usually enough; let the product cards do the rest.
 """
 
@@ -1653,6 +1965,25 @@ async def message_event_stream(conversation_id: str, user_message: str, session:
                 response = None
                 break
 
+        elif function_call.name == "retry_payment":
+            try:
+                args = dict(function_call.args) if function_call.args else {}
+                result = await execute_retry_payment(session["merchant_id"], session, conversation_id, args, db)
+                if result.get("payment_metadata"):
+                    payment_metadata_to_attach = result["payment_metadata"]
+            except Exception as e:
+                agent_logger.error(f"retry_payment failed: {e}")
+                result = {"error": "retry_payment_failed", "message": str(e)}
+
+            try:
+                response = await chat.send_message_async(
+                    Part.from_function_response(name="retry_payment", response=result)
+                )
+            except Exception as e:
+                agent_logger.error(f"Error calling Gemini with retry_payment response: {e}")
+                response = None
+                break
+
     yield json.dumps(get_status_payload("final_touches")) + "\n"
     await asyncio.sleep(0.2)
 
@@ -1671,6 +2002,8 @@ async def message_event_stream(conversation_id: str, user_message: str, session:
     msg_meta = {"products": collected_products}
     if payment_metadata_to_attach:
         msg_meta.update(payment_metadata_to_attach)
+
+    msg_meta = hydrate_payment_metadata(msg_meta, db)
 
     agent_msg_row = ConversationMessage(
         conversation_id=conversation_id,
@@ -1921,14 +2254,15 @@ def get_conversation_messages(
 
     messages_data = []
     for m in messages:
+        hydrated_meta = hydrate_payment_metadata(m.msg_metadata, db) if m.msg_metadata else None
         messages_data.append({
             "message_id": m.message_id,
             "conversation_id": m.conversation_id,
             "sender": m.sender,
             "message": m.message,
             "created_at": m.created_at,
-            "products": m.msg_metadata.get("products") if m.msg_metadata else None,
-            "metadata": m.msg_metadata if m.msg_metadata else None
+            "products": hydrated_meta.get("products") if hydrated_meta else None,
+            "metadata": hydrated_meta
         })
 
     return {

@@ -122,6 +122,50 @@ class TestOrderHistoryProfileTools(unittest.TestCase):
 
     @patch("app.agentic.router.get_merchant_auth_headers")
     @patch("httpx.AsyncClient.request")
+    def test_execute_get_order_history_explicit_mapping(self, mock_request, mock_auth):
+        onboarding = self.db.query(Onboarding).filter(Onboarding.user_id == self.test_user_id).first()
+        onboarding.order_history_config = {
+            "path": "user/orders",
+            "method": "GET",
+            "array_path": "data.orders",
+            "field_mapping": {
+                "id": "product_id",
+                "name": "product.itemName",
+                "price": "amount",
+                "quantity": "qty"
+            }
+        }
+        from sqlalchemy.orm.attributes import flag_modified
+        flag_modified(onboarding, "order_history_config")
+        self.db.add(onboarding)
+        self.db.commit()
+
+        mock_auth.return_value = {"Authorization": "Bearer mock_token"}
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.json.return_value = {
+            "status": "success",
+            "data": {
+                "orders": [
+                    {
+                        "product_id": "p101",
+                        "product": {"itemName": "Headphones"},
+                        "amount": 1299.50,
+                        "qty": 1
+                    }
+                ]
+            }
+        }
+        mock_request.return_value = mock_resp
+
+        res = asyncio.run(execute_get_order_history(self.test_user_id, self.session_data, self.db))
+        self.assertNotIn("error", res)
+        self.assertEqual(res["count"], 1)
+        self.assertEqual(res["orders"][0]["order_id"], "p101")
+        self.assertEqual(res["orders"][0]["name"], "Headphones")
+
+    @patch("app.agentic.router.get_merchant_auth_headers")
+    @patch("httpx.AsyncClient.request")
     def test_execute_get_customer_profile_field_normalization(self, mock_request, mock_auth):
         mock_auth.return_value = {"Authorization": "Bearer mock_token"}
         mock_resp = MagicMock()

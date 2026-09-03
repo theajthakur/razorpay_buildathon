@@ -51,10 +51,21 @@ class OrderHistoryConfigSchema(BaseModel):
     path: str
     method: str = "GET"
     response_key: Optional[str] = None
+    array_path: Optional[str] = None
+    field_mapping: Optional[Dict[str, str]] = None
+    fields: Optional[Dict[str, str]] = None
+
+    model_config = ConfigDict(extra="allow")
 
 class CustomerProfileConfigSchema(BaseModel):
     path: str
     method: str = "GET"
+    response_object_path: Optional[str] = None
+    response_key: Optional[str] = None
+    field_mapping: Optional[Dict[str, str]] = None
+    fields: Optional[Dict[str, str]] = None
+
+    model_config = ConfigDict(extra="allow")
 
 class AdditionalFieldSchema(BaseModel):
     key: str

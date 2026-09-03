@@ -71,12 +71,35 @@ def get_current_user(
     
     user = db.query(User).filter(User.id == clerk_id).first()
     
-    # Auto-Heal: If database was reset but browser session remains active
+    # Auto-Heal: If database was reset or webhook hasn't arrived yet
     if not user:
+        email = (payload.get("email") or payload.get("primary_email_address") or "").strip()
+        if not email and payload.get("email_addresses") and isinstance(payload.get("email_addresses"), list):
+            email = payload["email_addresses"][0] if payload["email_addresses"] else ""
+        if not email:
+            email = f"{clerk_id}@merchant.local"
+
+        first_name = payload.get("first_name", "") or ""
+        last_name = payload.get("last_name", "") or ""
+        full_name = f"{first_name} {last_name}".strip()
+        store_name = f"{full_name}'s Store" if full_name else (payload.get("store_name") or "Merchant Store")
+
+        # Resolve email collisions
+        if email and not email.endswith("@merchant.local"):
+            existing_user = db.query(User).filter(User.email == email, User.id != clerk_id).first()
+            if existing_user:
+                dup_email = f"[duplicate]{existing_user.email}"
+                counter = 1
+                while db.query(User).filter(User.email == dup_email, User.id != existing_user.id).first():
+                    dup_email = f"[duplicate_{counter}]{existing_user.email}"
+                    counter += 1
+                existing_user.email = dup_email
+                db.commit()
+
         user = User(
             id=clerk_id,
-            email=payload.get("email") or f"{clerk_id}@merchant.local",
-            store_name="Synced Store",
+            email=email,
+            store_name=store_name,
             status="pending"
         )
         db.add(user)

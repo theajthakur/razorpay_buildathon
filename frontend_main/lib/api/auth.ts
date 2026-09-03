@@ -19,21 +19,27 @@ export interface UserAccountResponse {
  * Direct sync trigger: Sends the authenticated Clerk user profile directly
  * to the backend's webhook receiver to ensure the DB row exists.
  */
-export async function syncClerkUser(user: ClerkUserPayload): Promise<void> {
+export async function syncClerkUser(user: any): Promise<void> {
+  const emailList = Array.isArray(user.email_addresses)
+    ? user.email_addresses.map((addr: any) => ({ email_address: addr.email_address }))
+    : Array.isArray(user.emailAddresses)
+    ? user.emailAddresses.map((addr: any) => ({ email_address: addr.emailAddress }))
+    : [{ email_address: user.primaryEmailAddress?.emailAddress || "" }];
+
   const payload = {
     type: "user.created",
     data: {
       id: user.id,
-      email_addresses: user.email_addresses.map((addr) => ({
-        email_address: addr.email_address,
-      })),
-      first_name: user.first_name || "",
-      last_name: user.last_name || "",
+      email_addresses: emailList,
+      first_name: user.firstName || user.first_name || "",
+      last_name: user.lastName || user.last_name || "",
     },
   };
 
   await apiClient.post("/system/webhooks/clerk", payload);
 }
+
+export const syncAndProvisionUser = syncClerkUser;
 
 /**
  * Saves the active Clerk User ID in localStorage to authorize future api requests.

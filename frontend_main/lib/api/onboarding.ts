@@ -10,6 +10,8 @@ export interface AddressFetchConfig {
   method?: string;
   response_key?: string | null;
   id_field?: string;
+  response_path?: string | null;
+  display_field?: string | null;
 }
 
 export interface AddressCreateConfig {
@@ -40,6 +42,12 @@ export interface EndpointDetails {
   method?: string;
   payload_key?: string;
   response_key?: string;
+  array_path?: string;
+  response_path?: string;
+  response_object_path?: string;
+  display_field?: string;
+  field_mapping?: Record<string, string>;
+  fields?: Record<string, string>;
   fetch_path?: string;
   fetch_method?: string;
   fetch_response_key?: string;

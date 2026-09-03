@@ -54,6 +54,9 @@ def handle_clerk_user_upsert(db: Session, event_data: dict) -> User:
     """
     Handles user creation or update from a Clerk webhook event (e.g. user.created, user.updated).
     Extracts Clerk ID, email, and constructs a store_name default from user name.
+    If the email sent by Clerk already belongs to a different existing user ID in the database,
+    prefixes the existing user's email with '[duplicate]' to keep existing data safe
+    and allow the new Clerk user to be inserted gracefully.
     """
     clerk_id = event_data.get("id")
     if not clerk_id:
@@ -62,12 +65,29 @@ def handle_clerk_user_upsert(db: Session, event_data: dict) -> User:
     email_addresses = event_data.get("email_addresses", [])
     email = ""
     if email_addresses:
-        email = email_addresses[0].get("email_address", "")
+        email = email_addresses[0].get("email_address", "").strip()
 
     first_name = event_data.get("first_name", "") or ""
     last_name = event_data.get("last_name", "") or ""
     full_name = f"{first_name} {last_name}".strip()
     store_name = f"{full_name}'s Store" if full_name else "Merchant Store"
+
+    # Check if a DIFFERENT user in DB already has this email
+    if email:
+        existing_user_with_email = db.query(User).filter(
+            User.email == email,
+            User.id != clerk_id
+        ).first()
+
+        if existing_user_with_email:
+            dup_email = f"[duplicate]{existing_user_with_email.email}"
+            counter = 1
+            while db.query(User).filter(User.email == dup_email, User.id != existing_user_with_email.id).first():
+                dup_email = f"[duplicate_{counter}]{existing_user_with_email.email}"
+                counter += 1
+
+            existing_user_with_email.email = dup_email
+            db.commit()
 
     # Query existing user by Clerk ID
     db_user = db.query(User).filter(User.id == clerk_id).first()
@@ -81,8 +101,9 @@ def handle_clerk_user_upsert(db: Session, event_data: dict) -> User:
         db.add(db_user)
     else:
         # Update fields if existing
-        db_user.email = email
-        if not db_user.store_name:
+        if email:
+            db_user.email = email
+        if store_name and (not db_user.store_name or db_user.store_name == "Merchant Store"):
             db_user.store_name = store_name
 
     db.commit()
@@ -124,7 +145,7 @@ def upsert_user_onboarding(db: Session, user_id: str, data: OnboardingUpsertRequ
     if not db_onboarding:
         db_onboarding = Onboarding(
             user_id=user_id,
-            base_url=data.base_url,
+            base_url=data.base_url if (data.base_url and data.base_url != "http://placeholder") else "https://ponion-backend.onrender.com",
             auth_enabled=data.auth_enabled,
             auth_disabled_ack=data.auth_disabled_ack,
             auth_config=auth_config_dict,
@@ -143,22 +164,36 @@ def upsert_user_onboarding(db: Session, user_id: str, data: OnboardingUpsertRequ
         )
         db.add(db_onboarding)
     else:
-        db_onboarding.base_url = data.base_url
+        if data.base_url and data.base_url != "http://placeholder":
+            db_onboarding.base_url = data.base_url
         db_onboarding.auth_enabled = data.auth_enabled
         db_onboarding.auth_disabled_ack = data.auth_disabled_ack
-        db_onboarding.auth_config = auth_config_dict
-        db_onboarding.products_config = products_config_dict
-        db_onboarding.order_history_config = order_history_config_dict
-        db_onboarding.customer_profile_config = customer_profile_config_dict
-        db_onboarding.addresses_config = addresses_config_dict
-        db_onboarding.create_order_config = create_order_config_dict
-        db_onboarding.verify_order_config = verify_order_config_dict
-        db_onboarding.bank_account = data.bank_account
-        db_onboarding.ifsc = data.ifsc
-        db_onboarding.branch_name = data.branch_name
-        db_onboarding.branding_config = branding_config_dict
-        db_onboarding.webhook_url = data.webhook_url
-        db_onboarding.webhook_path = webhook_p
+        if auth_config_dict is not None:
+            db_onboarding.auth_config = auth_config_dict
+        if products_config_dict is not None:
+            db_onboarding.products_config = products_config_dict
+        if order_history_config_dict is not None:
+            db_onboarding.order_history_config = order_history_config_dict
+        if customer_profile_config_dict is not None:
+            db_onboarding.customer_profile_config = customer_profile_config_dict
+        if addresses_config_dict is not None:
+            db_onboarding.addresses_config = addresses_config_dict
+        if create_order_config_dict is not None:
+            db_onboarding.create_order_config = create_order_config_dict
+        if verify_order_config_dict is not None:
+            db_onboarding.verify_order_config = verify_order_config_dict
+        if data.bank_account is not None:
+            db_onboarding.bank_account = data.bank_account
+        if data.ifsc is not None:
+            db_onboarding.ifsc = data.ifsc
+        if data.branch_name is not None:
+            db_onboarding.branch_name = data.branch_name
+        if branding_config_dict is not None:
+            db_onboarding.branding_config = branding_config_dict
+        if data.webhook_url is not None:
+            db_onboarding.webhook_url = data.webhook_url
+        if webhook_p:
+            db_onboarding.webhook_path = webhook_p
 
     # Auto-approve user status upon completing onboarding setup
     db_user = db.query(User).filter(User.id == user_id).first()
@@ -172,13 +207,14 @@ def upsert_user_onboarding(db: Session, user_id: str, data: OnboardingUpsertRequ
 def patch_user_onboarding(db: Session, user_id: str, data: OnboardingPartialUpdateRequest) -> Onboarding:
     """
     Partially updates onboarding fields for autosave.
+    Strictly maintains a single onboarding record per user and prevents corrupting valid base_url.
     """
     db_onboarding = db.query(Onboarding).filter(Onboarding.user_id == user_id).first()
     if not db_onboarding:
-        # Create empty base record if not existing yet
+        init_base = data.base_url if (data.base_url and data.base_url != "http://placeholder") else "https://ponion-backend.onrender.com"
         db_onboarding = Onboarding(
             user_id=user_id,
-            base_url=data.base_url or "http://placeholder",
+            base_url=init_base,
             auth_enabled=True if data.auth_enabled is None else data.auth_enabled
         )
         db.add(db_onboarding)
@@ -188,9 +224,13 @@ def patch_user_onboarding(db: Session, user_id: str, data: OnboardingPartialUpda
     update_dict = data.model_dump(exclude_unset=True)
 
     base = update_dict.get("base_url") or db_onboarding.base_url or ""
+    if base == "http://placeholder":
+        base = db_onboarding.base_url or "https://ponion-backend.onrender.com"
 
     if "base_url" in update_dict and update_dict["base_url"] is not None:
-        db_onboarding.base_url = update_dict["base_url"]
+        new_base_url = str(update_dict["base_url"]).strip()
+        if new_base_url and new_base_url != "http://placeholder":
+            db_onboarding.base_url = new_base_url
     if "auth_enabled" in update_dict and update_dict["auth_enabled"] is not None:
         db_onboarding.auth_enabled = update_dict["auth_enabled"]
     if "auth_disabled_ack" in update_dict and update_dict["auth_disabled_ack"] is not None:

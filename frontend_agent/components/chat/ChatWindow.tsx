@@ -237,6 +237,21 @@ export function ChatWindow({ conversationId }: ChatWindowProps) {
     );
   }
 
+  const handleSendDirectMessage = async (msgText: string) => {
+    if (!msgText.trim() || isLoading) return;
+
+    const userMsgId = Math.random().toString(36).substring(2, 15);
+    const userMsg: ChatMessage = {
+      id: userMsgId,
+      role: "user",
+      content: msgText,
+      createdAt: new Date().toISOString()
+    };
+
+    setMessages(prev => [...prev, userMsg]);
+    await consumeMessageStream(msgText, userMsgId);
+  };
+
   return (
     <div className="flex flex-col flex-1 h-full max-h-full overflow-hidden w-full relative">
       {/* Dynamic Header showing conversation title */}
@@ -250,7 +265,13 @@ export function ChatWindow({ conversationId }: ChatWindowProps) {
       </div>
 
       {/* Scrollable messages container */}
-      <MessageList messages={messages} isLoading={isLoading} streamingStage={streamingStage} streamingLabel={streamingLabel} />
+      <MessageList
+        messages={messages}
+        isLoading={isLoading}
+        streamingStage={streamingStage}
+        streamingLabel={streamingLabel}
+        onSendMessage={handleSendDirectMessage}
+      />
       
       {/* Fixed input container */}
       <div className="shrink-0 bg-background-50 border-t border-secondary-100">

@@ -10,9 +10,10 @@ interface MessageListProps {
   isLoading?: boolean;
   streamingStage?: string | null;
   streamingLabel?: string;
+  onSendMessage?: (msg: string) => void;
 }
 
-export default function MessageList({ messages, isLoading, streamingStage, streamingLabel }: MessageListProps) {
+export default function MessageList({ messages, isLoading, streamingStage, streamingLabel, onSendMessage }: MessageListProps) {
   const bottomRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -23,7 +24,7 @@ export default function MessageList({ messages, isLoading, streamingStage, strea
   return (
     <div className="flex-1 overflow-y-auto px-6 py-6 space-y-6 w-full max-w-full flex flex-col no-scrollbar">
       {messages.map((message) => (
-        <MessageBubble key={message.id} message={message} />
+        <MessageBubble key={message.id} message={message} onSendMessage={onSendMessage} />
       ))}
       
       {isLoading && (

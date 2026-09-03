@@ -131,3 +131,159 @@ async def test_payment_verify_tampered_signature_rejected(db_session, test_merch
     # Confirm status in DB remains awaiting_payment
     db_order = db_session.query(AgentOrder).filter(AgentOrder.id == agent_order.id).first()
     assert db_order.status == AgentOrderStatus.AWAITING_PAYMENT.value
+
+
+@pytest.mark.asyncio
+async def test_hydrate_payment_metadata_captured(db_session, test_merchant, test_customer_user):
+    """
+    Scenario F: Historic initiate_payment message reloaded when order status is payment_captured
+    must return payment_status = payment_captured.
+    """
+    from app.agentic.router import hydrate_payment_metadata
+
+    conv = Conversation(
+        id="conv_hydrate_1",
+        merchant_id=test_merchant.id,
+        user_email=test_customer_user.email,
+        title="Test Hydrate Conv"
+    )
+    db_session.add(conv)
+
+    order = AgentOrder(
+        id="ord_hydrate_100",
+        merchant_id=test_merchant.id,
+        customer_ref=test_customer_user.email,
+        conversation_id=conv.id,
+        items=[],
+        merchant_order_id="m_ord_100",
+        order_total=250.0,
+        currency="INR",
+        razorpay_order_id="rzp_ord_100",
+        razorpay_payment_id="pay_100_captured",
+        status=AgentOrderStatus.PAYMENT_CAPTURED.value
+    )
+    db_session.add(order)
+    db_session.commit()
+
+    stale_meta = {
+        "action": "initiate_payment",
+        "agent_order_id": order.id,
+        "amount": 250.0,
+        "currency": "INR"
+    }
+
+    hydrated = hydrate_payment_metadata(stale_meta, db_session)
+    assert hydrated["payment_status"] == AgentOrderStatus.PAYMENT_CAPTURED.value
+    assert hydrated["razorpay_payment_id"] == "pay_100_captured"
+    assert hydrated["payment_id"] == "pay_100_captured"
+
+
+@pytest.mark.asyncio
+async def test_execute_retry_payment_failed_to_awaiting(db_session, test_merchant, test_customer_user):
+    """
+    Scenario D: Failed payment -> Retry Payment -> awaiting_payment with new Razorpay order.
+    Does NOT create duplicate merchant order.
+    """
+    from app.agentic.router import execute_retry_payment
+
+    conv = Conversation(
+        id="conv_retry_1",
+        merchant_id=test_merchant.id,
+        user_email=test_customer_user.email,
+        title="Test Retry Conv"
+    )
+    db_session.add(conv)
+
+    order = AgentOrder(
+        id="ord_retry_101",
+        merchant_id=test_merchant.id,
+        customer_ref=test_customer_user.email,
+        conversation_id=conv.id,
+        items=[],
+        merchant_order_id="m_ord_retry_101",
+        order_total=350.0,
+        currency="INR",
+        razorpay_order_id="rzp_ord_failed_101",
+        status=AgentOrderStatus.FAILED.value,
+        failure_reason="Payment declined"
+    )
+    db_session.add(order)
+    db_session.commit()
+
+    session_ctx = {
+        "merchant_id": test_merchant.id,
+        "customer_ref": test_customer_user.email
+    }
+
+    with patch("razorpay.Client") as mock_rzp_cls:
+        mock_client = mock_rzp_cls.return_value
+        mock_client.order.create.return_value = {"id": "rzp_ord_new_retry_202"}
+
+        res = await execute_retry_payment(
+            merchant_id=test_merchant.id,
+            session=session_ctx,
+            conversation_id=conv.id,
+            args={"agent_order_id": order.id},
+            db=db_session
+        )
+
+        assert res.get("status") == "payment_reinitiated"
+        assert res.get("payment_status") == AgentOrderStatus.AWAITING_PAYMENT.value
+        assert res["payment_metadata"]["razorpay_order_id"] == "rzp_ord_new_retry_202"
+
+        # Verify DB order record updated
+        db_order = db_session.query(AgentOrder).filter(AgentOrder.id == order.id).first()
+        assert db_order.status == AgentOrderStatus.AWAITING_PAYMENT.value
+        assert db_order.razorpay_order_id == "rzp_ord_new_retry_202"
+        assert db_order.merchant_order_id == "m_ord_retry_101"  # Preserved!
+        assert db_order.failure_reason is None
+
+
+@pytest.mark.asyncio
+async def test_execute_retry_payment_idempotent_captured(db_session, test_merchant, test_customer_user):
+    """
+    Scenario E: Attempting retry on an already captured order returns already_completed notice
+    and does not create a new Razorpay order.
+    """
+    from app.agentic.router import execute_retry_payment
+
+    conv = Conversation(
+        id="conv_retry_2",
+        merchant_id=test_merchant.id,
+        user_email=test_customer_user.email,
+        title="Test Retry Captured"
+    )
+    db_session.add(conv)
+
+    order = AgentOrder(
+        id="ord_retry_captured_102",
+        merchant_id=test_merchant.id,
+        customer_ref=test_customer_user.email,
+        conversation_id=conv.id,
+        items=[],
+        merchant_order_id="m_ord_captured_102",
+        order_total=400.0,
+        currency="INR",
+        razorpay_order_id="rzp_ord_captured_102",
+        razorpay_payment_id="pay_captured_102",
+        status=AgentOrderStatus.PAYMENT_CAPTURED.value
+    )
+    db_session.add(order)
+    db_session.commit()
+
+    session_ctx = {
+        "merchant_id": test_merchant.id,
+        "customer_ref": test_customer_user.email
+    }
+
+    res = await execute_retry_payment(
+        merchant_id=test_merchant.id,
+        session=session_ctx,
+        conversation_id=conv.id,
+        args={"agent_order_id": order.id},
+        db=db_session
+    )
+
+    assert res.get("status") == "already_completed"
+    assert res.get("payment_status") == AgentOrderStatus.PAYMENT_CAPTURED.value
+    assert res["payment_metadata"]["razorpay_payment_id"] == "pay_captured_102"

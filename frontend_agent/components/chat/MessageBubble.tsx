@@ -12,25 +12,28 @@ import { User } from "lucide-react";
 
 interface MessageBubbleProps {
   message: ChatMessage;
+  onSendMessage?: (msg: string) => void;
 }
 
-function renderMessageExtra(message: ChatMessage) {
+function renderMessageExtra(message: ChatMessage, onSendMessage?: (msg: string) => void) {
   const action = message.metadata?.action;
-  switch (action) {
-    case "profile_card":
-      return <ProfileCard profile={message.metadata?.profile} />;
-    case "order_history_card":
-      return <OrderHistoryCard orders={message.metadata?.orders} count={message.metadata?.count} />;
-    case "initiate_payment":
-      return <OrderConfirmationCard metadata={message.metadata} />;
-    default:
-      return message.products && message.products.length > 0 ? (
-        <ProductCardGrid products={message.products} />
-      ) : null;
+  const hasOrderMeta = !!(message.metadata?.agent_order_id || message.metadata?.razorpay_order_id || action === "initiate_payment");
+
+  if (action === "profile_card") {
+    return <ProfileCard profile={message.metadata?.profile} />;
   }
+  if (action === "order_history_card") {
+    return <OrderHistoryCard orders={message.metadata?.orders} count={message.metadata?.count} />;
+  }
+  if (hasOrderMeta) {
+    return <OrderConfirmationCard metadata={message.metadata} onSendMessage={onSendMessage} />;
+  }
+  return message.products && message.products.length > 0 ? (
+    <ProductCardGrid products={message.products} />
+  ) : null;
 }
 
-export function MessageBubble({ message }: MessageBubbleProps) {
+export function MessageBubble({ message, onSendMessage }: MessageBubbleProps) {
   const { branding, primaryColor } = useBranding();
   const isUser = message.role === "user";
 
@@ -121,7 +124,7 @@ export function MessageBubble({ message }: MessageBubbleProps) {
         </div>
 
         {/* Dynamic Chat Cards / Extra Content */}
-        {renderMessageExtra(message)}
+        {renderMessageExtra(message, onSendMessage)}
 
         {/* Timestamp & Error */}
         <div className="flex items-center gap-2 mt-1 px-1 self-start">

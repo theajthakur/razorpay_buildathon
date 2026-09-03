@@ -43,6 +43,14 @@ import {
 } from "@/lib/api/onboarding";
 import { getPresignedLogoUrl, uploadFileToS3 } from "@/lib/api/settings";
 import { ImageCropperModal } from "@/components/shared/ImageCropperModal";
+import {
+  EndpointFieldMapping,
+  DynamicFieldMappings,
+  FieldMappingRow,
+  resolvePath,
+  resolveArrayAt,
+  parseAddressResponsePath,
+} from "@/components/ui/EndpointFieldMapping";
 import { useAuth } from "@clerk/nextjs";
 import axios from "axios";
 import { toast } from "sonner";
@@ -213,17 +221,30 @@ export default function OnboardingPage() {
   const [prodTestTerm, setProdTestTerm] = useState("laptop");
 
   const [ohPath, setOhPath] = useState("orders/history");
-  const [ohResponseKey, setOhResponseKey] = useState("orders");
+  const [ohArrayPath, setOhArrayPath] = useState("data.orders");
+  const [ohFieldMappings, setOhFieldMappings] = useState<FieldMappingRow[]>([
+    { key: "id", path: "product_id" },
+    { key: "name", path: "product.itemName" },
+    { key: "price", path: "amount" },
+    { key: "quantity", path: "quantity" },
+  ]);
 
   const [cpPath, setCpPath] = useState("customers");
+  const [cpResponseObjectPath, setCpResponseObjectPath] = useState("data");
+  const [cpFieldMappings, setCpFieldMappings] = useState<FieldMappingRow[]>([
+    { key: "name", path: "name" },
+    { key: "email", path: "email" },
+    { key: "phone", path: "phone" },
+  ]);
 
   const [addrActiveTab, setAddrActiveTab] = useState<"fetch" | "create">("fetch");
   const [addrSupportsCreation, setAddrSupportsCreation] = useState(false);
   const [addrFetchTested, setAddrFetchTested] = useState(false);
   const [addrSelfCertified, setAddrSelfCertified] = useState(false);
-  const [addrFetchPath, setAddrFetchPath] = useState("addresses");
-  const [addrCombinedPath, setAddrCombinedPath] = useState("addresses._id");
-  const [addrFetchResponseKey, setAddrFetchResponseKey] = useState("addresses");
+  const [addrFetchPath, setAddrFetchPath] = useState("users/addresses");
+  const [addrCombinedPath, setAddrCombinedPath] = useState("data.addresses._id");
+  const [addrDisplayField, setAddrDisplayField] = useState("address");
+  const [addrFetchResponseKey, setAddrFetchResponseKey] = useState("data.addresses");
   const [addrFetchIdField, setAddrFetchIdField] = useState("_id");
   const [addrCreatePath, setAddrCreatePath] = useState("addresses");
   const [addrCreateFields, setAddrCreateFields] = useState("line1, line2, city, state, pincode");
@@ -309,7 +330,9 @@ export default function OnboardingPage() {
           setIsSavedToDb(true);
           setOriginalConfig(config);
           setIsEditing(true);
-          setBaseUrl(config.base_url);
+          if (config.base_url && config.base_url !== "http://placeholder" && config.base_url.trim() !== "") {
+            setBaseUrl(config.base_url);
+          }
           setAuthEnabled(config.auth_enabled);
           setAuthDisabledAck(config.auth_disabled_ack);
 
@@ -357,12 +380,23 @@ export default function OnboardingPage() {
           }
 
           if (config.order_history_config) {
-            setOhPath(config.order_history_config.path || "orders/history");
-            setOhResponseKey(config.order_history_config.response_key || "orders");
+            const oh = config.order_history_config as any;
+            setOhPath(oh.path || "orders/history");
+            setOhArrayPath(oh.array_path || oh.response_key || "data.orders");
+            const rawMappings = oh.field_mapping || oh.fields;
+            if (rawMappings && typeof rawMappings === "object" && Object.keys(rawMappings).length > 0) {
+              setOhFieldMappings(Object.entries(rawMappings).map(([k, p]) => ({ key: k, path: String(p) })));
+            }
           }
 
           if (config.customer_profile_config) {
-            setCpPath(config.customer_profile_config.path || "customers");
+            const cp = config.customer_profile_config as any;
+            setCpPath(cp.path || "customers");
+            setCpResponseObjectPath(cp.response_object_path || cp.response_key || "");
+            const rawMappings = cp.field_mapping || cp.fields;
+            if (rawMappings && typeof rawMappings === "object" && Object.keys(rawMappings).length > 0) {
+              setCpFieldMappings(Object.entries(rawMappings).map(([k, p]) => ({ key: k, path: String(p) })));
+            }
           }
 
           if (config.addresses_config) {
@@ -370,12 +404,15 @@ export default function OnboardingPage() {
             const supports = addrs.supports_creation === true || !!addrs.create;
             setAddrSupportsCreation(supports);
             if (addrs.fetch) {
-              setAddrFetchPath(addrs.fetch.path || "addresses");
-              const rKey = addrs.fetch.response_key || "addresses";
-              const idKey = addrs.fetch.id_field || "_id";
-              setAddrFetchResponseKey(rKey);
-              setAddrFetchIdField(idKey);
-              setAddrCombinedPath(`${rKey}.${idKey}`);
+              setAddrFetchPath(addrs.fetch.path || "users/addresses");
+              const respPath = addrs.fetch.response_path || (addrs.fetch.response_key && addrs.fetch.id_field ? `${addrs.fetch.response_key}.${addrs.fetch.id_field}` : "data.addresses._id");
+              setAddrCombinedPath(respPath);
+              setAddrDisplayField(addrs.fetch.display_field || "");
+              const parsed = parseAddressPath(respPath);
+              if (parsed.isValid) {
+                setAddrFetchResponseKey(parsed.response_key);
+                setAddrFetchIdField(parsed.id_field);
+              }
             }
             if (addrs.create) {
               setAddrCreatePath(addrs.create.path || "addresses");
@@ -1864,138 +1901,243 @@ export default function OnboardingPage() {
                 </div>
               )}
 
-              {activeResource === "orderHistory" && (
-                <div className="space-y-6 animate-fade-in">
-                  <Input
-                    label="Endpoint Path (Relative to base URL)"
-                    placeholder="orders/history"
-                    value={ohPath}
-                    onChange={(e) => setOhPath(e.target.value.replace(/^\/+/, ""))}
-                    required
-                  />
-                  <Input
-                    label="Orders List Array Path"
-                    placeholder="orders"
-                    value={ohResponseKey}
-                    onChange={(e) => setOhResponseKey(e.target.value)}
-                  />
-                </div>
-              )}
+              {activeResource === "orderHistory" && (() => {
+                const ordersArray = modalTestResponse ? resolveArrayAt(modalTestResponse, ohArrayPath) : null;
+                const sampleOrder = ordersArray && ordersArray.length > 0 ? ordersArray[0] : null;
 
-              {activeResource === "customerProfile" && (
-                <div className="space-y-6 animate-fade-in">
-                  <Input
-                    label="Endpoint Path (Relative to base URL)"
-                    placeholder="customers"
-                    value={cpPath}
-                    onChange={(e) => setCpPath(e.target.value.replace(/^\/+/, ""))}
-                    required
-                  />
-                </div>
-              )}
+                return (
+                  <div className="space-y-6 animate-fade-in">
+                    <Input
+                      label="Fetch Path (Relative to base URL)"
+                      placeholder="orders/history"
+                      value={ohPath}
+                      onChange={(e) => setOhPath(e.target.value.replace(/^\/+/, ""))}
+                      required
+                    />
 
-              {activeResource === "addresses" && (
-                <div className="space-y-6 animate-fade-in">
-                  <div className="p-4 bg-background border border-border rounded-xl space-y-3">
-                    <label className="block text-sm font-bold text-text-primary">
-                      Should the agent be able to add new delivery addresses for customers during checkout?
-                    </label>
-                    <div className="flex flex-wrap items-center gap-3">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setAddrSupportsCreation(false);
-                          setAddrActiveTab("fetch");
-                        }}
-                        className={`px-4 py-2 rounded-lg text-sm font-semibold border transition-colors cursor-pointer ${!addrSupportsCreation
-                          ? "bg-primary text-white border-primary"
-                          : "bg-surface text-text-secondary border-border hover:text-text-primary"
-                          }`}
-                      >
-                        No (Existing saved addresses only)
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setAddrSupportsCreation(true);
-                          setAddrActiveTab("create");
-                        }}
-                        className={`px-4 py-2 rounded-lg text-sm font-semibold border transition-colors cursor-pointer ${addrSupportsCreation
-                          ? "bg-primary text-white border-primary"
-                          : "bg-surface text-text-secondary border-border hover:text-text-primary"
-                          }`}
-                      >
-                        Yes (Allow agent to add new addresses)
-                      </button>
-                    </div>
-                  </div>
-
-                  {addrSupportsCreation && (
-                    <div className="flex gap-4 p-1 bg-background border border-border rounded-xl shrink-0">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setAddrActiveTab("fetch");
-                          setModalTestResponse(null);
-                          setModalTestStatus("untested");
-                        }}
-                        className={`flex-1 py-2 text-center text-sm font-semibold rounded-lg transition-colors cursor-pointer ${addrActiveTab === "fetch"
-                          ? "bg-surface text-text-primary shadow-xs font-bold"
-                          : "text-text-secondary hover:text-text-primary"
-                          }`}
-                      >
-                        Fetch Operation (GET) - Read
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setAddrActiveTab("create");
-                          setModalTestResponse(null);
-                          setModalTestStatus("untested");
-                        }}
-                        className={`flex-1 py-2 text-center text-sm font-semibold rounded-lg transition-colors cursor-pointer ${addrActiveTab === "create"
-                          ? "bg-surface text-text-primary shadow-xs font-bold"
-                          : "text-text-secondary hover:text-text-primary"
-                          }`}
-                      >
-                        Create Operation (POST) - Write
-                      </button>
-                    </div>
-                  )}
-
-                  {addrActiveTab === "fetch" || !addrSupportsCreation ? (
-                    <div className="space-y-6 animate-fade-in">
+                    <div>
+                      <div className="flex items-center justify-between gap-2 flex-wrap mb-1.5">
+                        <label className="block text-xs font-semibold text-text-primary">
+                          Orders List Array Path *
+                        </label>
+                        {modalTestResponse && ohArrayPath.trim() !== "" && (
+                          <span className="text-[11px] font-mono font-medium">
+                            {ordersArray !== null ? (
+                              <span className="text-emerald-400">
+                                ✓ Array found — {ordersArray.length} {ordersArray.length === 1 ? "item" : "items"}
+                              </span>
+                            ) : (
+                              <span className="text-amber-400/80 italic">No array found at "{ohArrayPath}"</span>
+                            )}
+                          </span>
+                        )}
+                      </div>
                       <Input
-                        label="Fetch Path (Relative to base URL)"
-                        placeholder="addresses"
-                        value={addrFetchPath}
-                        onChange={(e) => setAddrFetchPath(e.target.value.replace(/^\/+/, ""))}
+                        placeholder="e.g. data.orders or orders"
+                        value={ohArrayPath}
+                        onChange={(e) => setOhArrayPath(e.target.value)}
                         required
                       />
+                      <p className="text-xs text-text-secondary mt-1">
+                        Dot-path pointing to the array of order objects in your response JSON.
+                      </p>
+                    </div>
 
-                      <div>
-                        <Input
-                          label="Addresses Path (Array Path + ID Field)"
-                          placeholder="addresses._id"
-                          value={addrCombinedPath}
-                          onChange={(e) => {
-                            const val = e.target.value;
-                            setAddrCombinedPath(val);
-                            const parsed = parseAddressPath(val);
-                            if (parsed.isValid) {
-                              setAddrFetchResponseKey(parsed.response_key);
-                              setAddrFetchIdField(parsed.id_field);
-                            }
+                    <DynamicFieldMappings
+                      mappings={ohFieldMappings}
+                      onChange={setOhFieldMappings}
+                      previewSampleItem={sampleOrder}
+                      title="Order Field Mappings"
+                      description="Map standard fields (ID, Name, Price, Quantity) or custom fields relative to each item in the orders array."
+                    />
+                  </div>
+                );
+              })()}
+
+              {activeResource === "customerProfile" && (() => {
+                const profileTargetObj = cpResponseObjectPath.trim() ? resolvePath(modalTestResponse, cpResponseObjectPath) : modalTestResponse;
+                const sampleProfileItem = profileTargetObj && typeof profileTargetObj === "object" ? profileTargetObj : modalTestResponse;
+
+                return (
+                  <div className="space-y-6 animate-fade-in">
+                    <Input
+                      label="Fetch Path (Relative to base URL)"
+                      placeholder="customers"
+                      value={cpPath}
+                      onChange={(e) => setCpPath(e.target.value.replace(/^\/+/, ""))}
+                      required
+                    />
+
+                    <Input
+                      label="Response Object Path (Optional)"
+                      placeholder="e.g. data or data.user"
+                      value={cpResponseObjectPath}
+                      onChange={(e) => setCpResponseObjectPath(e.target.value)}
+                    />
+                    <p className="text-xs text-text-secondary -mt-4">
+                      Optional dot-path to the profile object in your response JSON.
+                    </p>
+
+                    <DynamicFieldMappings
+                      mappings={cpFieldMappings}
+                      onChange={setCpFieldMappings}
+                      previewSampleItem={sampleProfileItem}
+                      title="Customer Profile Field Mappings"
+                      description="All profile fields (Name, Email, Phone, Loyalty Tier) are optional. Omitted/blank paths resolve gracefully to None."
+                    />
+                  </div>
+                );
+              })()}
+
+              {activeResource === "addresses" && (() => {
+                const parsedAddr = parseAddressPath(addrCombinedPath);
+                const addrsArray = modalTestResponse && parsedAddr.isValid ? resolveArrayAt(modalTestResponse, parsedAddr.response_key) : null;
+                const sampleAddr = addrsArray && addrsArray.length > 0 ? addrsArray[0] : null;
+                const resolvedDisplay = sampleAddr && addrDisplayField.trim() ? resolvePath(sampleAddr, addrDisplayField) : null;
+
+                return (
+                  <div className="space-y-6 animate-fade-in">
+                    <div className="p-4 bg-background border border-border rounded-xl space-y-3">
+                      <label className="block text-sm font-bold text-text-primary">
+                        Should the agent be able to add new delivery addresses for customers during checkout?
+                      </label>
+                      <div className="flex flex-wrap items-center gap-3">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAddrSupportsCreation(false);
+                            setAddrActiveTab("fetch");
                           }}
-                          required
-                          error={!parsedAddressObj.isValid ? "Must be a dot-path like 'addresses._id' or 'data.addresses.id'" : undefined}
-                        />
-                        <p className="text-xs text-text-secondary mt-1">
-                          The path to your addresses array, followed by the field name that uniquely identifies each address — e.g. <code className="bg-background px-1 py-0.5 rounded font-mono">addresses._id</code> or <code className="bg-background px-1 py-0.5 rounded font-mono">data.addresses.id</code>.
-                        </p>
+                          className={`px-4 py-2 rounded-lg text-sm font-semibold border transition-colors cursor-pointer ${!addrSupportsCreation
+                            ? "bg-primary text-white border-primary"
+                            : "bg-surface text-text-secondary border-border hover:text-text-primary"
+                            }`}
+                        >
+                          No (Existing saved addresses only)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAddrSupportsCreation(true);
+                            setAddrActiveTab("create");
+                          }}
+                          className={`px-4 py-2 rounded-lg text-sm font-semibold border transition-colors cursor-pointer ${addrSupportsCreation
+                            ? "bg-primary text-white border-primary"
+                            : "bg-surface text-text-secondary border-border hover:text-text-primary"
+                            }`}
+                        >
+                          Yes (Allow agent to add new addresses)
+                        </button>
                       </div>
                     </div>
-                  ) : (
+
+                    {addrSupportsCreation && (
+                      <div className="flex gap-4 p-1 bg-background border border-border rounded-xl shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAddrActiveTab("fetch");
+                            setModalTestResponse(null);
+                            setModalTestStatus("untested");
+                          }}
+                          className={`flex-1 py-2 text-center text-sm font-semibold rounded-lg transition-colors cursor-pointer ${addrActiveTab === "fetch"
+                            ? "bg-surface text-text-primary shadow-xs font-bold"
+                            : "text-text-secondary hover:text-text-primary"
+                            }`}
+                        >
+                          Fetch Operation (GET) - Read
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAddrActiveTab("create");
+                            setModalTestResponse(null);
+                            setModalTestStatus("untested");
+                          }}
+                          className={`flex-1 py-2 text-center text-sm font-semibold rounded-lg transition-colors cursor-pointer ${addrActiveTab === "create"
+                            ? "bg-surface text-text-primary shadow-xs font-bold"
+                            : "text-text-secondary hover:text-text-primary"
+                            }`}
+                        >
+                          Create Operation (POST) - Write
+                        </button>
+                      </div>
+                    )}
+
+                    {addrActiveTab === "fetch" || !addrSupportsCreation ? (
+                      <div className="space-y-6 animate-fade-in">
+                        <Input
+                          label="Fetch Path (Relative to base URL)"
+                          placeholder="users/addresses"
+                          value={addrFetchPath}
+                          onChange={(e) => setAddrFetchPath(e.target.value.replace(/^\/+/, ""))}
+                          required
+                        />
+
+                        <div>
+                          <div className="flex items-center justify-between gap-2 flex-wrap mb-1.5">
+                            <label className="block text-xs font-semibold text-text-primary">
+                              Addresses Path (Array Path + ID Field) *
+                            </label>
+                            {modalTestResponse && addrCombinedPath.trim() !== "" && (
+                              <span className="text-[11px] font-mono font-medium">
+                                {addrsArray !== null ? (
+                                  <span className="text-emerald-400">
+                                    ✓ Array found — {addrsArray.length} {addrsArray.length === 1 ? "address" : "addresses"} (ID field: "{parsedAddr.id_field}")
+                                  </span>
+                                ) : (
+                                  <span className="text-amber-400/80 italic">No addresses array found</span>
+                                )}
+                              </span>
+                            )}
+                          </div>
+                          <Input
+                            placeholder="e.g. data.addresses._id or addresses.id"
+                            value={addrCombinedPath}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              setAddrCombinedPath(val);
+                              const parsed = parseAddressPath(val);
+                              if (parsed.isValid) {
+                                setAddrFetchResponseKey(parsed.response_key);
+                                setAddrFetchIdField(parsed.id_field);
+                              }
+                            }}
+                            required
+                            error={!parsedAddr.isValid ? "Must be a dot-path ending with ID field (e.g. 'data.addresses._id')" : undefined}
+                          />
+                          <p className="text-xs text-text-secondary mt-1">
+                            Combined dot-path to your addresses array with the ID field as the last segment (e.g. <code className="bg-background px-1 py-0.5 rounded font-mono">data.addresses._id</code>).
+                          </p>
+                        </div>
+
+                        <div>
+                          <div className="flex items-center justify-between gap-2 flex-wrap mb-1.5">
+                            <label className="block text-xs font-semibold text-text-primary">
+                              Address Display Field (Optional)
+                            </label>
+                            {sampleAddr && addrDisplayField.trim() !== "" && (
+                              <span className="text-[11px] font-mono font-medium">
+                                Preview:{" "}
+                                {resolvedDisplay !== null && resolvedDisplay !== undefined ? (
+                                  <span className="text-emerald-400">{String(resolvedDisplay)}</span>
+                                ) : (
+                                  <span className="text-amber-400/80 italic">No value found</span>
+                                )}
+                              </span>
+                            )}
+                          </div>
+                          <Input
+                            placeholder="e.g. address or formattedAddress"
+                            value={addrDisplayField}
+                            onChange={(e) => setAddrDisplayField(e.target.value)}
+                          />
+                          <p className="text-xs text-text-secondary mt-1">
+                            Dot-path relative to each address object for human-readable display string (e.g. <code className="bg-background px-1 py-0.5 rounded font-mono">formattedAddress</code>).
+                          </p>
+                        </div>
+                      </div>
+                    ) : (
                     <div className="space-y-6 animate-fade-in">
                       <Input
                         label="Create Path (Relative to base URL)"
@@ -2047,11 +2189,12 @@ export default function OnboardingPage() {
                             </p>
                           </div>
                         </label>
-                      </div>
                     </div>
-                  )}
-                </div>
-              )}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
               {activeResource === "createOrder" && (
                 <div className="space-y-6 animate-fade-in">
@@ -2241,7 +2384,8 @@ export default function OnboardingPage() {
               {modalTestResponse && (
                 <div className="space-y-3 border-t border-border pt-6 animate-fade-in font-sans">
                   {activeResource === "addresses" && modalTestStatus === "success" && (() => {
-                    const addressList = getNestedValue(modalTestResponse, parsedAddressObj.response_key);
+                    const parsed = parseAddressPath(addrCombinedPath);
+                    const addressList = resolveArrayAt(modalTestResponse, parsed.response_key);
                     const count = Array.isArray(addressList) ? addressList.length : (addressList ? 1 : 0);
                     return (
                       <div className={`p-4 rounded-xl border flex items-start gap-3 animate-fade-in ${
@@ -2254,15 +2398,15 @@ export default function OnboardingPage() {
                         )}
                         <div>
                           <h4 className={`text-sm font-bold ${count > 0 ? "text-success" : "text-warning"}`}>
-                            {count > 0 ? "Key Configuration Verified!" : `No Addresses Found Under Key '${parsedAddressObj.response_key}'`}
+                            {count > 0 ? "Key Configuration Verified!" : `No Addresses Found Under Key '${parsed.response_key}'`}
                           </h4>
                           <p className="text-xs text-text-primary mt-1">
-                            <strong className="font-bold">{count} address{count === 1 ? "" : "es"}</strong> found against your key <code className="bg-background px-1.5 py-0.5 rounded font-mono text-[11px]">{parsedAddressObj.response_key}</code>.
+                            <strong className="font-bold">{count} address{count === 1 ? "" : "es"}</strong> found against your key <code className="bg-background px-1.5 py-0.5 rounded font-mono text-[11px]">{parsed.response_key}</code>.
                           </p>
-                          {count > 0 && Array.isArray(addressList) && addressList[0] && parsedAddressObj.id_field && (
+                          {count > 0 && Array.isArray(addressList) && addressList[0] && parsed.id_field && (
                             <p className="text-[11px] text-text-secondary mt-1">
-                              ID Key (<code className="bg-background px-1 py-0.5 rounded font-mono">{parsedAddressObj.id_field}</code>):{" "}
-                              <strong className="text-text-primary font-mono">{String(addressList[0][parsedAddressObj.id_field] ?? addressList[0]._id ?? addressList[0].id ?? "verified")}</strong>
+                              ID Key (<code className="bg-background px-1 py-0.5 rounded font-mono">{parsed.id_field}</code>):{" "}
+                              <strong className="text-text-primary font-mono">{String(resolvePath(addressList[0], parsed.id_field) ?? addressList[0]._id ?? addressList[0].id ?? "verified")}</strong>
                             </p>
                           )}
                         </div>
@@ -2316,8 +2460,9 @@ export default function OnboardingPage() {
                   type="button"
                   variant="primary"
                   onClick={() => {
-                    if (activeResource === "addresses" && !parsedAddressObj.isValid) {
-                      toast.error("Address path must be formatted as 'addresses._id'");
+                    const parsedAddrCheck = parseAddressPath(addrCombinedPath);
+                    if (activeResource === "addresses" && !parsedAddrCheck.isValid) {
+                      toast.error("Address path must be formatted as 'data.addresses._id' or 'addresses.id'");
                       return;
                     }
 
@@ -2326,13 +2471,45 @@ export default function OnboardingPage() {
                     if (activeResource === "products") {
                       patchData.products_config = { path: prodPath, method: "GET", payload_key: prodPayloadKey, response_key: prodResponseKey };
                     } else if (activeResource === "orderHistory") {
-                      patchData.order_history_config = { path: ohPath, method: "GET", response_key: ohResponseKey };
+                      const fieldMappingDict: Record<string, string> = {};
+                      ohFieldMappings.forEach((m) => {
+                        if (m.key.trim() && m.path.trim()) {
+                          fieldMappingDict[m.key.trim()] = m.path.trim();
+                        }
+                      });
+                      patchData.order_history_config = {
+                        path: ohPath,
+                        method: "GET",
+                        array_path: ohArrayPath,
+                        response_key: ohArrayPath,
+                        field_mapping: fieldMappingDict,
+                        fields: fieldMappingDict,
+                      };
                     } else if (activeResource === "customerProfile") {
-                      patchData.customer_profile_config = { path: cpPath, method: "GET" };
+                      const fieldMappingDict: Record<string, string> = {};
+                      cpFieldMappings.forEach((m) => {
+                        if (m.key.trim() && m.path.trim()) {
+                          fieldMappingDict[m.key.trim()] = m.path.trim();
+                        }
+                      });
+                      patchData.customer_profile_config = {
+                        path: cpPath,
+                        method: "GET",
+                        response_object_path: cpResponseObjectPath,
+                        response_key: cpResponseObjectPath,
+                        field_mapping: fieldMappingDict,
+                      };
                     } else if (activeResource === "addresses") {
                       patchData.addresses_config = {
                         supports_creation: addrSupportsCreation,
-                        fetch: { path: addrFetchPath, method: "GET", response_key: parsedAddressObj.response_key, id_field: parsedAddressObj.id_field },
+                        fetch: {
+                          path: addrFetchPath,
+                          method: "GET",
+                          response_path: addrCombinedPath,
+                          response_key: parsedAddrCheck.response_key,
+                          id_field: parsedAddrCheck.id_field,
+                          display_field: addrDisplayField,
+                        },
                         create: addrSupportsCreation ? { path: addrCreatePath, method: "POST", field_mapping: addrCreateFields.split(",").map(k => k.trim()).filter(Boolean) } : null
                       };
                     } else if (activeResource === "createOrder") {
