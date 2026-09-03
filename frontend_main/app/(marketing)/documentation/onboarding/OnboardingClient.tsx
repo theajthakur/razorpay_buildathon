@@ -13,7 +13,16 @@ import {
   Sparkles,
   Link2,
   FileCode,
-  Building2
+  Building2,
+  Layers,
+  ArrowRight,
+  Globe,
+  Key,
+  ShoppingCart,
+  Database,
+  Lock,
+  Zap,
+  HelpCircle
 } from "lucide-react";
 import { OnboardingResponse } from "@/lib/api/onboarding";
 
@@ -141,9 +150,9 @@ const defaultOnboarding = {
 export default function OnboardingClient({ onboarding }: OnboardingClientProps) {
   const [activeId, setActiveId] = useState("overview");
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [copiedRaw, setCopiedRaw] = useState(false);
 
   // Merge loaded onboarding configuration with default templates for rendering fallback
-  const isSetupCompleted = !!onboarding;
   const merged = {
     ...defaultOnboarding,
     ...onboarding,
@@ -175,18 +184,22 @@ export default function OnboardingClient({ onboarding }: OnboardingClientProps) 
 
   const cleanBaseUrl = merged.base_url && !merged.base_url.includes("ponion")
     ? merged.base_url.replace(/\/$/, "")
-    : "https://example.com";
+    : "https://api.yourstore.com";
 
   const cleanWebhookUrl = formatEndpointUrl(cleanBaseUrl, merged.webhook_url);
 
   // Headings for scroll-spy nav
   const headings: HeadingItem[] = [
-    { id: "overview", text: "Overview & Prerequisites" },
-    { id: "auth", text: "1. Authentication Mapping" },
-    { id: "branding", text: "2. Branding & Webhooks" },
-    { id: "resources", text: "3. Resource Endpoints" },
-    { id: "settlement", text: "4. Settlement Payouts" },
-    { id: "troubleshooting", text: "5. Troubleshooting FAQ" },
+    { id: "overview", text: "Overview & Journey Steps" },
+    { id: "step1-baseurl", text: "Step 1. Store Base URL Setup" },
+    { id: "step2-auth", text: "Step 2. Customer Auth Mapping" },
+    { id: "step3-catalog", text: "Step 3. Product Catalog Search" },
+    { id: "step4-addresses", text: "Step 4. Delivery Addresses" },
+    { id: "step5-checkout", text: "Step 5. Order Creation Route" },
+    { id: "step6-webhook", text: "Step 6. Webhook Configuration" },
+    { id: "step7-apikeys", text: "Step 7. API Keys & Verification" },
+    { id: "key-mappings", text: "Key Mappings & Fallback Candidates" },
+    { id: "troubleshooting", text: "Troubleshooting FAQ" },
   ];
 
   // ScrollSpy logic to highlight active section on scroll
@@ -247,13 +260,20 @@ export default function OnboardingClient({ onboarding }: OnboardingClientProps) 
     }
   };
 
+  const handleCopyMarkdown = () => {
+    const markdownText = `# ShopAgent Merchant Onboarding Guide\nBase URL: ${cleanBaseUrl}\nWebhook URL: ${cleanWebhookUrl}\nAPI Keys: sk_live_...\nVerify Endpoint: GET /merchant/orders/verify?merchant_order_id=...`;
+    navigator.clipboard.writeText(markdownText);
+    setCopiedRaw(true);
+    setTimeout(() => setCopiedRaw(false), 2000);
+  };
+
   return (
     <>
       {/* Mobile Anchor Navigation Drawer Overlay */}
       <div className="lg:hidden fixed bottom-6 right-6 z-40">
         <button
           onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-          className="w-12 h-12 rounded-full bg-primary hover:bg-primary/90 text-white flex items-center justify-center shadow-lg transition-all duration-200 cursor-pointer"
+          className="w-12 h-12 rounded-full bg-primary text-text-on-primary flex items-center justify-center shadow-lg transition-all duration-200 cursor-pointer"
           aria-label="Table of contents menu"
         >
           <Menu className="w-5 h-5" />
@@ -279,7 +299,7 @@ export default function OnboardingClient({ onboarding }: OnboardingClientProps) 
                   href={`#${heading.id}`}
                   onClick={(e) => handleScrollTo(e, heading.id)}
                   className={`block text-sm font-medium py-1.5 px-2.5 rounded-lg border-l-2 transition-all ${activeId === heading.id
-                    ? "border-primary text-primary bg-primary/5 pl-3.5"
+                    ? "border-primary text-primary bg-primary/10 pl-3.5"
                     : "border-transparent text-text-secondary hover:text-text-primary"
                     }`}
                 >
@@ -291,475 +311,520 @@ export default function OnboardingClient({ onboarding }: OnboardingClientProps) 
         </div>
       )}
 
-      {/* Left Column: Content Area */}
+      {/* Main Content Area */}
       <div className="flex-1 max-w-full lg:max-w-[72ch] min-w-0 font-sans">
-        <article className="prose max-w-none">
 
+        {/* Copy Markdown Header Banner */}
+        <div className="mb-8 p-4 rounded-2xl bg-surface border border-border flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 shadow-2xs">
+          <div className="flex items-start gap-3">
+            <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary shrink-0 mt-0.5">
+              <FileCode className="w-4 h-4" />
+            </div>
+            <div>
+              <h4 className="text-xs font-bold text-text-primary">Complete Merchant Setup Guide</h4>
+              <p className="text-[11px] text-text-secondary">Copy onboarding specs for AI development or Cursor prompt.</p>
+            </div>
+          </div>
+          <button
+            onClick={handleCopyMarkdown}
+            className={`px-3.5 py-1.5 rounded-xl font-medium text-xs flex items-center justify-center gap-2 cursor-pointer transition-all duration-200 border ${copiedRaw
+              ? "bg-success border-success text-text-on-primary"
+              : "bg-primary border-primary text-text-on-primary hover:bg-primary-hover"
+              }`}
+          >
+            {copiedRaw ? (
+              <>
+                <Check className="w-3.5 h-3.5" />
+                <span>Copied Specs!</span>
+              </>
+            ) : (
+              <>
+                <Copy className="w-3.5 h-3.5" />
+                <span>Copy for AI</span>
+              </>
+            )}
+          </button>
+        </div>
+
+        <article className="prose max-w-none">
           {/* Welcome / Header */}
-          <h1 id="overview" className="font-heading text-4xl font-extrabold text-text-primary tracking-tight mb-4 scroll-mt-24">
-            Interactive Onboarding Guide
+          <h1 id="overview" className="font-heading text-3xl sm:text-4xl font-extrabold text-text-primary tracking-tight mb-4 scroll-mt-24">
+            All About Merchant Onboarding
           </h1>
           <p className="text-base text-text-secondary leading-relaxed mb-6">
-            Welcome! This integration handbook details how your specific store interacts with ShopAgent.
+            ShopAgent acts as a smart, conversational layer over your existing e-commerce backend. You do <strong>not</strong> need to rewrite your cart, authentication, or checkout database. You simply map <strong>ShopAgent to your existing endpoints</strong>.
           </p>
 
+          {/* 8-Step Timeline Overview */}
+          <div className="my-8 p-6 rounded-2xl border border-border bg-surface space-y-4 grid grid-cols-1 gap-4">
+            <h3 className="text-base font-bold text-text-primary font-heading m-0 flex items-center gap-2">
+              <Layers className="w-5 h-5 text-primary" />
+              <span>The 8-Step Onboarding Journey</span>
+            </h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+              <a href="#step1-baseurl" onClick={(e) => handleScrollTo(e, "step1-baseurl")} className="p-3 rounded-xl border border-border bg-background hover:border-primary/50 transition-colors flex items-center gap-3">
+                <span className="w-6 h-6 rounded-full bg-primary/10 text-primary font-bold font-mono flex items-center justify-center text-xs">1</span>
+                <div>
+                  <div className="font-bold text-text-primary">Base URL Setup</div>
+                  <div className="text-[11px] text-text-secondary">HTTPS Root Host Domain</div>
+                </div>
+              </a>
 
-          {/* Prerequisites */}
-          <div className="space-y-4 mb-8">
-            <h3 className="font-heading text-xl font-bold text-text-primary">Prerequisites & Scope</h3>
-            <p className="text-sm text-text-secondary leading-relaxed">
-              Before setting up, please note that **ShopAgent does not require changing your existing authentication or checkout code**. Our assistant is designed to wrap around your current routes. You are mapping *our platform to your endpoints*, keeping your backend fully intact.
-            </p>
-            <div className="space-y-2.5">
-              <div className="flex items-start gap-2.5 text-xs text-text-secondary">
-                <CheckCircle2 className="w-4 h-4 text-primary shrink-0 mt-0.5" />
-                <span>An e-commerce backend accessible over HTTPS (Node, Python, Go, PHP, etc.).</span>
-              </div>
-              <div className="flex items-start gap-2.5 text-xs text-text-secondary">
-                <CheckCircle2 className="w-4 h-4 text-primary shrink-0 mt-0.5" />
-                <span>Exposed endpoints for search cataloging and transaction history.</span>
-              </div>
+              <a href="#step2-auth" onClick={(e) => handleScrollTo(e, "step2-auth")} className="p-3 rounded-xl border border-border bg-background hover:border-primary/50 transition-colors flex items-center gap-3">
+                <span className="w-6 h-6 rounded-full bg-primary/10 text-primary font-bold font-mono flex items-center justify-center text-xs">2</span>
+                <div>
+                  <div className="font-bold text-text-primary">Customer Auth Mapping</div>
+                  <div className="text-[11px] text-text-secondary">Login Route & JWT Token Path</div>
+                </div>
+              </a>
+
+              <a href="#step3-catalog" onClick={(e) => handleScrollTo(e, "step3-catalog")} className="p-3 rounded-xl border border-border bg-background hover:border-primary/50 transition-colors flex items-center gap-3">
+                <span className="w-6 h-6 rounded-full bg-primary/10 text-primary font-bold font-mono flex items-center justify-center text-xs">3</span>
+                <div>
+                  <div className="font-bold text-text-primary">Product Catalog Search</div>
+                  <div className="text-[11px] text-text-secondary">Search Endpoint & Keys</div>
+                </div>
+              </a>
+
+              <a href="#step4-addresses" onClick={(e) => handleScrollTo(e, "step4-addresses")} className="p-3 rounded-xl border border-border bg-background hover:border-primary/50 transition-colors flex items-center gap-3">
+                <span className="w-6 h-6 rounded-full bg-primary/10 text-primary font-bold font-mono flex items-center justify-center text-xs">4</span>
+                <div>
+                  <div className="font-bold text-text-primary">Saved Addresses</div>
+                  <div className="text-[11px] text-text-secondary">Fetch & Optional Creation</div>
+                </div>
+              </a>
+
+              <a href="#step5-checkout" onClick={(e) => handleScrollTo(e, "step5-checkout")} className="p-3 rounded-xl border border-border bg-background hover:border-primary/50 transition-colors flex items-center gap-3">
+                <span className="w-6 h-6 rounded-full bg-primary/10 text-primary font-bold font-mono flex items-center justify-center text-xs">5</span>
+                <div>
+                  <div className="font-bold text-text-primary">Order Creation Route</div>
+                  <div className="text-[11px] text-text-secondary">Cart Payload & Address ID</div>
+                </div>
+              </a>
+
+              <a href="#step6-webhook" onClick={(e) => handleScrollTo(e, "step6-webhook")} className="p-3 rounded-xl border border-border bg-background hover:border-primary/50 transition-colors flex items-center gap-3">
+                <span className="w-6 h-6 rounded-full bg-primary/10 text-primary font-bold font-mono flex items-center justify-center text-xs">6</span>
+                <div>
+                  <div className="font-bold text-text-primary">Webhook Path</div>
+                  <div className="text-[11px] text-text-secondary">order.payment_completed</div>
+                </div>
+              </a>
+
+              <a href="#step7-apikeys" onClick={(e) => handleScrollTo(e, "step7-apikeys")} className="p-3 rounded-xl border border-border bg-background hover:border-primary/50 transition-colors flex items-center gap-3">
+                <span className="w-6 h-6 rounded-full bg-primary/10 text-primary font-bold font-mono flex items-center justify-center text-xs">7</span>
+                <div>
+                  <div className="font-bold text-text-primary">API Key & Verification</div>
+                  <div className="text-[11px] text-text-secondary">sk_live_... & /orders/verify</div>
+                </div>
+              </a>
             </div>
           </div>
 
-          <hr className="my-8 border-border" />
+          <hr className="my-10 border-border" />
 
-          {/* 1. Authentication */}
-          <section id="auth" className="scroll-mt-24 space-y-6">
+          {/* Step 1: Base URL */}
+          <section id="step1-baseurl" className="scroll-mt-24 space-y-4">
             <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center text-primary shrink-0">
-                <ShieldCheck className="w-5 h-5" />
+              <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary font-bold font-mono text-sm">
+                1
               </div>
-              <h2 className="font-heading text-2xl font-bold text-text-primary m-0">1. Authentication Mapping</h2>
+              <h2 className="font-heading text-2xl font-bold text-text-primary m-0">Step 1. Store Base URL Setup</h2>
             </div>
-
             <p className="text-sm text-text-secondary leading-relaxed">
-              ShopAgent authenticates your store's users by forwarding their credentials directly to your login route.
+              Your Store Base URL is the HTTPS root where your e-commerce APIs are hosted (e.g. <code>https://api.yourstore.com</code> or <code>https://backend.myshop.in</code>).
             </p>
-
-            <div className="space-y-4">
-              <h4 className="text-xs font-bold uppercase tracking-wider text-text-primary">Customer Login Request</h4>
-              <p className="text-xs text-text-secondary">
-                When a customer signs into the chat widget, ShopAgent triggers a <strong>{merged.auth_config.method}</strong> call to your Login URL:
-              </p>
-
-              <CodeBlock label={`HTTP REQUEST: ${merged.auth_config.method} ${formatEndpointUrl(cleanBaseUrl, merged.auth_config.auth_url)}`}>
-                {`
-${merged.auth_config.method} ${formatEndpointUrl(cleanBaseUrl, merged.auth_config.auth_url)}
-Content-Type: application/json
-
-{
-  "${merged.auth_config.identifier_field}": "customer@example.com",
-  "${merged.auth_config.password_field}": "password123"
-}
-`}
-              </CodeBlock>
-            </div>
-
-            <div className="space-y-4">
-              <h4 className="text-xs font-bold uppercase tracking-wider text-text-primary">Expected Token Response</h4>
-              <p className="text-xs text-text-secondary">
-                Your backend must respond with a <strong>2xx status</strong>, containing the customer's session token at the configured token path (<code>{merged.auth_config.token_path}</code>):
-              </p>
-
-              <CodeBlock label="JSON RESPONSE EXAMPLE">
-                {`
-{
-  "status": "success",
-  "data": {
-    "token": "example_encoded_customer_jwt_token_here"
-  }
-}
-`}
-              </CodeBlock>
-            </div>
-
-            <div className="space-y-4">
-              <h4 className="text-xs font-bold uppercase tracking-wider text-text-primary">Token Delivery Mechanism</h4>
-              <p className="text-xs text-text-secondary font-medium">
-                On all subsequent customer requests (e.g. order history, address additions), ShopAgent will attach the extracted session token per your configuration:
-              </p>
-
-              {merged.auth_config.token_delivery.method === "cookie" ? (
-                <div className="p-3.5 rounded-lg border border-border bg-background font-mono text-xs">
-                  Cookie: {merged.auth_config.token_delivery.cookie_name || "token"}=&lt;token&gt;
-                </div>
-              ) : (
-                <div className="p-3.5 rounded-lg border border-border bg-background font-mono text-xs">
-                  {merged.auth_config.token_delivery.header_name || "Authorization"}: {merged.auth_config.token_delivery.bearer_prefix ? "Bearer " : ""}&lt;token&gt;
-                </div>
-              )}
+            <div className="p-4 rounded-xl border border-border bg-surface font-mono text-xs space-y-1">
+              <div className="text-text-secondary font-bold uppercase">Configured Base URL:</div>
+              <div className="text-primary font-semibold">{cleanBaseUrl}</div>
             </div>
           </section>
 
-          <hr className="my-8 border-border" />
+          <hr className="my-10 border-border" />
 
-          {/* 2. Branding & Webhooks */}
-          <section id="branding" className="scroll-mt-24 space-y-6">
+          {/* Step 2: Auth Mapping */}
+          <section id="step2-auth" className="scroll-mt-24 space-y-6">
             <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center text-primary shrink-0">
-                <Link2 className="w-5 h-5" />
+              <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary font-bold font-mono text-sm">
+                2
               </div>
-              <h2 className="font-heading text-2xl font-bold text-text-primary m-0">2. Branding & Webhooks</h2>
+              <h2 className="font-heading text-2xl font-bold text-text-primary m-0">Step 2. Customer Auth Mapping</h2>
             </div>
 
-            <div className="space-y-4">
-              <h4 className="text-xs font-bold uppercase tracking-wider text-text-primary">Accents & Store Styling</h4>
-              <p className="text-xs text-text-secondary leading-relaxed">
-                The accent color (<code>{merged.branding_config?.brand_color || "#7c3aed"}</code>) and widget logo url shape how the ShopAgent widget blends visually into your storefront wrapper. These parameters have no code integration impact.
-              </p>
+            <p className="text-sm text-text-secondary leading-relaxed">
+              When a customer logs into the ShopAgent widget, ShopAgent forwards their email and password to your authentication route.
+            </p>
+
+            <CodeBlock label={`LOGIN REQUEST: POST ${cleanBaseUrl}/api/auth/login`}>
+              {`POST ${cleanBaseUrl}/api/auth/login
+Content-Type: application/json
+
+{
+  "email": "customer@example.com",
+  "password": "customer_password"
+}`}
+            </CodeBlock>
+
+            <p className="text-sm text-text-secondary leading-relaxed">
+              Your server responds with a token inside the specified JSON path (e.g. <code>data.token</code> or <code>token</code>):
+            </p>
+
+            <CodeBlock label="EXPECTED LOGIN RESPONSE">
+              {`{
+  "status": "success",
+  "data": {
+    "token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+  }
+}`}
+            </CodeBlock>
+
+            <p className="text-sm text-text-secondary leading-relaxed">
+              On all subsequent authenticated calls (fetching addresses, order creation), ShopAgent includes this token in the header:
+            </p>
+            <div className="p-3 rounded-xl border border-border bg-surface font-mono text-xs text-text-primary">
+              Authorization: Bearer &lt;customer_jwt_token&gt;
+            </div>
+          </section>
+
+          <hr className="my-10 border-border" />
+
+          {/* Step 3: Product Catalog */}
+          <section id="step3-catalog" className="scroll-mt-24 space-y-6">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary font-bold font-mono text-sm">
+                3
+              </div>
+              <h2 className="font-heading text-2xl font-bold text-text-primary m-0">Step 3. Product Catalog Search</h2>
             </div>
 
-            <div className="space-y-4">
-              <h4 className="text-xs font-bold uppercase tracking-wider text-text-primary">Payment Completion Webhook</h4>
-              <p className="text-xs text-text-secondary leading-relaxed">
-                Provide an HTTPS endpoint on your servers to receive successful checkout notifications. Whenever a customer completes a card checkout inside the agent chat widget, ShopAgent dispatches a webhook event:
-              </p>
+            <p className="text-sm text-text-secondary leading-relaxed">
+              When a user asks the AI agent for items (e.g. <em>"Show me running shoes under ₹3000"</em>), ShopAgent invokes your product search route.
+            </p>
 
-              <CodeBlock label={`POST ${cleanWebhookUrl}`}>
-                {`
-POST ${cleanWebhookUrl}
+            <CodeBlock label={`SEARCH DISPATCH: GET ${cleanBaseUrl}/api/products?query=running+shoes`}>
+              {`GET ${cleanBaseUrl}/api/products?query=running+shoes
+Accept: application/json`}
+            </CodeBlock>
+
+            <CodeBlock label="EXPECTED CATALOG RESPONSE">
+              {`{
+  "products": [
+    {
+      "id": "prod_101",
+      "name": "Air Cushion Running Shoes",
+      "description": "Lightweight breathable mesh upper with responsive shock absorption.",
+      "price": 2499.00,
+      "thumbnailUrl": "https://cdn.yourstore.com/images/shoes101.jpg"
+    }
+  ]
+}`}
+            </CodeBlock>
+          </section>
+
+          <hr className="my-10 border-border" />
+
+          {/* Step 4: Addresses */}
+          <section id="step4-addresses" className="scroll-mt-24 space-y-6">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary font-bold font-mono text-sm">
+                4
+              </div>
+              <h2 className="font-heading text-2xl font-bold text-text-primary m-0">Step 4. Delivery Addresses</h2>
+            </div>
+
+            <p className="text-sm text-text-secondary leading-relaxed">
+              Before placing an order, ShopAgent fetches the customer's saved delivery addresses so the user can select where to ship their order.
+            </p>
+
+            <CodeBlock label={`FETCH ADDRESSES: GET ${cleanBaseUrl}/api/customer/addresses`}>
+              {`GET ${cleanBaseUrl}/api/customer/addresses
+Authorization: Bearer <customer_jwt_token>`}
+            </CodeBlock>
+
+            <CodeBlock label="EXPECTED ADDRESSES RESPONSE">
+              {`{
+  "addresses": [
+    {
+      "id": "addr_991",
+      "flat_no": "Flat 402, Sunshine Apartments",
+      "street": "MG Road, Sector 14",
+      "city": "Gurugram",
+      "district": "Gurugram",
+      "state": "Haryana",
+      "pincode": "122001",
+      "is_default": true
+    }
+  ]
+}`}
+            </CodeBlock>
+          </section>
+
+          <hr className="my-10 border-border" />
+
+          {/* Step 5: Order Creation */}
+          <section id="step5-checkout" className="scroll-mt-24 space-y-6">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary font-bold font-mono text-sm">
+                5
+              </div>
+              <h2 className="font-heading text-2xl font-bold text-text-primary m-0">Step 5. Order Creation Route</h2>
+            </div>
+
+            <p className="text-sm text-text-secondary leading-relaxed">
+              When the user confirms checkout in chat, ShopAgent sends a checkout payload containing cart items and the selected address ID to your order creation endpoint.
+            </p>
+
+            <CodeBlock label={`CREATE ORDER: POST ${cleanBaseUrl}/api/orders`}>
+              {`POST ${cleanBaseUrl}/api/orders
+Authorization: Bearer <customer_jwt_token>
+Content-Type: application/json
+
+{
+  "cart": [
+    {
+      "product_id": "prod_101",
+      "price": 2499.00,
+      "quantity": 1
+    }
+  ],
+  "address_id": "addr_991",
+  "source": "shopagent"
+}`}
+            </CodeBlock>
+
+            <CodeBlock label="EXPECTED ORDER RESPONSE">
+              {`{
+  "merchant_order_id": "ORD99823",
+  "order_total": 2499.00,
+  "currency": "INR",
+  "status": "pending_payment"
+}`}
+            </CodeBlock>
+          </section>
+
+          <hr className="my-10 border-border" />
+
+          {/* Step 6: Webhook */}
+          <section id="step6-webhook" className="scroll-mt-24 space-y-6">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary font-bold font-mono text-sm">
+                6
+              </div>
+              <h2 className="font-heading text-2xl font-bold text-text-primary m-0">Step 6. Webhook Configuration</h2>
+            </div>
+
+            <p className="text-sm text-text-secondary leading-relaxed">
+              Provide a public HTTPS route on your servers. When Razorpay payment capture completes, ShopAgent dispatches the <code>order.payment_completed</code> webhook:
+            </p>
+
+            <CodeBlock label={`WEBHOOK DISPATCH: POST ${cleanWebhookUrl}`}>
+              {`POST ${cleanWebhookUrl}
 Content-Type: application/json
 
 {
   "event": "order.payment_completed",
-  "event_id": "evt_123abc456def",
-  "merchant_order_id": "ord_your_mapped_order_id_here"
-}
-`}
-              </CodeBlock>
+  "event_id": "evt_9a8b7c6d5e",
+  "merchant_order_id": "ORD99823"
+}`}
+            </CodeBlock>
 
-              <div className="p-4 rounded-xl border border-info/30 bg-info/5 flex items-start gap-3">
-                <AlertCircle className="w-5 h-5 text-info shrink-0 mt-0.5" />
-                <div>
-                  <h5 className="text-xs font-bold text-info">Webhook Security Best Practice</h5>
-                  <p className="text-[11px] text-text-secondary leading-relaxed mt-0.5">
-                    Never mark an order as paid solely based on the webhook body. Always call our <strong>Verify Order</strong> API to fetch the authenticated payment status directly from Razorpay.
-                  </p>
-                </div>
-              </div>
-            </div>
-          </section>
-
-          <hr className="my-8 border-border" />
-
-          {/* 3. Resource Endpoints */}
-          <section id="resources" className="scroll-mt-24 space-y-8">
-            <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center text-primary shrink-0">
-                <FileCode className="w-5 h-5" />
-              </div>
-              <h2 className="font-heading text-2xl font-bold text-text-primary m-0">3. Resource Endpoints</h2>
-            </div>
-
-            <p className="text-sm text-text-secondary leading-relaxed">
-              ShopAgent utilizes five resource endpoints on your backend as a single source of truth for catalogue queries, order details, and checkouts.
-            </p>
-
-            {/* Products Catalog */}
-            <div className="space-y-4">
-              <div className="flex items-center justify-between border-b border-border pb-1.5">
-                <h3 className="text-base font-bold text-text-primary font-heading m-0">A. Products Catalog Search</h3>
-                <span className="px-2 py-0.5 bg-success-light text-success border border-success/20 rounded-md text-[10px] font-bold uppercase select-none">
-                  Search Endpoint
-                </span>
-              </div>
-              <p className="text-xs text-text-secondary leading-relaxed">
-                Allows the agent to search your product catalogue by user search terms.
-              </p>
-              <CodeBlock label={`HTTP REQUEST: ${merged.products_config.method} ${formatEndpointUrl(cleanBaseUrl, merged.products_config.path)}?${merged.products_config.payload_key}=shoes`}>
-                {`
-${merged.products_config.method} ${formatEndpointUrl(cleanBaseUrl, merged.products_config.path)}?${merged.products_config.payload_key}=shoes
-`}
-              </CodeBlock>
-              <p className="text-xs text-text-secondary">
-                Expected JSON response matching your configured key (<code>{merged.products_config.response_key}</code>):
-              </p>
-              <CodeBlock label="JSON RESPONSE EXAMPLE">
-                {`
-{
-  "${merged.products_config.response_key}": [
-    {
-      "id": "prod_shoes_99",
-      "name": "Classic Sneakers",
-      "description": "Premium leather sneakers.",
-      "price": 2499.00,
-      "thumbnailUrl": "https://img.yourstore.com/sneakers.jpg"
-    }
-  ]
-}
-`}
-              </CodeBlock>
-
-              <div className="p-4 rounded-xl border border-warning/30 bg-warning/5 flex items-start gap-3">
-                <AlertCircle className="w-5 h-5 text-warning shrink-0 mt-0.5" />
-                <div>
-                  <h5 className="text-xs font-bold text-warning">Per-Field Catalog Normalization Limit</h5>
-                  <p className="text-[11px] text-text-secondary leading-relaxed mt-0.5 font-sans">
-                    Please note that ShopAgent does not support individual key mapping for catalog properties (id, name, price, description, and thumbnail). Products returned by your endpoint should use standard keys like <code>id</code>/<code>_id</code>, <code>name</code>/<code>title</code>/<code>itemName</code>, <code>price</code>, <code>description</code>, and <code>thumbnail</code>/<code>thumbnailUrl</code> to ensure they are parsed successfully by our normalizer.
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            {/* Order History */}
-            <div className="space-y-4">
-              <div className="flex items-center justify-between border-b border-border pb-1.5">
-                <h3 className="text-base font-bold text-text-primary font-heading m-0">B. Order History</h3>
-                <span className="px-2 py-0.5 bg-surface-300 text-text-secondary border border-border rounded-md text-[10px] font-bold uppercase select-none">
-                  Authenticated
-                </span>
-              </div>
-              <p className="text-xs text-text-secondary leading-relaxed">
-                Fetches a customer's purchase logs. Calls your endpoint carrying their authenticated session token:
-              </p>
-              <CodeBlock label={`HTTP REQUEST: ${merged.order_history_config.method} ${formatEndpointUrl(cleanBaseUrl, merged.order_history_config.path)}`}>
-                {`
-${merged.order_history_config.method} ${formatEndpointUrl(cleanBaseUrl, merged.order_history_config.path)}
-`}
-              </CodeBlock>
-              <p className="text-xs text-text-secondary">
-                Expected response format matching key (<code>{merged.order_history_config.response_key}</code>):
-              </p>
-              <CodeBlock label="JSON RESPONSE EXAMPLE">
-                {`
-{
-  "${merged.order_history_config.response_key}": [
-    {
-      "order_id": "ord_10023",
-      "status": "shipped",
-      "total_price": 4998.00,
-      "created_at": "2026-08-30T00:23:46Z"
-    }
-  ]
-}
-`}
-              </CodeBlock>
-            </div>
-
-            {/* Customer Profile */}
-            <div className="space-y-4">
-              <div className="flex items-center justify-between border-b border-border pb-1.5">
-                <h3 className="text-base font-bold text-text-primary font-heading m-0">C. Customer Profile</h3>
-                <span className="px-2 py-0.5 bg-surface-300 text-text-secondary border border-border rounded-md text-[10px] font-bold uppercase select-none">
-                  Authenticated
-                </span>
-              </div>
-              <p className="text-xs text-text-secondary leading-relaxed">
-                Fetches profile details to help personalize conversational greetings.
-              </p>
-              <CodeBlock label={`HTTP REQUEST: ${merged.customer_profile_config.method} ${formatEndpointUrl(cleanBaseUrl, merged.customer_profile_config.path)}`}>
-                {`
-${merged.customer_profile_config.method} ${formatEndpointUrl(cleanBaseUrl, merged.customer_profile_config.path)}
-`}
-              </CodeBlock>
-            </div>
-
-            {/* Customer Addresses */}
-            <div className="space-y-4">
-              <div className="flex items-center justify-between border-b border-border pb-1.5">
-                <h3 className="text-base font-bold text-text-primary font-heading m-0">D. Customer Addresses</h3>
-                <span className="px-2 py-0.5 bg-surface-300 text-text-secondary border border-border rounded-md text-[10px] font-bold uppercase select-none">
-                  Authenticated
-                </span>
-              </div>
-              <p className="text-xs text-text-secondary leading-relaxed">
-                Fetches and creates shipping addresses.
-              </p>
-
-              <div className="space-y-3">
-                <p className="text-[11px] font-bold text-text-primary uppercase tracking-wider">Retrieve Addresses</p>
-                <CodeBlock label={`HTTP REQUEST: ${(merged.addresses_config as any).fetch?.method || (merged.addresses_config as any).fetch_method || "GET"} ${formatEndpointUrl(cleanBaseUrl, (merged.addresses_config as any).fetch?.path || (merged.addresses_config as any).fetch_path || "/api/customer/addresses")}`}>
-                  {`
-${(merged.addresses_config as any).fetch?.method || (merged.addresses_config as any).fetch_method || "GET"} ${formatEndpointUrl(cleanBaseUrl, (merged.addresses_config as any).fetch?.path || (merged.addresses_config as any).fetch_path || "/api/customer/addresses")}
-`}
-                </CodeBlock>
-              </div>
-
-              <div className="space-y-3">
-                <p className="text-[11px] font-bold text-text-primary uppercase tracking-wider">Create Shipping Address</p>
-                <p className="text-xs text-text-secondary">
-                  ShopAgent posts the address data using your mapped fields:
+            <div className="p-4 rounded-xl border border-warning/30 bg-warning/5 flex items-start gap-3">
+              <AlertCircle className="w-5 h-5 text-warning shrink-0 mt-0.5" />
+              <div>
+                <h5 className="text-xs font-bold text-warning">Security Golden Rule</h5>
+                <p className="text-[11px] text-text-secondary leading-relaxed mt-0.5">
+                  Treat the webhook as an <strong>unauthenticated trigger</strong>. On receipt, return <code>200 OK</code> immediately, then call <strong>Verify Order</strong> to fetch authoritative status.
                 </p>
-                <CodeBlock label={`HTTP REQUEST: ${(merged.addresses_config as any).create?.method || (merged.addresses_config as any).create_method || "POST"} ${formatEndpointUrl(cleanBaseUrl, (merged.addresses_config as any).create?.path || (merged.addresses_config as any).create_path || "/api/customer/addresses")}`}>
-                  {`
-${(merged.addresses_config as any).create?.method || (merged.addresses_config as any).create_method || "POST"} ${formatEndpointUrl(cleanBaseUrl, (merged.addresses_config as any).create?.path || (merged.addresses_config as any).create_path || "/api/customer/addresses")}
-Content-Type: application/json
-
-{
-  "line1": "Flat 402, Sector 12",
-  "line2": "Huda Colony",
-  "city": "Gurugram",
-  "state": "Haryana",
-  "pincode": "122001"
-}
-`}
-                </CodeBlock>
               </div>
             </div>
-
-            {/* Create Order */}
-            <div className="space-y-4">
-              <div className="flex items-center justify-between border-b border-border pb-1.5">
-                <h3 className="text-base font-bold text-text-primary font-heading m-0">E. Create Order</h3>
-                <span className="px-2 py-0.5 bg-success-light text-success border border-success/20 rounded-md text-[10px] font-bold uppercase select-none">
-                  Checkout Route
-                </span>
-              </div>
-              <p className="text-xs text-text-secondary leading-relaxed">
-                Exposes the order-generation flow. When a customer confirms checkout in the widget, ShopAgent sends a payload containing cart items mapping your keys:
-              </p>
-
-              <CodeBlock label={`HTTP REQUEST: ${merged.create_order_config.method} ${formatEndpointUrl(cleanBaseUrl, merged.create_order_config.path)}`}>
-                {`
-${merged.create_order_config.method} ${formatEndpointUrl(cleanBaseUrl, merged.create_order_config.path)}
-Content-Type: application/json
-
-{
-  "${merged.create_order_config.cart_key}": [
-    {
-      "${merged.create_order_config.item_id_field}": "prod_shoes_99",
-      "${merged.create_order_config.price_field}": 2499.00,
-      "${merged.create_order_config.quantity_field}": 2
-    }
-  ],
-  "${merged.create_order_config.address_id_field || "address_id"}": "addr_99812",
-  "source": "shopagent"
-}
-`}
-              </CodeBlock>
-            </div>
-
-            <p className="text-sm font-semibold text-text-primary leading-relaxed mt-4">
-              💡 The accuracy of these 5 endpoints directly dictates how intelligent and helpful your shopping assistant is. Better feeds translate directly to a better customer checkout experience!
-            </p>
           </section>
 
-          <hr className="my-8 border-border" />
+          <hr className="my-10 border-border" />
 
-          {/* 4. Settlement Bank Account */}
-          <section id="settlement" className="scroll-mt-24 space-y-6">
+          {/* Step 7: API Key */}
+          <section id="step7-apikeys" className="scroll-mt-24 space-y-6">
             <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center text-primary shrink-0">
-                <Building2 className="w-5 h-5" />
+              <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary font-bold font-mono text-sm">
+                7
               </div>
-              <h2 className="font-heading text-2xl font-bold text-text-primary m-0">4. Settlement Payouts</h2>
+              <h2 className="font-heading text-2xl font-bold text-text-primary m-0">Step 7. API Keys & S2S Verification</h2>
             </div>
 
             <p className="text-sm text-text-secondary leading-relaxed">
-              Payout settlement is handled entirely off-line and separate from the API routing layer. <strong>No code changes are required for this section</strong>.
+              Generate an API key in your ShopAgent Dashboard (e.g. <code>sk_live_...</code>). Use this key as a Bearer token when calling the Server-to-Server Verification endpoint:
             </p>
 
-            <div className="p-5 rounded-xl border border-border bg-surface flex flex-col md:flex-row md:items-center justify-between gap-4">
-              <div className="space-y-1">
-                <p className="text-xs text-text-secondary font-bold uppercase tracking-wider">Settlement Routing</p>
-                <div className="text-sm text-text-primary font-medium">
-                  {onboarding?.bank_account ? (
-                    <span className="font-mono text-xs">Bank A/C: {onboarding.bank_account.slice(-4).padStart(onboarding.bank_account.length, "•")}</span>
-                  ) : (
-                    <span>No bank account registered yet.</span>
-                  )}
-                </div>
-                {onboarding?.ifsc && (
-                  <div className="text-xs text-text-secondary leading-relaxed">
-                    IFSC: <span className="font-mono">{onboarding.ifsc}</span>
-                    {onboarding.branch_name && <span> — {onboarding.branch_name}</span>}
-                  </div>
-                )}
-              </div>
-              {onboarding?.bank_account && onboarding?.ifsc ? (
-                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-success/15 border border-success/20 text-success text-xs font-semibold select-none self-start md:self-auto">
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                  Route Verified
-                </div>
-              ) : (
-                <span className="text-xs text-text-secondary italic self-start md:self-auto">Pending setup</span>
-              )}
-            </div>
+            <CodeBlock label="VERIFY ORDER ENDPOINT: GET /merchant/orders/verify?merchant_order_id=ORD99823">
+              {`GET https://api.shopagent.dev/merchant/orders/verify?merchant_order_id=ORD99823
+Authorization: Bearer sk_live_8f3a9b2c...`}
+            </CodeBlock>
 
-            <p className="text-xs text-text-secondary leading-relaxed">
-              When checkout checks complete, Razorpay routes payouts to this account. Branch details are validated in real-time using IFSC lookup.
-            </p>
+            <CodeBlock label="VERIFY ORDER RESPONSE">
+              {`{
+  "payment": {
+    "status": "captured",
+    "razorpay_payment_id": "pay_QwErTy12345"
+  },
+  "data": {
+    "order": {
+      "order_total": 2499.0
+    }
+  }
+}`}
+            </CodeBlock>
           </section>
 
-          <hr className="my-8 border-border" />
+          <hr className="my-10 border-border" />
 
-          {/* 5. Troubleshooting Section */}
+          {/* Key Mappings Matrix */}
+          <section id="key-mappings" className="scroll-mt-24 space-y-6">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary font-bold font-mono text-sm">
+                <Database className="w-4 h-4" />
+              </div>
+              <h2 className="font-heading text-2xl font-bold text-text-primary m-0">Key Mappings & Candidate Table</h2>
+            </div>
+
+            <p className="text-sm text-text-secondary leading-relaxed">
+              ShopAgent automatically scans product and address item dictionaries for standard field names. If your backend uses custom field names, use the key mapping options during onboarding or return any of the supported candidate keys:
+            </p>
+
+            {/* Products Candidate Table */}
+            <h4 className="text-xs font-bold uppercase tracking-wider text-text-primary mt-6 mb-2">Product Catalog Candidate Keys</h4>
+            <div className="overflow-x-auto border border-border rounded-xl shadow-xs">
+              <table className="min-w-full divide-y divide-border text-xs text-left">
+                <thead className="bg-background text-text-primary font-semibold">
+                  <tr>
+                    <th className="px-4 py-3 font-semibold">Normalized Property</th>
+                    <th className="px-4 py-3 font-semibold">Supported Backend Candidate Keys</th>
+                    <th className="px-4 py-3 font-semibold">Fallback Behavior</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border bg-surface text-text-secondary">
+                  <tr className="hover:bg-background/50 transition-colors">
+                    <td className="px-4 py-3 font-mono text-primary font-bold">id</td>
+                    <td className="px-4 py-3 font-mono">id, _id, product_id, itemId, item_id</td>
+                    <td className="px-4 py-3 text-error font-medium">Required (Item skipped if missing)</td>
+                  </tr>
+                  <tr className="hover:bg-background/50 transition-colors">
+                    <td className="px-4 py-3 font-mono text-primary font-bold">name</td>
+                    <td className="px-4 py-3 font-mono">name, title, itemName, item_name, product_name, productName</td>
+                    <td className="px-4 py-3 text-error font-medium">Required (Item skipped if missing)</td>
+                  </tr>
+                  <tr className="hover:bg-background/50 transition-colors">
+                    <td className="px-4 py-3 font-mono text-primary font-bold">description</td>
+                    <td className="px-4 py-3 font-mono">description, desc, summary, itemDescription, details</td>
+                    <td className="px-4 py-3">Falls back to empty string <code>""</code></td>
+                  </tr>
+                  <tr className="hover:bg-background/50 transition-colors">
+                    <td className="px-4 py-3 font-mono text-primary font-bold">price</td>
+                    <td className="px-4 py-3 font-mono">price, unit_price, amount, cost, mrp, final_price</td>
+                    <td className="px-4 py-3">Falls back to <code>0.0</code></td>
+                  </tr>
+                  <tr className="hover:bg-background/50 transition-colors">
+                    <td className="px-4 py-3 font-mono text-primary font-bold">thumbnailUrl</td>
+                    <td className="px-4 py-3 font-mono">thumbnail, thumbnailUrl, image, imageUrl, image_url, photo, banner</td>
+                    <td className="px-4 py-3">Falls back to placeholder image</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            {/* Addresses Candidate Table */}
+            <h4 className="text-xs font-bold uppercase tracking-wider text-text-primary mt-8 mb-2">Delivery Address Candidate Keys</h4>
+            <div className="overflow-x-auto border border-border rounded-xl shadow-xs">
+              <table className="min-w-full divide-y divide-border text-xs text-left">
+                <thead className="bg-background text-text-primary font-semibold">
+                  <tr>
+                    <th className="px-4 py-3 font-semibold">Address Concept</th>
+                    <th className="px-4 py-3 font-semibold">Supported Backend Candidate Keys</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-border bg-surface text-text-secondary">
+                  <tr className="hover:bg-background/50 transition-colors">
+                    <td className="px-4 py-3 font-mono text-primary font-bold">flat_no</td>
+                    <td className="px-4 py-3 font-mono">flatNo, flat_no, houseNo, house_no, line1</td>
+                  </tr>
+                  <tr className="hover:bg-background/50 transition-colors">
+                    <td className="px-4 py-3 font-mono text-primary font-bold">street</td>
+                    <td className="px-4 py-3 font-mono">street, address_line1, line2</td>
+                  </tr>
+                  <tr className="hover:bg-background/50 transition-colors">
+                    <td className="px-4 py-3 font-mono text-primary font-bold">city</td>
+                    <td className="px-4 py-3 font-mono">city</td>
+                  </tr>
+                  <tr className="hover:bg-background/50 transition-colors">
+                    <td className="px-4 py-3 font-mono text-primary font-bold">district</td>
+                    <td className="px-4 py-3 font-mono">district</td>
+                  </tr>
+                  <tr className="hover:bg-background/50 transition-colors">
+                    <td className="px-4 py-3 font-mono text-primary font-bold">state</td>
+                    <td className="px-4 py-3 font-mono">state</td>
+                  </tr>
+                  <tr className="hover:bg-background/50 transition-colors">
+                    <td className="px-4 py-3 font-mono text-primary font-bold">pincode</td>
+                    <td className="px-4 py-3 font-mono">pincode, zip, postal_code</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </section>
+
+          <hr className="my-10 border-border" />
+
+          {/* Troubleshooting FAQ */}
           <section id="troubleshooting" className="scroll-mt-24 space-y-6">
             <div className="flex items-center gap-3">
-              <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center text-primary shrink-0">
-                <AlertCircle className="w-5 h-5" />
+              <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary font-bold font-mono text-sm">
+                <HelpCircle className="w-4 h-4" />
               </div>
-              <h2 className="font-heading text-2xl font-bold text-text-primary m-0">5. Troubleshooting FAQ</h2>
+              <h2 className="font-heading text-2xl font-bold text-text-primary m-0">Troubleshooting FAQ</h2>
             </div>
 
-            <p className="text-sm text-text-secondary leading-relaxed">
-              When testing connection, ShopAgent sends standard test query requests to check if your endpoints return HTTP 2xx statuses. Common failures include:
-            </p>
-
             <div className="space-y-4">
-              <div className="p-5 rounded-xl border border-border bg-surface/40 space-y-3.5">
-                <div>
-                  <h4 className="text-xs font-bold text-text-primary">1. Test connection returns "Not Connected"</h4>
-                  <p className="text-xs text-text-secondary leading-relaxed mt-1">
-                    Confirm that your URL paths do not require session authentication if they are public resource routes (like product searches). If they do require customer auth, ensure your mappings match the credentials format.
-                  </p>
-                </div>
-                <div>
-                  <h4 className="text-xs font-bold text-text-primary">2. Webhook is not firing on checkout</h4>
-                  <p className="text-xs text-text-secondary leading-relaxed mt-1">
-                    Make sure the webhook endpoint is exposed to public HTTP traffic. Firewall rules or local ports (like localhost) will block ShopAgent servers. Use tunnels like <code>ngrok</code> to test locally in Sandbox Mode.
-                  </p>
-                </div>
+              <div className="p-4 rounded-xl border border-border bg-surface space-y-2">
+                <h4 className="text-xs font-bold text-text-primary">Q: Why are my products not appearing in search?</h4>
+                <p className="text-xs text-text-secondary leading-relaxed">
+                  Verify that your product JSON response contains an array under the configured key (e.g. <code>products</code> or <code>data</code>) and that each item contains valid <code>id</code> and <code>name</code> keys.
+                </p>
+              </div>
+
+              <div className="p-4 rounded-xl border border-border bg-surface space-y-2">
+                <h4 className="text-xs font-bold text-text-primary">Q: Can I test webhooks on localhost?</h4>
+                <p className="text-xs text-text-secondary leading-relaxed">
+                  For local testing, use a public tunnel utility like <code>ngrok</code> (e.g. <code>ngrok http 8000</code>) to expose your local webhook path as an HTTPS URL.
+                </p>
+              </div>
+
+              <div className="p-4 rounded-xl border border-border bg-surface space-y-2">
+                <h4 className="text-xs font-bold text-text-primary">Q: What happens if an address creation fails?</h4>
+                <p className="text-xs text-text-secondary leading-relaxed">
+                  Address creation is optional. If your store does not support agent address creation, ShopAgent will prompt the customer to choose from existing saved addresses or add one on your store's website.
+                </p>
               </div>
             </div>
           </section>
-
-          {/* Quickstart checklist */}
-          <div className="p-4 rounded-2xl border border-primary/20 bg-primary/5 mt-10 space-y-4">
-            <h3 className="text-base pb-4 font-bold text-text-primary font-heading m-0">Quickstart Integration Checklist</h3>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-              <div className="flex items-center gap-2 text-xs text-text-secondary">
-                <div className="w-4.5 h-4.5 rounded-full bg-primary/20 text-primary flex items-center justify-center text-[10px] font-bold">1</div>
-                <span>Expose endpoints</span>
-              </div>
-              <div className="flex items-center gap-2 text-xs text-text-secondary">
-                <div className="w-4.5 h-4.5 rounded-full bg-primary/20 text-primary flex items-center justify-center text-[10px] font-bold">2</div>
-                <span>Map authentication credentials</span>
-              </div>
-              <div className="flex items-center gap-2 text-xs text-text-secondary">
-                <div className="w-4.5 h-4.5 rounded-full bg-primary/20 text-primary flex items-center justify-center text-[10px] font-bold">3</div>
-                <span>Complete the 5 resource mappings</span>
-              </div>
-              <div className="flex items-center gap-2 text-xs text-text-secondary">
-                <div className="w-4.5 h-4.5 rounded-full bg-primary/20 text-primary flex items-center justify-center text-[10px] font-bold">4</div>
-                <span>Set webhook & payouts bank info</span>
-              </div>
-            </div>
-          </div>
-
         </article>
       </div>
 
       {/* Right Column: Sticky Table of Contents Sidebar (Desktop only) */}
-      <aside className="hidden lg:block w-64 shrink-0 sticky top-24 self-start max-h-[calc(100vh-8rem)] overflow-y-auto pr-2">
-        <div className="border-l border-border pl-6 space-y-5">
-          <h3 className="font-heading font-bold text-sm text-text-primary uppercase tracking-wider">
+      <aside className="hidden lg:block w-64 shrink-0 sticky top-20 self-start max-h-[calc(100vh-6rem)] overflow-y-auto pr-2 font-sans">
+        <div className="border-l border-border pl-5 space-y-4">
+          <h3 className="font-heading font-bold text-xs text-text-primary uppercase tracking-wider">
             On this page
           </h3>
-          <nav className="flex flex-col space-y-3">
+          <nav className="flex flex-col space-y-2">
             {headings.map((heading) => (
               <a
                 key={heading.id}
                 href={`#${heading.id}`}
                 onClick={(e) => handleScrollTo(e, heading.id)}
-                className={`text-sm font-medium transition-all duration-200 flex items-center gap-2 group py-0.5 ${activeId === heading.id
+                className={`text-xs font-medium transition-all duration-200 flex items-center gap-2 group py-0.5 ${activeId === heading.id
                   ? "text-primary pl-1 font-semibold"
                   : "text-text-secondary hover:text-text-primary"
                   }`}
               >
                 <ChevronRight
-                  className={`w-3.5 h-3.5 text-primary shrink-0 transition-all duration-200 ${activeId === heading.id ? "opacity-100 translate-x-0" : "opacity-0 -translate-x-1"
+                  className={`w-3 h-3 text-primary shrink-0 transition-all duration-200 ${activeId === heading.id ? "opacity-100 translate-x-0" : "opacity-0 -translate-x-1"
                     }`}
                 />
                 <span className="truncate">{heading.text}</span>
