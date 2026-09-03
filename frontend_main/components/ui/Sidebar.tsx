@@ -12,7 +12,7 @@ export interface SidebarProps {
   onClose?: () => void;
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({ isOpen = false, onClose = () => {} }) => {
+export const Sidebar: React.FC<SidebarProps> = ({ isOpen = false, onClose = () => { } }) => {
   const pathname = usePathname();
   const { signOut } = useClerk();
 
@@ -41,13 +41,12 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen = false, onClose = () =
 
       {/* Sidebar Navigation */}
       <aside
-        className={`bg-surface border-r border-border flex flex-col h-screen fixed md:sticky top-0 left-0 z-50 md:z-10 transition-transform duration-300 md:translate-x-0 w-64 shrink-0 ${
-          isOpen ? "translate-x-0 shadow-2xl" : "-translate-x-full md:translate-x-0"
-        }`}
+        className={`bg-surface border-r border-border flex flex-col h-screen fixed md:sticky top-0 left-0 z-50 md:z-10 transition-transform duration-300 md:translate-x-0 w-64 shrink-0 ${isOpen ? "translate-x-0 shadow-2xl" : "-translate-x-full md:translate-x-0"
+          }`}
       >
         {/* Brand Header */}
         <div className="h-16 flex items-center justify-between px-6 border-b border-border">
-          <Link href="/dashboard" className="flex items-center gap-2.5" onClick={onClose}>
+          <Link href="/" className="flex items-center gap-2.5" onClick={onClose}>
             <img src="/assets/logo.png" alt="ShopAgent Logo" className="w-8 h-8 object-contain" />
             <span className="font-heading font-bold text-lg text-text-primary">
               ShopAgent
@@ -77,11 +76,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen = false, onClose = () =
                 key={item.href}
                 href={item.href}
                 onClick={onClose}
-                className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
-                  isActive
+                className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${isActive
                     ? "bg-primary-light text-primary font-semibold"
                     : "text-text-secondary hover:text-text-primary hover:bg-background"
-                }`}
+                  }`}
               >
                 <Icon className="w-5 h-5 shrink-0" />
                 <span>{item.label}</span>

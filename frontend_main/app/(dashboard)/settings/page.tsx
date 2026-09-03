@@ -11,6 +11,10 @@ import {
   fetchMerchantSettings,
   updateMerchantSettings,
 } from "@/lib/api/settings";
+import {
+  ReusableSkeleton,
+  SettingsPageSkeleton,
+} from "@/components/ui/Skeleton";
 
 export default function SettingsPage() {
   // Initial database values for dirty checking
@@ -143,17 +147,9 @@ export default function SettingsPage() {
     toggles.smartUpsell !== initialSettings.toggles.smartUpsell
   ) : false;
 
-  if (isLoading) {
-    return (
-      <div className="flex flex-col items-center justify-center min-h-[400px] gap-3">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
-        <p className="text-sm text-text-secondary">Loading agent settings...</p>
-      </div>
-    );
-  }
-
   return (
-    <div className="space-y-8 max-w-4xl mx-auto py-4">
+    <ReusableSkeleton name="settings-page" loading={isLoading} fallback={<SettingsPageSkeleton />}>
+      <div className="space-y-8 max-w-4xl mx-auto py-4">
       {/* Title Header */}
       <div>
         <h1 className="font-heading text-2xl font-bold text-text-primary">
@@ -368,5 +364,6 @@ export default function SettingsPage() {
         </div>
       </form>
     </div>
+    </ReusableSkeleton>
   );
 }

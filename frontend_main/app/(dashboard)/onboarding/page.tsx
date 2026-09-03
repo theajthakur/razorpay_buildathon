@@ -43,6 +43,7 @@ import {
 } from "@/lib/api/onboarding";
 import { getPresignedLogoUrl, uploadFileToS3 } from "@/lib/api/settings";
 import { ImageCropperModal } from "@/components/shared/ImageCropperModal";
+import { ReusableSkeleton, OnboardingPageSkeleton } from "@/components/ui/Skeleton";
 import {
   EndpointFieldMapping,
   DynamicFieldMappings,
@@ -863,19 +864,9 @@ export default function OnboardingPage() {
   const isBankSetupValid = bankAccount.trim().length >= 8 && bankVerified;
   const isSetupComplete = isSavedToDb && allEndpointsSuccess && isBankSetupValid;
 
-  if (pageLoading) {
-    return (
-      <div className="min-h-[60vh] flex flex-col items-center justify-center gap-4">
-        <Loader2 className="w-10 h-10 text-primary animate-spin" />
-        <p className="text-sm font-semibold text-text-secondary animate-pulse">
-          Loading Onboarding Profile...
-        </p>
-      </div>
-    );
-  }
-
   return (
-    <div className="space-y-8 max-w-4xl mx-auto py-4 px-4 sm:px-6 font-sans">
+    <ReusableSkeleton name="onboarding-page" loading={pageLoading} fallback={<OnboardingPageSkeleton />}>
+      <div className="space-y-8 max-w-4xl mx-auto py-4 px-4 sm:px-6 font-sans">
       <input
         type="file"
         ref={logoInputRef}
@@ -2584,5 +2575,6 @@ export default function OnboardingPage() {
         </div>
       )}
     </div>
+    </ReusableSkeleton>
   );
 }

@@ -1,199 +1,237 @@
-import React from "react";
+"use client";
+
+import React, { useState, useEffect } from "react";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/button";
-import { ShoppingBag, MessageSquare, IndianRupee, ArrowUpRight, TrendingUp } from "lucide-react";
+import {
+  ShoppingBag,
+  MessageSquare,
+  IndianRupee,
+  ArrowUpRight,
+  TrendingUp,
+  RefreshCw,
+  Activity
+} from "lucide-react";
+import {
+  getAnalyticsSummary,
+  getRecentActivity,
+  AnalyticsSummary,
+  ActivityItem
+} from "@/lib/api/analytics";
+import {
+  ReusableSkeleton,
+  MetricCardSkeleton,
+  ActivityFeedSkeleton
+} from "@/components/ui/Skeleton";
 
 export default function DashboardPage() {
-  const activities = [
-    {
-      id: 1,
-      type: "order",
-      title: "Order #1024 placed via Agent",
-      time: "12 mins ago",
-      amount: "₹1,499.00",
-      customer: "Amit Sharma",
-    },
-    {
-      id: 2,
-      type: "chat",
-      title: "New chat session started",
-      time: "25 mins ago",
-      amount: null,
-      customer: "Preeti Patel",
-    },
-    {
-      id: 3,
-      type: "order",
-      title: "Order #1023 placed via Agent",
-      time: "1 hour ago",
-      amount: "₹4,290.00",
-      customer: "Rajesh Kumar",
-    },
-    {
-      id: 4,
-      type: "sync",
-      title: "Catalog catalog sync complete",
-      time: "4 hours ago",
-      amount: null,
-      customer: "System",
-    },
-  ];
+  const [summary, setSummary] = useState<AnalyticsSummary | null>(null);
+  const [activities, setActivities] = useState<ActivityItem[]>([]);
+  const [summaryLoading, setSummaryLoading] = useState<boolean>(true);
+  const [activityLoading, setActivityLoading] = useState<boolean>(true);
+
+  // Independent fetch function for Analytics Summary
+  const fetchSummary = async () => {
+    setSummaryLoading(true);
+    try {
+      const data = await getAnalyticsSummary();
+      setSummary(data);
+    } catch (err) {
+      console.error("Failed to fetch analytics summary:", err);
+    } finally {
+      setSummaryLoading(false);
+    }
+  };
+
+  // Independent fetch function for Recent Activity Feed
+  const fetchActivity = async () => {
+    setActivityLoading(true);
+    try {
+      const data = await getRecentActivity();
+      setActivities(data.activities || []);
+    } catch (err) {
+      console.error("Failed to fetch recent activity:", err);
+    } finally {
+      setActivityLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    // Both endpoints are dispatched independently
+    fetchSummary();
+    fetchActivity();
+  }, []);
 
   return (
-    <div className="space-y-8">
-      {/* Title Header */}
+    <div className="space-y-8 font-sans">
+      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="font-heading text-2xl font-bold text-text-primary">
             Store Performance Overview
           </h1>
-          <p className="text-sm text-text-secondary mt-1">
+          <p className="text-xs text-text-secondary mt-1">
             Track metrics and sales driven by your AI shopping assistants.
           </p>
         </div>
-        <Button variant="primary" className="self-start sm:self-auto gap-2 shadow-xs">
-          <span>Sync Catalog Now</span>
-          <ArrowUpRight className="w-4 h-4" />
-        </Button>
+        <div className="flex items-center gap-3">
+          <Button
+            variant="ghost"
+            onClick={() => {
+              fetchSummary();
+              fetchActivity();
+            }}
+            className="gap-2 text-xs border border-border bg-surface"
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+            <span>Refresh</span>
+          </Button>
+        </div>
       </div>
 
-      {/* Grid of Metric Cards */}
+      {/* Grid of Summary Metric Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-        {/* Metric 1 */}
-        <Card>
-          <div className="flex items-center justify-between">
-            <span className="text-sm font-semibold text-text-secondary">
-              Revenue via Agent
-            </span>
-            <div className="p-2 rounded-lg bg-primary-light text-primary">
-              <IndianRupee className="w-5 h-5" />
+        {/* Metric 1: Revenue via Agent */}
+        <ReusableSkeleton
+          name="revenue-card"
+          loading={summaryLoading}
+          fallback={<MetricCardSkeleton />}
+        >
+          <Card className="h-full flex flex-col justify-between">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-text-secondary">
+                Revenue via Agent
+              </span>
+              <div className="p-2 rounded-xl bg-primary/10 text-primary">
+                <IndianRupee className="w-5 h-5" />
+              </div>
             </div>
-          </div>
-          <div className="mt-4">
-            <h3 className="font-heading text-3xl font-bold text-text-primary">
-              ₹45,290.00
-            </h3>
-            <p className="text-xs text-success font-semibold flex items-center gap-1 mt-1">
-              <TrendingUp className="w-3.5 h-3.5" />
-              <span>+14.2% since yesterday</span>
-            </p>
-          </div>
-        </Card>
+            <div className="mt-4">
+              <h3 className="font-heading text-3xl font-bold text-text-primary">
+                {summary?.revenue?.total ?? "₹0.00"}
+              </h3>
+              <p className="text-xs text-success font-semibold flex items-center gap-1 mt-1">
+                <TrendingUp className="w-3.5 h-3.5" />
+                <span>{summary?.revenue?.relative_yesterday ?? "+0.0%"} vs yesterday</span>
+              </p>
+            </div>
+          </Card>
+        </ReusableSkeleton>
 
-        {/* Metric 2 */}
-        <Card>
-          <div className="flex items-center justify-between">
-            <span className="text-sm font-semibold text-text-secondary">
-              Total Agent Orders
-            </span>
-            <div className="p-2 rounded-lg bg-primary-light text-primary">
-              <ShoppingBag className="w-5 h-5" />
+        {/* Metric 2: Total Agent Orders */}
+        <ReusableSkeleton
+          name="orders-card"
+          loading={summaryLoading}
+          fallback={<MetricCardSkeleton />}
+        >
+          <Card className="h-full flex flex-col justify-between">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-text-secondary">
+                Total Agent Orders
+              </span>
+              <div className="p-2 rounded-xl bg-primary/10 text-primary">
+                <ShoppingBag className="w-5 h-5" />
+              </div>
             </div>
-          </div>
-          <div className="mt-4">
-            <h3 className="font-heading text-3xl font-bold text-text-primary">
-              28 orders
-            </h3>
-            <p className="text-xs text-text-secondary flex items-center gap-1 mt-1">
-              <span>Avg. Cart: ₹1,617.50</span>
-            </p>
-          </div>
-        </Card>
+            <div className="mt-4">
+              <h3 className="font-heading text-3xl font-bold text-text-primary">
+                {summary?.orders?.total_count ?? "0"} orders
+              </h3>
+              <p className="text-xs text-text-secondary flex items-center gap-1 mt-1 font-medium">
+                <span>Avg. Cart: ₹{summary?.orders?.average_cart_value ?? "0"}</span>
+              </p>
+            </div>
+          </Card>
+        </ReusableSkeleton>
 
-        {/* Metric 3 */}
-        <Card className="sm:col-span-2 lg:col-span-1">
-          <div className="flex items-center justify-between">
-            <span className="text-sm font-semibold text-text-secondary">
-              Active Conversations
-            </span>
-            <div className="p-2 rounded-lg bg-primary-light text-primary">
-              <MessageSquare className="w-5 h-5" />
+        {/* Metric 3: Active Conversations */}
+        <ReusableSkeleton
+          name="conversations-card"
+          loading={summaryLoading}
+          fallback={<MetricCardSkeleton />}
+        >
+          <Card className="sm:col-span-2 lg:col-span-1 h-full flex flex-col justify-between">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold text-text-secondary">
+                Total Conversations
+              </span>
+              <div className="p-2 rounded-xl bg-primary/10 text-primary">
+                <MessageSquare className="w-5 h-5" />
+              </div>
             </div>
-          </div>
-          <div className="mt-4">
-            <h3 className="font-heading text-3xl font-bold text-text-primary">
-              6 shoppers
-            </h3>
-            <p className="text-xs text-success font-semibold flex items-center gap-1 mt-1 font-mono">
-              <span className="w-2 h-2 rounded-full bg-success animate-pulse inline-block mr-1" />
-              <span>Agents responding live</span>
-            </p>
-          </div>
-        </Card>
+            <div className="mt-4">
+              <h3 className="font-heading text-3xl font-bold text-text-primary">
+                {summary?.conversations?.total ?? "0"}
+              </h3>
+              <p className="text-xs text-text-secondary flex items-center gap-1 mt-1 font-medium">
+                <span>Avg. per user: {summary?.conversations?.average_per_user ?? "0"} chats</span>
+              </p>
+            </div>
+          </Card>
+        </ReusableSkeleton>
       </div>
 
-      {/* Recent Activity List */}
-      <Card
-        title="Recent Activity Feed"
-        description="Real-time log of purchases, chats, and automated system synchronization."
-        action={<Button variant="ghost" className="text-sm">View Archive</Button>}
+      {/* Recent Activity Feed */}
+      <ReusableSkeleton
+        name="activity-feed"
+        loading={activityLoading}
+        fallback={<ActivityFeedSkeleton />}
       >
-        <div className="divide-y divide-border">
-          {activities.map((act) => (
-            <div
-              key={act.id}
-              className="py-4 first:pt-0 last:pb-0 flex items-center justify-between gap-4"
-            >
-              <div className="flex items-center gap-4">
-                <div className={`p-2 rounded-lg shrink-0 ${
-                  act.type === "order"
-                    ? "bg-success/10 text-success"
-                    : act.type === "chat"
-                    ? "bg-primary-light text-primary"
-                    : "bg-secondary/5 text-text-secondary"
-                }`}>
-                  {act.type === "order" ? (
-                    <ShoppingBag className="w-4 h-4" />
-                  ) : act.type === "chat" ? (
-                    <MessageSquare className="w-4 h-4" />
-                  ) : (
-                    <Settings2Icon className="w-4 h-4" />
+        <Card
+          title="Recent Activity Feed"
+          description="Real-time log of purchases, chats, and automated system synchronization."
+        >
+          {activities.length > 0 ? (
+            <div className="divide-y divide-border">
+              {activities.map((act) => (
+                <div
+                  key={act.id}
+                  className="py-4 first:pt-0 last:pb-0 flex items-center justify-between gap-4"
+                >
+                  <div className="flex items-center gap-4">
+                    <div
+                      className={`p-2.5 rounded-xl shrink-0 ${act.type === "order"
+                          ? "bg-success/10 text-success"
+                          : act.type === "chat"
+                            ? "bg-primary/10 text-primary"
+                            : "bg-surface border border-border text-text-secondary"
+                        }`}
+                    >
+                      {act.type === "order" ? (
+                        <ShoppingBag className="w-4 h-4" />
+                      ) : act.type === "chat" ? (
+                        <MessageSquare className="w-4 h-4" />
+                      ) : (
+                        <Activity className="w-4 h-4" />
+                      )}
+                    </div>
+                    <div>
+                      <p className="text-xs sm:text-sm font-bold text-text-primary font-heading">
+                        {act.title}
+                      </p>
+                      <p className="text-xs text-text-secondary mt-0.5 font-sans">
+                        {act.subtitle}
+                      </p>
+                    </div>
+                  </div>
+
+                  {act.amount && (
+                    <div className="text-right shrink-0">
+                      <span className="text-xs sm:text-sm font-bold text-text-primary font-mono">
+                        {act.amount}
+                      </span>
+                    </div>
                   )}
                 </div>
-                <div>
-                  <p className="text-sm font-semibold text-text-primary">
-                    {act.title}
-                  </p>
-                  <p className="text-xs text-text-secondary mt-0.5">
-                    Customer: <span className="font-medium text-text-primary">{act.customer}</span> &bull; {act.time}
-                  </p>
-                </div>
-              </div>
-
-              {act.amount && (
-                <div className="text-right">
-                  <span className="text-sm font-bold text-text-primary font-mono">
-                    {act.amount}
-                  </span>
-                </div>
-              )}
+              ))}
             </div>
-          ))}
-        </div>
-      </Card>
+          ) : (
+            <div className="py-8 text-center text-xs text-text-secondary border border-dashed border-border rounded-xl bg-surface/50">
+              No recent activity recorded yet. Activity will stream here live as customers interact with your agent.
+            </div>
+          )}
+        </Card>
+      </ReusableSkeleton>
     </div>
-  );
-}
-
-// Simple local fallback for lucide icon
-function Settings2Icon(props: React.SVGProps<SVGSVGElement>) {
-  return (
-    <svg
-      {...props}
-      xmlns="http://www.w3.org/2000/svg"
-      width="24"
-      height="24"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <path d="M20 7h-9" />
-      <path d="M14 17H5" />
-      <circle cx="17" cy="12" r="3" />
-      <circle cx="7" cy="12" r="3" />
-    </svg>
   );
 }
