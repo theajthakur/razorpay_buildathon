@@ -4,8 +4,6 @@ import React from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
-import { StepItem } from "@/components/ui/StepItem";
-import { FeatureItem } from "@/components/ui/FeatureItem";
 import { ChatDemo } from "@/components/ui/ChatDemo";
 import { staggerContainer, fadeUpVariant, scaleInVariant } from "@/lib/motion";
 import { useAuth } from "@clerk/nextjs";
@@ -19,25 +17,19 @@ import {
   PackageSearch,
   Globe,
   SlidersHorizontal,
+  Zap,
+  CheckCircle2,
+  BookOpen
 } from "lucide-react";
 
 export default function MarketingLandingPage() {
   const { isSignedIn } = useAuth();
+
   return (
-    <main className="flex-1">
-      {/* 1. Hero Section with Backdrop Image */}
-      <section className="relative overflow-hidden min-h-0 md:min-h-[calc(100vh-4rem)] flex items-center justify-center py-12 md:py-20 px-6 md:px-12 border-b border-border bg-background">
-        {/* Responsive Backdrop Image */}
-        <img
-          src="/assets/hero_backdrop.png"
-          alt="Hero Backdrop decoration"
-          className="absolute inset-0 w-full h-full object-cover pointer-events-none z-0 opacity-35 select-none"
-          style={{ objectPosition: "right bottom" }}
-        />
-
-        {/* Subtle grid background pattern with radial fade */}
-        <div className="absolute inset-0 bg-grid bg-grid-fade pointer-events-none z-0" />
-
+    <main className="flex-1 font-sans text-text-primary bg-background">
+      
+      {/* 1. Hero Section */}
+      <section className="relative overflow-hidden py-16 md:py-24 px-6 md:px-12 border-b border-border bg-background">
         <motion.div
           initial="hidden"
           whileInView="visible"
@@ -45,132 +37,123 @@ export default function MarketingLandingPage() {
           variants={staggerContainer}
           className="max-w-4xl mx-auto text-center space-y-6 relative z-10"
         >
+          {/* Powered by Razorpay Badge */}
+          <motion.div variants={fadeUpVariant} className="flex justify-center">
+            <div className="inline-flex items-center gap-2.5 px-3.5 py-1.5 rounded-full bg-surface border border-border text-xs text-text-secondary font-medium shadow-2xs">
+              <span>Powered by</span>
+              <img
+                src="/assets/razorpay_logo.png"
+                alt="Razorpay"
+                className="h-4.5 w-auto object-contain"
+              />
+            </div>
+          </motion.div>
+
+          {/* Main Headline */}
           <motion.h1
             variants={fadeUpVariant}
-            className="font-heading text-4xl md:text-5xl lg:text-6xl font-bold tracking-tight text-text-primary max-w-3xl mx-auto leading-tight"
+            className="font-heading text-4xl sm:text-5xl lg:text-6xl font-semibold tracking-tight text-text-primary max-w-4xl mx-auto leading-[1.15]"
           >
-            Your AI shopping agent, <br />
-            live in minutes.
+            Transform your online store with conversational AI shopping agents
           </motion.h1>
+
+          {/* Subtitle Description */}
           <motion.p
             variants={fadeUpVariant}
-            className="text-lg md:text-xl text-text-secondary max-w-2xl mx-auto font-sans leading-relaxed"
+            className="text-base sm:text-lg text-text-secondary max-w-2xl mx-auto font-sans leading-relaxed"
           >
-            Link your store database and settlement details to deploy conversational checkout assistants that interact, sell, and payout directly to you.
+            Connect your existing product catalog, saved addresses, and checkout endpoints. Deploy an intelligent shopping assistant that guides buyers and drives real sales.
           </motion.p>
-          <motion.div variants={fadeUpVariant} className="pt-4">
+
+          {/* CTA Buttons */}
+          <motion.div variants={fadeUpVariant} className="pt-2 flex flex-col sm:flex-row items-center justify-center gap-3">
             <Link href={isSignedIn ? "/dashboard" : "/signup"}>
               <Button
                 variant="primary"
                 size="lg"
-                className="shadow-sm gap-2 hover:translate-y-[-1px] transition-transform duration-200"
+                className="shadow-xs gap-2 px-6 py-3 text-sm font-semibold hover:translate-y-[-1px] transition-transform duration-200"
               >
-                <span>{isSignedIn ? "Go to Dashboard" : "Get Started"}</span>
-                <ArrowRight className="w-5 h-5" />
+                <span>{isSignedIn ? "Go to Dashboard" : "Get Started Free"}</span>
+                <ArrowRight className="w-4 h-4" />
+              </Button>
+            </Link>
+
+            <Link href="/documentation">
+              <Button
+                variant="ghost"
+                size="lg"
+                className="gap-2 px-6 py-3 text-sm font-semibold border border-border bg-surface hover:bg-background text-text-primary transition-colors"
+              >
+                <BookOpen className="w-4 h-4 text-primary" />
+                <span>View Documentation</span>
               </Button>
             </Link>
           </motion.div>
-        </motion.div>
-      </section>
 
-      {/* 2. How it works Section */}
-      <section
-        id="how-it-works"
-        className="relative z-20 py-20 md:py-28 border-b border-border bg-surface px-6 md:px-12"
-      >
-        {/* Subtle grid background pattern */}
-        <div className="absolute inset-0 bg-grid pointer-events-none z-0" />
-
-        <motion.div
-          initial="hidden"
-          whileInView="visible"
-          viewport={{ once: true, margin: "-100px" }}
-          variants={staggerContainer}
-          className="max-w-5xl mx-auto space-y-16 relative z-10"
-        >
-          <motion.div variants={fadeUpVariant} className="text-center md:text-left">
-            <h2 className="font-heading text-2xl md:text-3xl font-bold text-text-primary">
-              Minimal Integration. Maximum Control.
-            </h2>
-            <p className="text-base text-text-secondary mt-2 max-w-xl">
-              Setting up your merchant store profile and deploying checkout helpers is three simple steps.
-            </p>
-          </motion.div>
-
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-10 md:gap-14">
-            <StepItem
-              number="01"
-              label="Connect your APIs"
-              description="Provide your products, orders, customers, and auth endpoints in a single onboarding dashboard."
-              icon={Plug}
-            />
-            <StepItem
-              number="02"
-              label="Grant access"
-              description="Provide bank settlement details to receive checkout balances. No payment keys are shared."
-              icon={ShieldCheck}
-            />
-            <StepItem
-              number="03"
-              label="Go live"
-              description="Deploy your custom AI widget instantly on your brand subdomain to greet shoppers."
-              icon={Rocket}
-            />
-          </div>
-
-          {/* Monospace Subdomain Emphasized Line */}
+          {/* Key Highlights */}
           <motion.div
-            variants={scaleInVariant}
-            className="pt-10 border-t border-border/80 text-center"
+            variants={fadeUpVariant}
+            className="pt-6 flex flex-wrap items-center justify-center gap-6 text-xs text-text-secondary font-medium"
           >
-            <p className="text-base md:text-lg text-primary font-semibold">
-              Your assistant is deployed instantly at{" "}
-              <span className="font-mono bg-primary-light px-3 py-1.5 rounded-lg text-primary border border-primary/10">
-                agent.yourstore.com
-              </span>
-            </p>
+            <div className="flex items-center gap-1.5">
+              <CheckCircle2 className="w-4 h-4 text-success shrink-0" />
+              <span>5-Minute Setup</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <CheckCircle2 className="w-4 h-4 text-success shrink-0" />
+              <span>Zero Database Rewrites</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <CheckCircle2 className="w-4 h-4 text-success shrink-0" />
+              <span>Direct Bank Payouts</span>
+            </div>
           </motion.div>
         </motion.div>
       </section>
 
-      {/* 3. Live Demo Section */}
-      <section className="relative z-20 bg-background border-b border-border py-20 md:py-28 px-6 md:px-12">
-        {/* Subtle grid background pattern with radial fade */}
-        <div className="absolute inset-0 bg-grid bg-grid-fade pointer-events-none z-0" />
-
-        <div className="max-w-5xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-12 items-center relative z-10">
+      {/* 2. Interactive Live Demo Showcase */}
+      <section className="py-20 md:py-28 border-b border-border bg-surface px-6 md:px-12">
+        <div className="max-w-5xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
           {/* Pitch content on left */}
           <motion.div
             initial="hidden"
             whileInView="visible"
             viewport={{ once: true, margin: "-100px" }}
             variants={staggerContainer}
-            className="lg:col-span-7 space-y-6 text-left"
+            className="lg:col-span-6 space-y-6 text-left"
           >
-            <motion.h2
-              variants={fadeUpVariant}
-              className="font-heading text-3xl md:text-4xl font-bold tracking-tight text-text-primary leading-tight"
-            >
-              Observe the checkout assistant in real-time.
-            </motion.h2>
-            <motion.p
-              variants={fadeUpVariant}
-              className="text-base text-text-secondary leading-relaxed font-sans"
-            >
-              Shoppers query stock catalogs, confirm product selections, and trigger automated secure payment requests within the conversational thread.
-            </motion.p>
-            <motion.div variants={fadeUpVariant} className="space-y-4">
-              <div className="flex items-start gap-3">
-                <span className="text-success font-bold text-base mt-0.5">&bull;</span>
-                <p className="text-sm text-text-secondary">
-                  <strong>Natural Catalog Queries</strong>: Recommends velocity products based on user price boundaries.
-                </p>
+            <motion.div variants={fadeUpVariant} className="space-y-3">
+              <h2 className="font-heading text-2xl sm:text-3xl lg:text-4xl font-bold tracking-tight text-text-primary leading-tight">
+                See the AI agent in action
+              </h2>
+              <p className="text-sm sm:text-base text-text-secondary leading-relaxed font-sans">
+                Experience how shoppers search product catalogs, confirm selections, and complete secure payments within the conversation thread.
+              </p>
+            </motion.div>
+
+            <motion.div variants={fadeUpVariant} className="space-y-4 pt-2">
+              <div className="p-4 rounded-xl border border-border bg-background flex items-start gap-3.5">
+                <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary shrink-0 mt-0.5">
+                  <Zap className="w-4 h-4" />
+                </div>
+                <div>
+                  <h4 className="text-sm font-semibold text-text-primary">Natural Catalog Queries</h4>
+                  <p className="text-xs text-text-secondary leading-relaxed mt-0.5">
+                    Recommends relevant products based on price, category, and customer search terms.
+                  </p>
+                </div>
               </div>
-              <div className="flex items-start gap-3">
-                <span className="text-success font-bold text-base mt-0.5">&bull;</span>
-                <p className="text-sm text-text-secondary">
-                  <strong>Conversational Payment Links</strong>: Generates dynamic checkout requests settled directly to your merchant account.
-                </p>
+
+              <div className="p-4 rounded-xl border border-border bg-background flex items-start gap-3.5">
+                <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center text-primary shrink-0 mt-0.5">
+                  <CreditCard className="w-4 h-4" />
+                </div>
+                <div>
+                  <h4 className="text-sm font-semibold text-text-primary">In-Chat Payment Capture</h4>
+                  <p className="text-xs text-text-secondary leading-relaxed mt-0.5">
+                    Triggers Razorpay payment requests settled directly to your merchant account.
+                  </p>
+                </div>
               </div>
             </motion.div>
           </motion.div>
@@ -181,92 +164,191 @@ export default function MarketingLandingPage() {
             whileInView={{ opacity: 1, scale: 1 }}
             viewport={{ once: true, margin: "-100px" }}
             transition={{ duration: 0.45 }}
-            className="lg:col-span-5 flex justify-center"
+            className="lg:col-span-6 flex justify-center"
           >
             <ChatDemo />
           </motion.div>
         </div>
       </section>
 
-      {/* 4. Features Section */}
-      <section
-        id="features"
-        className="relative z-20 py-20 md:py-28 border-b border-border bg-surface px-6 md:px-12"
-      >
-        {/* Subtle grid background pattern */}
-        <div className="absolute inset-0 bg-grid pointer-events-none z-0" />
-
+      {/* 3. How it Works Section */}
+      <section id="how-it-works" className="py-20 md:py-28 border-b border-border bg-background px-6 md:px-12">
         <motion.div
           initial="hidden"
           whileInView="visible"
           viewport={{ once: true, margin: "-100px" }}
           variants={staggerContainer}
-          className="max-w-5xl mx-auto space-y-16 relative z-10"
+          className="max-w-5xl mx-auto space-y-14"
         >
-          <motion.div variants={fadeUpVariant} className="text-center md:text-left">
-            <h2 className="font-heading text-2xl md:text-3xl font-bold text-text-primary">
-              Built for Enterprise Security
+          <motion.div variants={fadeUpVariant} className="text-center max-w-xl mx-auto space-y-2">
+            <h2 className="font-heading text-2xl sm:text-3xl font-bold text-text-primary">
+              Three Simple Steps to Launch
             </h2>
-            <p className="text-base text-text-secondary mt-2 max-w-xl">
-              A robust merchant checkout architecture that isolates customer sessions from data leakages.
+            <p className="text-sm text-text-secondary leading-relaxed font-sans">
+              Connect your existing APIs and deploy your custom AI assistant without rewriting your database.
             </p>
           </motion.div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10 md:gap-14">
-            <FeatureItem
-              icon={Code2}
-              title="No-Code Setup"
-              description="Sync your store endpoints and verify credentials in seconds. Launch without writing a single line of backend glue."
-            />
-            <FeatureItem
-              icon={ShieldCheck}
-              title="Secure Auth Delegation"
-              description="Customers authenticate with their existing native credentials. We never store customer passwords or tokens."
-            />
-            <FeatureItem
-              icon={CreditCard}
-              title="Direct Payout Settlements"
-              description="Funds transfer directly into your verified bank account balance. Secret merchant keys are never exposed."
-            />
-            <FeatureItem
-              icon={PackageSearch}
-              title="Automated Order Tracking"
-              description="Includes built-in modules checking shipment status, order history, and confirmation updates directly."
-            />
-            <FeatureItem
-              icon={Globe}
-              title="Subdomain Branding"
-              description="Fully customize assistant widget names, primary accent colors, and brand avatar logos on your own subdomains."
-            />
-            <FeatureItem
-              icon={SlidersHorizontal}
-              title="Transaction Threshold Controls"
-              description="Establish manual approval thresholds in settings to monitor payment links exceeding custom boundaries."
-            />
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+            {/* Step 1 */}
+            <motion.div
+              variants={fadeUpVariant}
+              className="p-6 rounded-2xl border border-border bg-surface space-y-4 hover:border-primary/40 transition-colors"
+            >
+              <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary shrink-0">
+                <Plug className="w-5 h-5" />
+              </div>
+              <div className="space-y-1.5">
+                <h3 className="font-heading text-base font-bold text-text-primary">
+                  1. Connect Store APIs
+                </h3>
+                <p className="text-xs text-text-secondary leading-relaxed">
+                  Map your product search, customer login, delivery addresses, and checkout routes in our setup guide.
+                </p>
+              </div>
+            </motion.div>
+
+            {/* Step 2 */}
+            <motion.div
+              variants={fadeUpVariant}
+              className="p-6 rounded-2xl border border-border bg-surface space-y-4 hover:border-primary/40 transition-colors"
+            >
+              <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary shrink-0">
+                <ShieldCheck className="w-5 h-5" />
+              </div>
+              <div className="space-y-1.5">
+                <h3 className="font-heading text-base font-bold text-text-primary">
+                  2. Set Payout Details
+                </h3>
+                <p className="text-xs text-text-secondary leading-relaxed">
+                  Provide your settlement bank account and webhook endpoint to receive real-time payment notifications.
+                </p>
+              </div>
+            </motion.div>
+
+            {/* Step 3 */}
+            <motion.div
+              variants={fadeUpVariant}
+              className="p-6 rounded-2xl border border-border bg-surface space-y-4 hover:border-primary/40 transition-colors"
+            >
+              <div className="w-10 h-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary shrink-0">
+                <Rocket className="w-5 h-5" />
+              </div>
+              <div className="space-y-1.5">
+                <h3 className="font-heading text-base font-bold text-text-primary">
+                  3. Deploy & Convert
+                </h3>
+                <p className="text-xs text-text-secondary leading-relaxed">
+                  Launch your custom AI widget on your storefront or assigned domain to greet visitors and complete sales.
+                </p>
+              </div>
+            </motion.div>
+          </div>
+        </motion.div>
+      </section>
+
+      {/* 4. Key Features Grid */}
+      <section id="features" className="py-20 md:py-28 border-b border-border bg-surface px-6 md:px-12">
+        <motion.div
+          initial="hidden"
+          whileInView="visible"
+          viewport={{ once: true, margin: "-100px" }}
+          variants={staggerContainer}
+          className="max-w-5xl mx-auto space-y-14"
+        >
+          <motion.div variants={fadeUpVariant} className="text-center max-w-xl mx-auto space-y-2">
+            <h2 className="font-heading text-2xl sm:text-3xl font-bold text-text-primary">
+              Built for Security, Speed & Control
+            </h2>
+            <p className="text-sm text-text-secondary leading-relaxed font-sans">
+              Isolate customer sessions, protect merchant API keys, and streamline catalog queries.
+            </p>
+          </motion.div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <motion.div variants={fadeUpVariant} className="p-5 rounded-2xl border border-border bg-background space-y-3">
+              <div className="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
+                <Code2 className="w-4 h-4" />
+              </div>
+              <h3 className="text-sm font-bold text-text-primary font-heading">No-Code Endpoint Integration</h3>
+              <p className="text-xs text-text-secondary leading-relaxed">
+                Connect existing HTTPS APIs effortlessly without database migrations or code rewrites.
+              </p>
+            </motion.div>
+
+            <motion.div variants={fadeUpVariant} className="p-5 rounded-2xl border border-border bg-background space-y-3">
+              <div className="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
+                <ShieldCheck className="w-4 h-4" />
+              </div>
+              <h3 className="text-sm font-bold text-text-primary font-heading">Secure Auth Delegation</h3>
+              <p className="text-xs text-text-secondary leading-relaxed">
+                Authenticate users securely using your native login endpoints without exposing passwords.
+              </p>
+            </motion.div>
+
+            <motion.div variants={fadeUpVariant} className="p-5 rounded-2xl border border-border bg-background space-y-3">
+              <div className="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
+                <CreditCard className="w-4 h-4" />
+              </div>
+              <h3 className="text-sm font-bold text-text-primary font-heading">Direct Payout Settlements</h3>
+              <p className="text-xs text-text-secondary leading-relaxed">
+                Receive payment proceeds directly into your verified bank account balance upon transaction capture.
+              </p>
+            </motion.div>
+
+            <motion.div variants={fadeUpVariant} className="p-5 rounded-2xl border border-border bg-background space-y-3">
+              <div className="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
+                <PackageSearch className="w-4 h-4" />
+              </div>
+              <h3 className="text-sm font-bold text-text-primary font-heading">Automated Order Tracking</h3>
+              <p className="text-xs text-text-secondary leading-relaxed">
+                Let customers query order history, shipping updates, and item status directly in conversation.
+              </p>
+            </motion.div>
+
+            <motion.div variants={fadeUpVariant} className="p-5 rounded-2xl border border-border bg-background space-y-3">
+              <div className="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
+                <Globe className="w-4 h-4" />
+              </div>
+              <h3 className="text-sm font-bold text-text-primary font-heading">Subdomain & Brand Customization</h3>
+              <p className="text-xs text-text-secondary leading-relaxed">
+                Personalize widget display names, brand accent colors, and store logos on your assigned subdomains.
+              </p>
+            </motion.div>
+
+            <motion.div variants={fadeUpVariant} className="p-5 rounded-2xl border border-border bg-background space-y-3">
+              <div className="w-8 h-8 rounded-lg bg-primary/10 text-primary flex items-center justify-center">
+                <SlidersHorizontal className="w-4 h-4" />
+              </div>
+              <h3 className="text-sm font-bold text-text-primary font-heading">Server-to-Server Verification</h3>
+              <p className="text-xs text-text-secondary leading-relaxed">
+                Verify every payment transaction using API key authentication before fulfilling orders.
+              </p>
+            </motion.div>
           </div>
         </motion.div>
       </section>
 
       {/* 5. Final CTA Section */}
-      <section className="relative z-20 bg-background py-16 px-6">
+      <section className="py-16 md:py-24 px-6 md:px-12 bg-background">
         <motion.div
           initial="hidden"
           whileInView="visible"
           viewport={{ once: true }}
           variants={scaleInVariant}
-          className="max-w-3xl mx-auto text-center space-y-6 relative overflow-hidden rounded-2xl border border-border bg-gradient-to-br from-surface to-background p-12 md:p-20 shadow-xs z-10"
+          className="max-w-3xl mx-auto text-center space-y-6 rounded-2xl border border-border bg-surface p-10 md:p-16 shadow-xs"
         >
-          <h2 className="font-heading text-3xl font-bold tracking-tight text-text-primary">
+          <h2 className="font-heading text-2xl sm:text-3xl font-bold text-text-primary">
             Ready to launch your AI shopping assistant?
           </h2>
-          <p className="text-base text-text-secondary leading-relaxed font-sans">
-            Create your account today and connect your endpoints to launch your merchant agent.
+          <p className="text-sm sm:text-base text-text-secondary max-w-xl mx-auto leading-relaxed font-sans">
+            Join store owners who connect their APIs and deploy intelligent shopping agents.
           </p>
-          <div className="pt-4">
+          <div className="pt-2 flex justify-center">
             <Link href={isSignedIn ? "/dashboard" : "/signup"}>
-              <Button variant="primary" size="lg" className="shadow-sm gap-2">
-                <span>{isSignedIn ? "Go to Dashboard" : "Get Started Now"}</span>
-                <ArrowRight className="w-5 h-5" />
+              <Button variant="primary" size="lg" className="shadow-xs gap-2 px-6 py-3 text-sm font-semibold">
+                <span>{isSignedIn ? "Go to Dashboard" : "Get Started Free"}</span>
+                <ArrowRight className="w-4 h-4" />
               </Button>
             </Link>
           </div>
