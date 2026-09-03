@@ -1,6 +1,7 @@
 import os
 import sys
 from pathlib import Path
+# pyrefly: ignore [missing-import]
 import pytest
 
 # Set test environment defaults before importing app settings

@@ -3,21 +3,30 @@
 @config "../tailwind.config.ts";
 
 :root {
-  --color-background: #FAFAF9;      /* page background, warm off-white */
-  --color-surface: #FFFFFF;          /* cards, panels */
+  --color-background: #FAFAF9;
+  /* page background, warm off-white */
+  --color-surface: #FFFFFF;
+  /* cards, panels */
   --color-border: #E5E7EB;
 
-  --color-primary: #4338CA;          /* main brand action color */
+  --color-primary: #4338CA;
+  /* main brand action color */
   --color-primary-hover: #3730A3;
-  --color-primary-light: #EEF2FF;    /* tints/backgrounds for primary elements */
+  --color-primary-light: #EEF2FF;
+  /* tints/backgrounds for primary elements */
 
-  --color-secondary: #0F172A;        /* dark slate, used sparingly for contrast blocks */
+  --color-secondary: #0F172A;
+  /* dark slate, used sparingly for contrast blocks */
 
-  --color-accent: #F59E0B;           /* sparing use — highlights, badges, notices */
+  --color-accent: #F59E0B;
+  /* sparing use — highlights, badges, notices */
 
-  --color-text-primary: #111827;     /* main body/heading text — dark, not pure black */
-  --color-text-secondary: #4B5563;   /* muted/secondary text */
-  --color-text-on-primary: #FFFFFF;  /* text on top of primary-colored elements */
+  --color-text-primary: #111827;
+  /* main body/heading text — dark, not pure black */
+  --color-text-secondary: #4B5563;
+  /* muted/secondary text */
+  --color-text-on-primary: #FFFFFF;
+  /* text on top of primary-colored elements */
 
   --color-success: #16A34A;
   --color-warning: #D97706;
@@ -49,7 +58,7 @@
 }
 
 @utility bg-grid {
-  background-image: 
+  background-image:
     linear-gradient(to right, var(--color-border) 1px, transparent 1px),
     linear-gradient(to bottom, var(--color-border) 1px, transparent 1px);
   background-size: 3rem 3rem;
@@ -63,6 +72,7 @@
 @utility no-scrollbar {
   scrollbar-width: none;
   -ms-overflow-style: none;
+
   &::-webkit-scrollbar {
     display: none;
   }
