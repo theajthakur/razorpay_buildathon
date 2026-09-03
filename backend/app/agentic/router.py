@@ -1480,33 +1480,6 @@ async def execute_get_order_history(merchant_id: str, session: dict, db: Session
             order_data["id"] = str(order_data["order_id"])
         orders.append(order_data)
 
-    if not orders:
-        array_key = config.get("array_path") or config.get("response_key", "orders")
-        raw_orders = extract_by_path(json_data, array_key, default=[])
-        if not isinstance(raw_orders, list) and isinstance(json_data, list):
-            raw_orders = json_data
-        if not isinstance(raw_orders, list):
-            raw_orders = []
-        for item in raw_orders:
-            if not isinstance(item, dict):
-                continue
-            try:
-                order_data = {}
-                for field, candidates in ORDER_FIELD_CANDIDATES.items():
-                    try:
-                        order_data[field] = _pick(item, candidates, field)
-                    except KeyError:
-                        if field == "items":
-                            order_data[field] = []
-                        elif field == "total":
-                            order_data[field] = 0.0
-                        else:
-                            order_data[field] = "N/A" if field != "order_id" else f"ord_{len(orders)+1}"
-                orders.append(order_data)
-            except Exception as e:
-                agent_logger.debug(f"Skipping malformed order item: {e}")
-                continue
-
     agent_logger.info(f"Order history fetched: merchant={merchant_id}, count={len(orders)}")
     return {"orders": orders, "count": len(orders)}
 
