@@ -11,9 +11,11 @@ from sqlalchemy import func
 from app.system.models import User, AgentOrder, Conversation, Onboarding
 
 try:
+    # pyrefly: ignore [missing-import]
     from svix.webhooks import Webhook, WebhookVerificationError
     HAS_SVIX = True
 except ImportError:
+    # pyrefly: ignore [name-defined]
     Webhook = None
     WebhookVerificationError = Exception
     HAS_SVIX = False
