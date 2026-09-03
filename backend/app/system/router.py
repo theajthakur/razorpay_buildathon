@@ -6,7 +6,9 @@ from app.core.config import get_settings
 from app.core.database import get_db
 from app.core.logging_config import get_logger
 from app.core.security import get_current_user
-from app.system.models import User
+from datetime import datetime, timezone, timedelta
+from sqlalchemy import func
+from app.system.models import User, AgentOrder, Conversation, Onboarding
 
 try:
     from svix.webhooks import Webhook, WebhookVerificationError
@@ -329,3 +331,183 @@ async def test_customer_auth_endpoint(
             "status_code": 0,
             "data": {"detail": f"Error: {str(e)}"}
         }
+
+@router.get("/analytics/summary")
+def get_analytics_summary(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Returns live merchant analytics summary metrics:
+    - Revenue via Agent (total & relative yesterday difference)
+    - Orders (total count & average cart value)
+    - Conversations (total & average per user)
+    """
+    merchant_id = current_user.id
+
+    # 1. Total Revenue calculation
+    total_rev = db.query(func.sum(AgentOrder.order_total)).filter(
+        AgentOrder.merchant_id == merchant_id
+    ).scalar() or 0.0
+
+    # Yesterday comparison calculation
+    now = datetime.now(timezone.utc)
+    today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    yesterday_start = today_start - timedelta(days=1)
+
+    today_rev = db.query(func.sum(AgentOrder.order_total)).filter(
+        AgentOrder.merchant_id == merchant_id,
+        AgentOrder.created_at >= today_start
+    ).scalar() or 0.0
+
+    yesterday_rev = db.query(func.sum(AgentOrder.order_total)).filter(
+        AgentOrder.merchant_id == merchant_id,
+        AgentOrder.created_at >= yesterday_start,
+        AgentOrder.created_at < today_start
+    ).scalar() or 0.0
+
+    if yesterday_rev > 0:
+        pct_diff = ((today_rev - yesterday_rev) / yesterday_rev) * 100.0
+        relative_yesterday = f"{'+' if pct_diff >= 0 else ''}{pct_diff:.1f}%"
+    elif today_rev > 0:
+        relative_yesterday = "+100.0%"
+    else:
+        relative_yesterday = "+0.0%"
+
+    # 2. Orders calculation
+    order_count = db.query(func.count(AgentOrder.id)).filter(
+        AgentOrder.merchant_id == merchant_id
+    ).scalar() or 0
+
+    avg_cart = db.query(func.avg(AgentOrder.order_total)).filter(
+        AgentOrder.merchant_id == merchant_id
+    ).scalar() or 0.0
+
+    # 3. Conversations calculation
+    conv_count = db.query(func.count(Conversation.id)).filter(
+        Conversation.merchant_id == merchant_id
+    ).scalar() or 0
+
+    unique_users = db.query(func.count(func.distinct(Conversation.user_email))).filter(
+        Conversation.merchant_id == merchant_id
+    ).scalar() or 0
+
+    avg_per_user = round(conv_count / unique_users) if unique_users > 0 else 0
+
+    formatted_total_rev = f"₹{total_rev:,.2f}"
+    formatted_order_count = str(order_count)
+    formatted_avg_cart = str(int(round(avg_cart))) if avg_cart > 0 else "0"
+    formatted_conv_count = str(conv_count)
+    formatted_avg_per_user = str(avg_per_user)
+
+    return {
+        "revenue": {
+            "total": formatted_total_rev,
+            "relative_yesterday": relative_yesterday
+        },
+        "orders": {
+            "total_count": formatted_order_count,
+            "average_cart_value": formatted_avg_cart
+        },
+        "conversations": {
+            "total": formatted_conv_count,
+            "average_per_user": formatted_avg_per_user
+        }
+    }
+
+
+@router.get("/analytics/activity")
+def get_recent_activity(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Returns live Recent Activity Feed log of purchases, chats, and automated system synchronization.
+    """
+    merchant_id = current_user.id
+
+    # Fetch recent orders
+    recent_orders = db.query(AgentOrder).filter(
+        AgentOrder.merchant_id == merchant_id
+    ).order_by(AgentOrder.created_at.desc()).limit(10).all()
+
+    # Fetch recent conversations
+    recent_convs = db.query(Conversation).filter(
+        Conversation.merchant_id == merchant_id
+    ).order_by(Conversation.created_at.desc()).limit(10).all()
+
+    # Fetch onboarding for system sync log
+    onboarding = db.query(Onboarding).filter(Onboarding.user_id == merchant_id).first()
+
+    activities = []
+
+    for order in recent_orders:
+        order_num = order.merchant_order_id or (order.id[:6].upper() if order.id else "1024")
+        cust_name = order.customer_ref or "Customer"
+        amt = f"₹{float(order.order_total):,.2f}" if order.order_total else "₹0.00"
+        
+        # Calculate time ago
+        time_str = "just now"
+        if order.created_at:
+            delta = datetime.now(timezone.utc) - (order.created_at.replace(tzinfo=timezone.utc) if order.created_at.tzinfo is None else order.created_at)
+            mins = int(delta.total_seconds() / 60)
+            if mins < 60:
+                time_str = f"{max(1, mins)} mins ago"
+            else:
+                hours = int(mins / 60)
+                time_str = f"{hours} hour{'s' if hours > 1 else ''} ago"
+
+        activities.append({
+            "id": f"ord-{order.id}",
+            "type": "order",
+            "title": f"Order #{order_num} placed via Agent",
+            "subtitle": f"Customer: {cust_name} • {time_str}",
+            "amount": amt,
+            "timestamp": order.created_at.isoformat() if order.created_at else datetime.now(timezone.utc).isoformat()
+        })
+
+    for conv in recent_convs:
+        cust_name = conv.user_email or "Shopper"
+        time_str = "just now"
+        if conv.created_at:
+            delta = datetime.now(timezone.utc) - (conv.created_at.replace(tzinfo=timezone.utc) if conv.created_at.tzinfo is None else conv.created_at)
+            mins = int(delta.total_seconds() / 60)
+            if mins < 60:
+                time_str = f"{max(1, mins)} mins ago"
+            else:
+                hours = int(mins / 60)
+                time_str = f"{hours} hour{'s' if hours > 1 else ''} ago"
+
+        activities.append({
+            "id": f"conv-{conv.id}",
+            "type": "chat",
+            "title": "New chat session started",
+            "subtitle": f"Customer: {cust_name} • {time_str}",
+            "amount": None,
+            "timestamp": conv.created_at.isoformat() if conv.created_at else datetime.now(timezone.utc).isoformat()
+        })
+
+    if onboarding and onboarding.updated_at:
+        delta = datetime.now(timezone.utc) - (onboarding.updated_at.replace(tzinfo=timezone.utc) if onboarding.updated_at.tzinfo is None else onboarding.updated_at)
+        mins = int(delta.total_seconds() / 60)
+        if mins < 60:
+            time_str = f"{max(1, mins)} mins ago"
+        else:
+            hours = int(mins / 60)
+            time_str = f"{hours} hour{'s' if hours > 1 else ''} ago"
+
+        activities.append({
+            "id": f"sync-{onboarding.user_id}",
+            "type": "sync",
+            "title": "Catalog sync complete",
+            "subtitle": f"Customer: System • {time_str}",
+            "amount": None,
+            "timestamp": onboarding.updated_at.isoformat()
+        })
+
+    # Sort activities by timestamp descending
+    activities.sort(key=lambda x: x["timestamp"], reverse=True)
+
+    return {"activities": activities}
+
+
