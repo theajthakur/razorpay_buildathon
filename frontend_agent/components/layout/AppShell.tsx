@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useCallback } from "react";
-import { Menu, X, Plus, MessageSquare, Calendar, ChevronRight } from "lucide-react";
+import { Menu, X, Plus, MessageSquare, Calendar, ChevronRight, AlertTriangle, RefreshCw, Loader2 } from "lucide-react";
 import { useRouter, usePathname } from "next/navigation";
 import { BrandingProvider, useBranding } from "@/lib/context/BrandingContext";
 import { AuthProvider, useAuth } from "@/lib/context/AuthContext";
@@ -26,7 +26,7 @@ function formatConvoDate(dateStr: string): string {
     const now = new Date();
     const diffMs = now.getTime() - d.getTime();
     const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
-    
+
     if (diffDays === 0) {
       return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     } else if (diffDays === 1) {
@@ -42,7 +42,7 @@ function formatConvoDate(dateStr: string): string {
 function AppShellContent({ children }: AppShellProps) {
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
   const [activeChatId, setActiveChatId] = useState("");
-  const { branding, brandingLoading, primaryColor } = useBranding();
+  const { branding, brandingLoading, brandingError, primaryColor } = useBranding();
   const [logoUrl, setLogoUrl] = useState<string | null>(null);
   const [isLoginOpen, setIsLoginOpen] = useState(false);
   const { isAuthenticated } = useAuth();
@@ -64,7 +64,7 @@ function AppShellContent({ children }: AppShellProps) {
 
   const fetchConversations = useCallback(async () => {
     if (!isAuthenticated) {
-      setConversations(MOCK_CHATS);
+      setConversations([]);
       return;
     }
     try {
@@ -77,7 +77,7 @@ function AppShellContent({ children }: AppShellProps) {
       setConversations(list);
     } catch (err) {
       console.error("Failed to load conversations list:", err);
-      setConversations(MOCK_CHATS);
+      setConversations([]);
     }
   }, [isAuthenticated]);
 
@@ -225,8 +225,8 @@ function AppShellContent({ children }: AppShellProps) {
                   key={chat.id}
                   onClick={() => handleSelectChat(chat.id)}
                   className={`flex flex-col items-start w-full p-3 rounded-xl transition-all duration-200 text-left cursor-pointer group focus:outline-none ${isActive
-                      ? "bg-surface-200 text-secondary-900 font-medium"
-                      : "hover:bg-background-100 text-secondary-600"
+                    ? "bg-surface-200 text-secondary-900 font-medium"
+                    : "hover:bg-background-100 text-secondary-600"
                     }`}
                 >
                   <div className="flex items-center justify-between w-full">
@@ -234,8 +234,8 @@ function AppShellContent({ children }: AppShellProps) {
                       <MessageSquare
                         style={{ color: isActive ? primaryColor : undefined }}
                         className={`w-4 h-4 shrink-0 transition-colors ${isActive
-                            ? ""
-                            : "text-secondary-400 group-hover:text-secondary-500"
+                          ? ""
+                          : "text-secondary-400 group-hover:text-secondary-500"
                           }`}
                       />
                       <span className="text-xs font-semibold truncate w-full">
@@ -266,39 +266,94 @@ function AppShellContent({ children }: AppShellProps) {
     </div>
   );
 
+  if (brandingLoading) {
+    return (
+      <div className="flex flex-col h-screen w-screen items-center justify-center bg-background-50 font-sans select-none">
+        <Loader2 className="w-9 h-9 text-secondary-500 animate-spin mb-3" />
+        <span className="text-xs text-secondary-500 font-semibold tracking-tight">
+          Loading store configuration...
+        </span>
+      </div>
+    );
+  }
+
+  if (brandingError || !branding) {
+    return (
+      <div className="flex flex-col h-screen w-screen items-center justify-center p-6 bg-background-50 font-sans select-none text-center">
+        <div className="bg-white border border-secondary-200 shadow-xl rounded-2xl p-7 max-w-sm w-full space-y-5">
+          <div className="w-12 h-12 rounded-2xl bg-red-50 text-red-500 flex items-center justify-center mx-auto border border-red-100">
+            <AlertTriangle className="w-6 h-6" />
+          </div>
+          <div className="space-y-2">
+            <h2 className="text-lg font-bold text-secondary-900 tracking-tight">
+              Domain Mapping Error
+            </h2>
+            <p className="text-xs text-secondary-500 leading-relaxed">
+              Unable to connect to store identity for <code className="bg-secondary-100 text-secondary-800 px-1.5 py-0.5 rounded font-mono text-[11px]">{typeof window !== "undefined" ? window.location.host : "domain"}</code>.
+            </p>
+          </div>
+          <button
+            onClick={() => window.location.reload()}
+            className="w-full py-2.5 rounded-xl bg-secondary-900 text-white font-semibold text-xs transition-all hover:bg-secondary-800 active:scale-95 cursor-pointer flex items-center justify-center gap-2"
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+            <span>Retry Connection</span>
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-background-50 text-secondary-900 font-sans">
       {/* 1. Backdrop for mobile sidebar drawer */}
-      {isMobileSidebarOpen && (
+      {isAuthenticated && isMobileSidebarOpen && (
         <div
           className="fixed inset-0 z-40 bg-secondary-950/40 backdrop-blur-xs md:hidden transition-opacity duration-300"
           onClick={toggleMobileSidebar}
         />
       )}
 
-      {/* 2. Left Sidebar (Drawer on mobile, static on desktop) */}
-      <aside
-        className={`fixed inset-y-0 left-0 z-50 w-72 md:w-80 shrink-0 transform transition-transform duration-300 ease-in-out md:static md:translate-x-0 ${isMobileSidebarOpen ? "translate-x-0" : "-translate-x-full"
-          }`}
-      >
-        {sidebarContent}
-      </aside>
+      {/* 2. Left Sidebar (Drawer on mobile, static on desktop - hidden when unauthenticated) */}
+      {isAuthenticated && (
+        <aside
+          className={`fixed inset-y-0 left-0 z-50 w-72 md:w-80 shrink-0 transform transition-transform duration-300 ease-in-out md:static md:translate-x-0 ${isMobileSidebarOpen ? "translate-x-0" : "-translate-x-full"
+            }`}
+        >
+          {sidebarContent}
+        </aside>
+      )}
 
       {/* 3. Right Main Content Pane */}
       <div className="flex-1 flex flex-col min-w-0 h-full relative">
         {/* Mobile Header */}
         <header className="flex items-center justify-between h-16 px-4 bg-white border-b border-secondary-200 md:hidden shrink-0">
-          <button
-            onClick={toggleMobileSidebar}
-            className="p-2 rounded-xl text-secondary-600 hover:bg-secondary-100 focus:outline-none cursor-pointer"
-            aria-label="Open sidebar"
-          >
-            <Menu className="w-6 h-6" />
-          </button>
+          {isAuthenticated ? (
+            <button
+              onClick={toggleMobileSidebar}
+              className="p-2 rounded-xl text-secondary-600 hover:bg-secondary-100 focus:outline-none cursor-pointer"
+              aria-label="Open sidebar"
+            >
+              <Menu className="w-6 h-6" />
+            </button>
+          ) : (
+            <div className="w-10 h-10" />
+          )}
           <div className="flex-1 flex justify-center">
             {renderLogoSection()}
           </div>
-          <div className="w-10 h-10" /> {/* Spacer to balance */}
+          <div className="w-10 h-10 flex justify-end items-center">
+            {!isAuthenticated && (
+              <button
+                type="button"
+                onClick={() => setIsLoginOpen(true)}
+                style={{ backgroundColor: primaryColor }}
+                className="px-3 py-1.5 rounded-lg text-white font-semibold text-xs transition-all hover:brightness-95 cursor-pointer shrink-0"
+              >
+                Sign In
+              </button>
+            )}
+          </div>
         </header>
 
         <main className="flex-1 overflow-hidden relative flex flex-col min-w-0 bg-background-50">

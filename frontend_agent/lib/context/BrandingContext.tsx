@@ -6,6 +6,7 @@ import { fetchPublicBranding, BrandingConfig } from "@/lib/api/branding";
 interface BrandingContextType {
   branding: BrandingConfig | null;
   brandingLoading: boolean;
+  brandingError: string | null;
   primaryColor: string;
 }
 
@@ -14,16 +15,22 @@ const BrandingContext = createContext<BrandingContextType | undefined>(undefined
 export const BrandingProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [branding, setBranding] = useState<BrandingConfig | null>(null);
   const [brandingLoading, setBrandingLoading] = useState(true);
+  const [brandingError, setBrandingError] = useState<string | null>(null);
 
   useEffect(() => {
     async function getBranding() {
       try {
         setBrandingLoading(true);
+        setBrandingError(null);
         const data = await fetchPublicBranding();
+        if (!data || !data.merchant_id) {
+          throw new Error("Domain mapping error. No merchant configuration found for this host.");
+        }
         setBranding(data);
-      } catch (error) {
-        console.warn("Branding fetch failed, using default Ponion placeholders:", error);
+      } catch (error: any) {
+        console.error("Branding fetch failed:", error);
         setBranding(null);
+        setBrandingError(error?.message || "Domain mapping error. Unable to load store branding.");
       } finally {
         setBrandingLoading(false);
       }
@@ -34,7 +41,7 @@ export const BrandingProvider: React.FC<{ children: React.ReactNode }> = ({ chil
   const primaryColor = branding?.brand_color || "#E24A33";
 
   return (
-    <BrandingContext.Provider value={{ branding, brandingLoading, primaryColor }}>
+    <BrandingContext.Provider value={{ branding, brandingLoading, brandingError, primaryColor }}>
       {children}
     </BrandingContext.Provider>
   );

@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from "react";
-import { X, Loader2, AlertCircle } from "lucide-react";
+import { X, Loader2, AlertCircle, Lock } from "lucide-react";
 import { useAuth } from "@/lib/context/AuthContext";
 import { useBranding } from "@/lib/context/BrandingContext";
 import apiClient from "@/lib/api/client";
@@ -19,6 +19,7 @@ export function LoginModal({ isOpen, onClose }: LoginModalProps) {
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [logoError, setLogoError] = useState(false);
   const emailInputRef = useRef<HTMLInputElement>(null);
 
   // Focus email input on dialog open
@@ -27,6 +28,7 @@ export function LoginModal({ isOpen, onClose }: LoginModalProps) {
       setEmail("");
       setPassword("");
       setError(null);
+      setLogoError(false);
       setTimeout(() => {
         emailInputRef.current?.focus();
       }, 80);
@@ -88,24 +90,44 @@ export function LoginModal({ isOpen, onClose }: LoginModalProps) {
   };
 
   const isSubmitDisabled = !email.trim() || !password || submitting;
+  const displayName = branding?.display_name || "Ponion";
 
   return (
     <div className="fixed inset-0 bg-secondary-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
       <div className="bg-white border border-secondary-200 shadow-2xl rounded-2xl max-w-sm w-full overflow-hidden flex flex-col font-sans animate-zoom-in">
         
-        {/* Header */}
+        {/* Header with Merchant Logo & Name */}
         <div className="p-5 border-b border-secondary-100 flex items-center justify-between bg-secondary-50/50">
-          <div>
-            <h3 className="font-bold text-secondary-900 text-base">
-              Sign In to {branding?.display_name || "Ponion"}
-            </h3>
-            <p className="text-[10px] text-secondary-400 font-medium mt-0.5">
-              Access your order history and save chat assistant sessions.
-            </p>
+          <div className="flex items-center gap-3 min-w-0">
+            {branding?.logo_url && !logoError ? (
+              <div className="w-10 h-10 rounded-xl overflow-hidden shrink-0 border border-secondary-200 bg-white flex items-center justify-center p-1 shadow-xs">
+                <img
+                  src={branding.logo_url}
+                  alt={displayName}
+                  className="w-full h-full object-contain"
+                  onError={() => setLogoError(true)}
+                />
+              </div>
+            ) : (
+              <div
+                style={{ backgroundColor: `${primaryColor}15`, color: primaryColor }}
+                className="w-10 h-10 rounded-xl flex items-center justify-center shrink-0 border border-secondary-100"
+              >
+                <Lock className="w-5 h-5" />
+              </div>
+            )}
+            <div className="min-w-0">
+              <h3 className="font-bold text-secondary-900 text-base truncate">
+                Sign In to {displayName}
+              </h3>
+              <p className="text-[10px] text-secondary-400 font-medium mt-0.5">
+                Access your order history and chat sessions.
+              </p>
+            </div>
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-lg text-secondary-400 hover:text-secondary-600 hover:bg-secondary-100 transition-colors cursor-pointer"
+            className="p-1.5 rounded-lg text-secondary-400 hover:text-secondary-600 hover:bg-secondary-100 transition-colors cursor-pointer shrink-0"
             disabled={submitting}
             aria-label="Close"
           >
