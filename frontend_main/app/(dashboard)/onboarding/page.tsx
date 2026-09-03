@@ -50,6 +50,8 @@ import {
   resolvePath,
   resolveArrayAt,
   parseAddressResponsePath,
+  OrderHistoryMappingSection,
+  OrderHistoryFixedMappings
 } from "@/components/ui/EndpointFieldMapping";
 import { useAuth } from "@clerk/nextjs";
 import axios from "axios";
@@ -222,12 +224,13 @@ export default function OnboardingPage() {
 
   const [ohPath, setOhPath] = useState("orders/history");
   const [ohArrayPath, setOhArrayPath] = useState("data.orders");
-  const [ohFieldMappings, setOhFieldMappings] = useState<FieldMappingRow[]>([
-    { key: "id", path: "product_id" },
-    { key: "name", path: "product.itemName" },
-    { key: "price", path: "amount" },
-    { key: "quantity", path: "quantity" },
-  ]);
+  const [ohFixedMappings, setOhFixedMappings] = useState<OrderHistoryFixedMappings>({
+    id: "product_id",
+    name: "product.itemName",
+    price: "amount",
+    quantity: "quantity",
+  });
+  const [ohAdditionalFields, setOhAdditionalFields] = useState<string[]>([]);
 
   const [cpPath, setCpPath] = useState("customers");
   const [cpResponseObjectPath, setCpResponseObjectPath] = useState("data");
@@ -383,10 +386,35 @@ export default function OnboardingPage() {
             const oh = config.order_history_config as any;
             setOhPath(oh.path || "orders/history");
             setOhArrayPath(oh.array_path || oh.response_key || "data.orders");
-            const rawMappings = oh.field_mapping || oh.fields;
-            if (rawMappings && typeof rawMappings === "object" && Object.keys(rawMappings).length > 0) {
-              setOhFieldMappings(Object.entries(rawMappings).map(([k, p]) => ({ key: k, path: String(p) })));
+            const rawMappings = oh.field_mapping || oh.fields || {};
+            setOhFixedMappings({
+              id: rawMappings.id ?? "product_id",
+              name: rawMappings.name ?? "product.itemName",
+              price: rawMappings.price ?? "amount",
+              quantity: rawMappings.quantity ?? "quantity",
+            });
+            const savedAdditional = oh.additional_fields || oh.additionalFields || [];
+            const addList: string[] = [];
+            if (Array.isArray(savedAdditional)) {
+              savedAdditional.forEach((item: any) => {
+                if (typeof item === "string" && item.trim()) {
+                  addList.push(item.trim());
+                } else if (typeof item === "object" && item !== null && item.key) {
+                  addList.push(String(item.key).trim());
+                }
+              });
             }
+            if (rawMappings && typeof rawMappings === "object") {
+              const stdKeys = new Set(["id", "name", "price", "quantity"]);
+              Object.entries(rawMappings).forEach(([k, p]) => {
+                if (!stdKeys.has(k) && p && typeof p === "string") {
+                  if (!addList.includes(p.trim())) {
+                    addList.push(p.trim());
+                  }
+                }
+              });
+            }
+            setOhAdditionalFields(addList);
           }
 
           if (config.customer_profile_config) {
@@ -1943,12 +1971,12 @@ export default function OnboardingPage() {
                       </p>
                     </div>
 
-                    <DynamicFieldMappings
-                      mappings={ohFieldMappings}
-                      onChange={setOhFieldMappings}
+                    <OrderHistoryMappingSection
+                      fixedMappings={ohFixedMappings}
+                      onFixedChange={setOhFixedMappings}
+                      additionalFields={ohAdditionalFields}
+                      onAdditionalChange={setOhAdditionalFields}
                       previewSampleItem={sampleOrder}
-                      title="Order Field Mappings"
-                      description="Map standard fields (ID, Name, Price, Quantity) or custom fields relative to each item in the orders array."
                     />
                   </div>
                 );
@@ -2472,11 +2500,15 @@ export default function OnboardingPage() {
                       patchData.products_config = { path: prodPath, method: "GET", payload_key: prodPayloadKey, response_key: prodResponseKey };
                     } else if (activeResource === "orderHistory") {
                       const fieldMappingDict: Record<string, string> = {};
-                      ohFieldMappings.forEach((m) => {
-                        if (m.key.trim() && m.path.trim()) {
-                          fieldMappingDict[m.key.trim()] = m.path.trim();
-                        }
-                      });
+                      if (ohFixedMappings.id.trim()) fieldMappingDict.id = ohFixedMappings.id.trim();
+                      if (ohFixedMappings.name.trim()) fieldMappingDict.name = ohFixedMappings.name.trim();
+                      if (ohFixedMappings.price.trim()) fieldMappingDict.price = ohFixedMappings.price.trim();
+                      if (ohFixedMappings.quantity.trim()) fieldMappingDict.quantity = ohFixedMappings.quantity.trim();
+
+                      const cleanAdditional = ohAdditionalFields
+                        .map((f) => f.trim())
+                        .filter((f, idx, self) => f.length > 0 && self.indexOf(f) === idx);
+
                       patchData.order_history_config = {
                         path: ohPath,
                         method: "GET",
@@ -2484,6 +2516,7 @@ export default function OnboardingPage() {
                         response_key: ohArrayPath,
                         field_mapping: fieldMappingDict,
                         fields: fieldMappingDict,
+                        additional_fields: cleanAdditional,
                       };
                     } else if (activeResource === "customerProfile") {
                       const fieldMappingDict: Record<string, string> = {};

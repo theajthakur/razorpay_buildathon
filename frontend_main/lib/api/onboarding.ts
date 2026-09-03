@@ -60,7 +60,7 @@ export interface EndpointDetails {
   price_field?: string;
   quantity_field?: string;
   address_id_field?: string;
-  additional_fields?: AdditionalField[];
+  additional_fields?: string[] | AdditionalField[];
   [key: string]: any;
 }
 

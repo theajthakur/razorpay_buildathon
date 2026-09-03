@@ -50,23 +50,36 @@ def extract_order_history(response: dict, config: dict) -> list[dict]:
     """
     config = {
         "array_path": "data.orders",
-        "field_mapping": {"id": "product_id", "name": "product.itemName",
-                         "price": "amount", "quantity": "qty"},
+        "field_mapping": {
+            "id": "product_id",
+            "name": "product.itemName",
+            "price": "amount",
+            "quantity": "qty"
+        },
+        "additional_fields": ["discount", "product.category", "metadata.delivery_type"]
     }
     """
     array_path = config.get("array_path") or config.get("arrayPath") or config.get("response_key")
     orders = resolve_array_at(response, array_path) or []
     fields = config.get("field_mapping") or config.get("fields") or {}
+    additional = config.get("additional_fields") or config.get("additionalFields") or []
+
     extracted = []
     for item in orders:
         if not isinstance(item, dict):
             continue
         order_obj = {}
-        if fields:
-            for k, p in fields.items():
-                if p:
-                    order_obj[k] = resolve_path(item, p)
+
+        # 1. Apply fixed normalized mappings (id, name, price, quantity)
+        if fields and isinstance(fields, dict):
+            for k in ["id", "name", "price", "quantity"]:
+                p = fields.get(k)
+                if p and isinstance(p, str) and p.strip():
+                    val = resolve_path(item, p.strip())
+                    if val is not None:
+                        order_obj[k] = val
         else:
+            # Fallback for unconfigured legacy records: preserve item dictionary
             order_obj = dict(item)
             order_obj["id"] = (
                 resolve_path(item, "id")
@@ -83,6 +96,16 @@ def extract_order_history(response: dict, config: dict) -> list[dict]:
             )
             order_obj["price"] = resolve_path(item, "price") or item.get("price") or item.get("amount")
             order_obj["quantity"] = resolve_path(item, "quantity") or item.get("quantity") or item.get("qty")
+
+        # 2. Apply additional fields (merchant-defined keys/paths)
+        if additional and isinstance(additional, list):
+            for add_path in additional:
+                if isinstance(add_path, str) and add_path.strip():
+                    clean_path = add_path.strip()
+                    val = resolve_path(item, clean_path)
+                    if val is not None:
+                        order_obj[clean_path] = val
+
         extracted.append(order_obj)
     return extracted
 

@@ -1470,20 +1470,14 @@ async def execute_get_order_history(merchant_id: str, session: dict, db: Session
     extracted_items = extract_order_history(json_data, config)
 
     orders = []
-    for idx, item in enumerate(extracted_items):
+    for item in extracted_items:
         if not isinstance(item, dict):
             continue
-        order_id = str(item.get("id") or item.get("order_id") or f"ord_{idx + 1}")
-        order_data = {
-            "order_id": order_id,
-            "status": item.get("status") or "Completed",
-            "total": float(item.get("price") or item.get("total") or 0.0) if item.get("price") is not None or item.get("total") is not None else 0.0,
-            "created_at": item.get("created_at") or item.get("date") or "N/A",
-            "items": item.get("items") if isinstance(item.get("items"), list) else [],
-        }
-        for k, v in item.items():
-            if k not in order_data and v is not None:
-                order_data[k] = v
+        order_data = dict(item)
+        if "id" in order_data and "order_id" not in order_data:
+            order_data["order_id"] = str(order_data["id"])
+        elif "order_id" in order_data and "id" not in order_data:
+            order_data["id"] = str(order_data["order_id"])
         orders.append(order_data)
 
     if not orders:

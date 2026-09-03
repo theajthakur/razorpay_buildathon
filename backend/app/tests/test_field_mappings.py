@@ -108,6 +108,40 @@ class TestFieldMappings(unittest.TestCase):
             },
         )
 
+    def test_extract_order_history_with_additional_fields(self):
+        response = {
+            "data": {
+                "orders": [
+                    {
+                        "product_id": "p101",
+                        "product": {"itemName": "Headphones", "category": "Audio"},
+                        "amount": 99.99,
+                        "qty": 1,
+                        "discount": 10
+                    }
+                ]
+            }
+        }
+        config = {
+            "array_path": "data.orders",
+            "field_mapping": {
+                "id": "product_id",
+                "name": "product.itemName",
+            },
+            "additional_fields": ["discount", "product.category"]
+        }
+        extracted = extract_order_history(response, config)
+        self.assertEqual(len(extracted), 1)
+        self.assertEqual(
+            extracted[0],
+            {
+                "id": "p101",
+                "name": "Headphones",
+                "discount": 10,
+                "product.category": "Audio"
+            }
+        )
+
     def test_extract_addresses(self):
         response = {
             "data": {
