@@ -1,29 +1,61 @@
-name: Deploy
+name: CI/CD Pipeline
 
 on:
   push:
     branches:
       - main
+  pull_request:
+    branches:
+      - main
 
 jobs:
-  deploy:
+  test-backend:
+    name: Run Pytest Suite
     runs-on: ubuntu-latest
 
     steps:
-      - name: Deploy to GCP VPS
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+          cache-dependency-path: "backend/requirements.txt"
+
+      - name: Install dependencies & testing tools
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+          pip install pytest pytest-asyncio pytest-cov
+
+      - name: Run Pytest Suite
+        env:
+          ENV: test
+          SECRET_KEY: test_secret_key_12345
+          JWT_SECRET_KEY: test_jwt_secret_key_12345
+        run: |
+          cd backend
+          pytest
+
+  deploy:
+    name: Deploy to GCP VPS
+    needs: test-backend
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: SSH and Deploy to VPS
         env:
           SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
           SERVER_HOST: ${{ secrets.SERVER_HOST }}
           SERVER_USER: ${{ secrets.SERVER_USER }}
-
         run: |
           mkdir -p ~/.ssh
-
           echo "$SSH_PRIVATE_KEY" > ~/.ssh/github_actions
           chmod 600 ~/.ssh/github_actions
-
           ssh-keyscan -H "$SERVER_HOST" >> ~/.ssh/known_hosts
-
           ssh -i ~/.ssh/github_actions \
             "$SERVER_USER@$SERVER_HOST" \
             "cd ~/shopagent_ai && git pull origin main && docker compose up -d --build"
