@@ -6,7 +6,7 @@ import { useSignIn, useAuth } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/Input";
-import { loginUser } from "@/lib/api/auth";
+import { loginUser, syncClerkUser } from "@/lib/api/auth";
 
 export default function LoginPage() {
   const { signIn } = useSignIn();
@@ -79,6 +79,14 @@ export default function LoginPage() {
 
           if (signIn.id) {
             loginUser(signIn.id);
+            try {
+              await syncClerkUser({
+                id: signIn.id,
+                email_addresses: [{ email_address: email }],
+              });
+            } catch (syncErr) {
+              console.error("Login user DB sync warning:", syncErr);
+            }
           }
           window.location.href = "/dashboard";
           return;

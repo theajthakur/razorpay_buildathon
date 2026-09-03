@@ -126,8 +126,7 @@ export default function SignupPage() {
             await syncClerkUser({
               id: signUp.createdUserId,
               email_addresses: [{ email_address: email }],
-              first_name: storeName,
-              last_name: "",
+              store_name: storeName,
             });
           } catch (syncErr) {
             console.error("Direct backend sync failed: ", syncErr);

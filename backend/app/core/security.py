@@ -70,8 +70,9 @@ def get_current_user(
         )
     
     user = db.query(User).filter(User.id == clerk_id).first()
+    email_from_jwt = payload.get("email") or payload.get("primary_email") or ""
     
-    # Auto-Heal: If database was reset or webhook hasn't arrived yet
+    # Auto-Heal: If user authenticated via valid Clerk JWT but row is not yet in DB
     if not user:
         email = (payload.get("email") or payload.get("primary_email_address") or "").strip()
         if not email and payload.get("email_addresses") and isinstance(payload.get("email_addresses"), list):
@@ -105,6 +106,17 @@ def get_current_user(
         db.add(user)
         db.commit()
         db.refresh(user)
+    else:
+        modified = False
+        if email_from_jwt and (not user.email or user.email.endswith("@merchant.local")):
+            user.email = email_from_jwt
+            modified = True
+        if user.status == "pending":
+            user.status = "approved"
+            modified = True
+        if modified:
+            db.commit()
+            db.refresh(user)
         
     return user
 

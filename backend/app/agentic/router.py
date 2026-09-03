@@ -17,7 +17,7 @@ import vertexai
 from vertexai.generative_models import GenerativeModel, Part, Content, FunctionDeclaration, Tool
 from app.agentic.dependencies import resolve_merchant_by_host
 from app.agentic.crypto import encrypt_merchant_token
-from app.agentic.auth_utils import resolve_session_expiry, get_value_by_path, extract_by_path
+from app.agentic.auth_utils import resolve_session_expiry, get_value_by_path, extract_by_path, find_list_in_dict
 from app.agentic.field_mappings import extract_order_history, extract_addresses, extract_customer_profile, parse_address_response_path
 from app.agentic.deps import get_current_session, get_merchant_token, get_merchant_auth_headers
 from app.agentic.merchant_api import call_merchant_api
@@ -346,11 +346,11 @@ async def build_tools_for_merchant(merchant_id: str, db: Session) -> Tool:
     return Tool(function_declarations=function_declarations)
 
 FIELD_CANDIDATES = {
-    "id": ["id", "_id", "product_id"],
-    "name": ["name", "title", "itemName"],
-    "description": ["description", "desc", "summary"],
-    "price": ["price", "unit_price", "amount"],
-    "thumbnail": ["thumbnail", "thumbnailUrl", "image", "imageUrl", "image_url"],
+    "id": ["id", "_id", "product_id", "itemId", "item_id"],
+    "name": ["name", "title", "itemName", "item_name", "product_name", "productName"],
+    "description": ["description", "desc", "summary", "itemDescription", "details"],
+    "price": ["price", "unit_price", "amount", "cost", "mrp", "final_price"],
+    "thumbnail": ["thumbnail", "thumbnailUrl", "image", "imageUrl", "image_url", "photo", "banner"],
 }
 
 def _pick(item: dict, candidates: list[str], field_label: str):
@@ -360,16 +360,33 @@ def _pick(item: dict, candidates: list[str], field_label: str):
     raise KeyError(f"none of {candidates} found for '{field_label}' in product item: {item!r}")
 
 async def execute_search_products(merchant_id: str, args: dict, session: dict, db: Session) -> dict:
-    agent_logger.info(f"Product search requested: merchant={merchant_id}, query='{args.get('query')}'")
+    query = args.get("query", "")
+    agent_logger.info(f"Product search requested: merchant={merchant_id}, query='{query}'")
     onboarding = db.query(Onboarding).filter(Onboarding.user_id == merchant_id).first()
     if not onboarding or not onboarding.products_config:
         agent_logger.warning(f"Product search aborted: onboarding config missing for merchant={merchant_id}")
         return {"error": "onboarding_config_not_found", "products": [], "count": 0}
 
     config = onboarding.products_config  # {"path": "products", "method": "GET", "payload_key": "query", "response_key": "products"}
+    method = (config.get("method") or "GET").upper()
+    path = config.get("path", "")
+    url = f"{onboarding.base_url.rstrip('/')}/{path.lstrip('/')}"
+    payload_key = config.get("payload_key", "query")
+    response_key = config.get("response_key", "products")
 
-    url = f"{onboarding.base_url.rstrip('/')}/{config['path'].lstrip('/')}"
-    params = {config["payload_key"]: args["query"]}
+    params = None
+    json_body = None
+    if method == "GET":
+        params = {payload_key: query}
+    else:
+        json_body = {payload_key: query}
+
+    agent_logger.info(
+        f"Product search HTTP dispatch details:\n"
+        f"  Target URL: {method} {url}\n"
+        f"  Params/Payload: {params or json_body}\n"
+        f"  Expected Response Key: '{response_key}'"
+    )
 
     headers = {}
     if onboarding.auth_enabled:
@@ -380,25 +397,27 @@ async def execute_search_products(merchant_id: str, args: dict, session: dict, d
             agent_logger.warning(f"Failed to resolve auth headers for product search: {e}")
 
     resp = await call_merchant_api(
-        config["method"], url,
+        method, url,
         params=params,
+        json_body=json_body,
         headers=headers,
         context="search_products",
     )
     resp.raise_for_status()
 
     json_data = resp.json()
-    response_key = config.get("response_key", "products")
+    agent_logger.info(f"Product search raw HTTP response body: {resp.text[:3000]}")
 
-    # Extract product list via dot-notation path extractor
-    raw_items = extract_by_path(json_data, response_key, default=[])
-    if not isinstance(raw_items, list):
-        if isinstance(json_data, list):
-            raw_items = json_data
-        else:
-            raw_items = []
+    # Robust list extraction using find_list_in_dict (handles nested keys like data.products)
+    raw_items = find_list_in_dict(json_data, target_key=response_key) or []
+
+    agent_logger.info(
+        f"Product search extraction summary: extracted raw_items count={len(raw_items)} "
+        f"using response_key='{response_key}'"
+    )
 
     products = []
+    skipped_count = 0
     for item in raw_items:
         try:
             # ID and Name are essential
@@ -430,7 +449,8 @@ async def execute_search_products(merchant_id: str, args: dict, session: dict, d
                 "currency": "INR",  # default
             })
         except KeyError as e:
-            agent_logger.debug(f"Skipping malformed product item: {e}")
+            skipped_count += 1
+            agent_logger.warning(f"Skipping malformed product item: {e} | item={item!r}")
             continue
 
     # Client-side filters
@@ -441,7 +461,10 @@ async def execute_search_products(merchant_id: str, args: dict, session: dict, d
         except Exception:
             pass
 
-    agent_logger.info(f"Product search completed: merchant={merchant_id}, count={len(products)}")
+    agent_logger.info(
+        f"Product search completed: merchant={merchant_id}, query='{query}', "
+        f"final_count={len(products)}, skipped={skipped_count}"
+    )
 
     return {"products": products, "count": len(products)}
 
@@ -1592,21 +1615,20 @@ async def maybe_generate_initial_title(conversation_id: str, user_message: str, 
         return None
 
     settings = get_settings()
-    vertexai.init(project=settings.GCP_PROJECT_ID, location=settings.GCP_LOCATION)
-
-    model = GenerativeModel(
-        settings.GEMINI_MODEL,
-        system_instruction=(
-            "Generate a short, descriptive title summarizing what this message is about. "
-            "Maximum 6 words. No quotation marks, no trailing punctuation, no preamble — "
-            "reply with only the title text itself."
-        ),
-    )
     try:
+        vertexai.init(project=settings.GCP_PROJECT_ID, location=settings.GCP_LOCATION)
+        model = GenerativeModel(
+            settings.GEMINI_MODEL,
+            system_instruction=(
+                "Generate a short, descriptive title summarizing what this message is about. "
+                "Maximum 6 words. No quotation marks, no trailing punctuation, no preamble — "
+                "reply with only the title text itself."
+            ),
+        )
         response = await model.generate_content_async(user_message)
         title_text = response.text
     except Exception as e:
-        print(f"Failed to generate title: {e}")
+        agent_logger.warning(f"Failed to generate title: {e}")
         title_text = "Untitled"
 
     return await set_conversation_title(conversation_id, title_text, db)
@@ -1714,28 +1736,46 @@ async def message_event_stream(conversation_id: str, user_message: str, session:
             agent_logger.warning(f"Error generating initial title: {e}")
 
     settings = get_settings()
-    vertexai.init(project=settings.GCP_PROJECT_ID, location=settings.GCP_LOCATION)
+    try:
+        vertexai.init(project=settings.GCP_PROJECT_ID, location=settings.GCP_LOCATION)
+    except Exception as init_err:
+        agent_logger.warning(f"Vertex AI init warning: {init_err}")
 
     merchant = db.query(User).filter(User.id == session["merchant_id"]).first()
     merchant_name = merchant.store_name if (merchant and merchant.store_name) else "the Merchant"
 
     merchant_tools = await build_tools_for_merchant(session["merchant_id"], db)
 
-    model = GenerativeModel(
-        settings.GEMINI_MODEL,
-        system_instruction=build_system_instruction(merchant_name),
-        tools=[merchant_tools],
-    )
+    try:
+        model = GenerativeModel(
+            settings.GEMINI_MODEL,
+            system_instruction=build_system_instruction(merchant_name),
+            tools=[merchant_tools],
+        )
+        chat = model.start_chat(history=history)
+    except Exception as e:
+        agent_logger.error(f"Failed to instantiate GenerativeModel: {e}")
+        chat = None
 
-    chat = model.start_chat(history=history)
     collected_products = []
     payment_metadata_to_attach = None
     
-    try:
-        agent_logger.debug(f"Calling Gemini model {settings.GEMINI_MODEL} for conversation={conversation_id}")
-        response = await chat.send_message_async(user_message)
-    except Exception as e:
-        agent_logger.error(f"Error calling Gemini: {e}")
+    if chat:
+        try:
+            agent_logger.debug(f"Calling Gemini model {settings.GEMINI_MODEL} for conversation={conversation_id}")
+            response = await chat.send_message_async(user_message)
+        except Exception as e:
+            err_msg = str(e)
+            if "credentials" in err_msg.lower():
+                agent_logger.error(
+                    f"Error calling Gemini: {e}. "
+                    "CRITICAL: Application Default Credentials not found. Please set GEMINI_API_KEY in backend/.env "
+                    "or configure GOOGLE_APPLICATION_CREDENTIALS."
+                )
+            else:
+                agent_logger.error(f"Error calling Gemini: {e}")
+            response = None
+    else:
         response = None
 
     max_iterations = 4
@@ -1963,7 +2003,7 @@ async def message_event_stream(conversation_id: str, user_message: str, session:
         except Exception:
             final_text = "Here is what I found for you."
     else:
-        final_text = "I'm sorry, I'm having trouble getting a response. Can you try again?"
+        final_text = "I'm sorry, I'm having trouble getting a response from Gemini right now. Please try again in a moment."
 
     # 4. Save agent message to DB
     msg_meta = {"products": collected_products}
