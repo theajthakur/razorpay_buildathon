@@ -2,9 +2,12 @@ import apiClient from "./client";
 
 export interface ClerkUserPayload {
   id: string;
-  email_addresses: { email_address: string }[];
+  email_addresses?: { email_address: string }[];
+  emailAddresses?: { emailAddress: string }[];
   first_name?: string | null;
+  firstName?: string | null;
   last_name?: string | null;
+  lastName?: string | null;
 }
 
 export interface UserAccountResponse {
@@ -23,8 +26,8 @@ export async function syncClerkUser(user: any): Promise<void> {
   const emailList = Array.isArray(user.email_addresses)
     ? user.email_addresses.map((addr: any) => ({ email_address: addr.email_address }))
     : Array.isArray(user.emailAddresses)
-    ? user.emailAddresses.map((addr: any) => ({ email_address: addr.emailAddress }))
-    : [{ email_address: user.primaryEmailAddress?.emailAddress || "" }];
+      ? user.emailAddresses.map((addr: any) => ({ email_address: addr.emailAddress }))
+      : [{ email_address: user.primaryEmailAddress?.emailAddress || "" }];
 
   const payload = {
     type: "user.created",

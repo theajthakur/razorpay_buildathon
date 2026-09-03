@@ -37,8 +37,8 @@ export default function RootLayout({
       <body className="bg-background text-text-primary font-sans text-base leading-relaxed min-h-full flex flex-col">
         <ClerkProvider>
           {children}
-          <Toaster 
-            position="bottom-right" 
+          <Toaster
+            position="bottom-right"
             toastOptions={{
               className: "font-sans border border-border bg-surface text-text-primary rounded-xl shadow-lg p-4",
             }}
