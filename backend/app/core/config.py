@@ -1,7 +1,50 @@
+import os
+import json
 from functools import lru_cache
 from typing import List
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+def load_gcp_secrets():
+    """
+    Attempts to fetch GCP Secret Manager payload for 'shopagent' in project '945904246509'
+    (or GCP_SECRET_NAME / GCP_PROJECT_ID env vars) and inject keys into os.environ.
+    Fails gracefully in offline or local dev environments.
+    """
+    secret_name = os.environ.get("GCP_SECRET_NAME", "shopagent")
+    project_id = os.environ.get("GCP_PROJECT_ID", "945904246509")
+    try:
+        # pyrefly: ignore [missing-import]
+        from google.cloud import secretmanager
+        client = secretmanager.SecretManagerServiceClient()
+        name = f"projects/{project_id}/secrets/{secret_name}/versions/latest"
+        response = client.access_secret_version(request={"name": name})
+        payload = response.payload.data.decode("UTF-8")
+        
+        # 1. Try JSON parsing
+        try:
+            data = json.loads(payload)
+            if isinstance(data, dict):
+                for k, v in data.items():
+                    if k and k not in os.environ:
+                        os.environ[k] = str(v)
+                return
+        except (json.JSONDecodeError, TypeError):
+            pass
+
+        # 2. Fallback: Parse KEY=VALUE lines (.env format)
+        for line in payload.splitlines():
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                key, val = line.split("=", 1)
+                key = key.strip()
+                val = val.strip().strip('"').strip("'")
+                if key and key not in os.environ:
+                    os.environ[key] = val
+    except Exception:
+        pass
+
+load_gcp_secrets()
 
 class Settings(BaseSettings):
     POSTGRES_USER: str = "postgres"

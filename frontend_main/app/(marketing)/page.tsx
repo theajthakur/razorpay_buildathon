@@ -27,9 +27,9 @@ export default function MarketingLandingPage() {
 
   return (
     <main className="flex-1 font-sans text-text-primary bg-background">
-      
+
       {/* 1. Hero Section */}
-      <section className="relative overflow-hidden py-16 md:py-24 px-6 md:px-12 border-b border-border bg-background">
+      <section className="relative overflow-hidden py-8 md:py-12 px-6 md:px-12 border-b border-border bg-background">
         <motion.div
           initial="hidden"
           whileInView="visible"
@@ -93,12 +93,8 @@ export default function MarketingLandingPage() {
           {/* Key Highlights */}
           <motion.div
             variants={fadeUpVariant}
-            className="pt-6 flex flex-wrap items-center justify-center gap-6 text-xs text-text-secondary font-medium"
+            className="pt-6 flex flex-colflex-wrap items-center justify-center gap-6 text-xs text-text-secondary font-medium"
           >
-            <div className="flex items-center gap-1.5">
-              <CheckCircle2 className="w-4 h-4 text-success shrink-0" />
-              <span>5-Minute Setup</span>
-            </div>
             <div className="flex items-center gap-1.5">
               <CheckCircle2 className="w-4 h-4 text-success shrink-0" />
               <span>Zero Database Rewrites</span>
@@ -106,6 +102,10 @@ export default function MarketingLandingPage() {
             <div className="flex items-center gap-1.5">
               <CheckCircle2 className="w-4 h-4 text-success shrink-0" />
               <span>Direct Bank Payouts</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <CheckCircle2 className="w-4 h-4 text-success shrink-0" />
+              <span>5-Minute Setup</span>
             </div>
           </motion.div>
         </motion.div>

@@ -97,7 +97,7 @@ export default function DashboardPage() {
           loading={summaryLoading}
           fallback={<MetricCardSkeleton />}
         >
-          <Card className="h-full flex flex-col justify-between">
+          <Card className="h-full flex flex-col justify-between py-4">
             <div className="flex items-center justify-between">
               <span className="text-xs font-semibold text-text-secondary">
                 Revenue via Agent
@@ -106,7 +106,7 @@ export default function DashboardPage() {
                 <IndianRupee className="w-5 h-5" />
               </div>
             </div>
-            <div className="mt-4">
+            <div className="mt-2">
               <h3 className="font-heading text-3xl font-bold text-text-primary">
                 {summary?.revenue?.total ?? "₹0.00"}
               </h3>
@@ -191,10 +191,10 @@ export default function DashboardPage() {
                   <div className="flex items-center gap-4">
                     <div
                       className={`p-2.5 rounded-xl shrink-0 ${act.type === "order"
-                          ? "bg-success/10 text-success"
-                          : act.type === "chat"
-                            ? "bg-primary/10 text-primary"
-                            : "bg-surface border border-border text-text-secondary"
+                        ? "bg-success/10 text-success"
+                        : act.type === "chat"
+                          ? "bg-primary/10 text-primary"
+                          : "bg-surface border border-border text-text-secondary"
                         }`}
                     >
                       {act.type === "order" ? (
