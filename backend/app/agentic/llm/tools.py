@@ -164,16 +164,15 @@ create_address_func = FunctionDeclaration(
 create_order_func = FunctionDeclaration(
     name="create_order",
     description=(
-        "Place an order using the customer's current cart and a delivery address. "
-        "address_id can be a real address ID, an alias like 'a1', 'a2', '1', '2', "
-        "or a keyword like 'default' or 'home'. "
-        "Only call this when the customer has explicitly confirmed they want to "
-        "complete the purchase."
+        "MUST be called to place an order and generate the Razorpay payment checkout card when the customer "
+        "confirms purchase or says 'yes', 'proceed', 'confirm', or 'buy now'. "
+        "address_id can be a real address ID, an alias ('a1', '1'), or 'default'/'home'. "
+        "Do NOT reply with text saying an order is placed without executing this function!"
     ),
     parameters={
         "type": "object",
         "properties": {
-            "address_id": {"type": "string", "description": "Address ID, alias ('a1', 'a2', '1'), or label from saved addresses."},
+            "address_id": {"type": "string", "description": "Address ID, alias ('a1', 'a2', '1'), or label from saved addresses (e.g. 'default')."},
         },
         "required": ["address_id"],
     },
