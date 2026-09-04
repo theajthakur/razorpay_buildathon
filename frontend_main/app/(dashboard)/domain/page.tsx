@@ -89,26 +89,26 @@ export default function DomainPage() {
     >
       {/* Onboarding Completion Guard: User must complete onboarding first */}
       {!onboarding ? (
-        <div className="max-w-3xl mx-auto py-12 px-4 font-sans">
-          <Card className="p-8 sm:p-12 text-center space-y-6 border border-border bg-surface shadow-lg">
-            <div className="w-16 h-16 rounded-2xl bg-warning/10 text-warning mx-auto flex items-center justify-center">
-              <Compass className="w-8 h-8" />
+        <div className="max-w-3xl mx-auto py-8 sm:py-12 px-4 font-sans">
+          <Card className="p-6 sm:p-12 text-center space-y-6 border border-border bg-surface shadow-lg max-w-2xl mx-auto">
+            <div className="w-14 h-14 sm:w-16 sm:h-16 rounded-2xl bg-warning/10 text-warning mx-auto flex items-center justify-center shrink-0">
+              <Compass className="w-7 h-7 sm:w-8 sm:h-8" />
             </div>
 
-            <div className="space-y-2 max-w-lg mx-auto">
-              <h2 className="font-heading text-2xl font-bold text-text-primary">
+            <div className="space-y-2 max-w-lg mx-auto min-w-0">
+              <h2 className="font-heading text-xl sm:text-2xl font-bold text-text-primary">
                 Onboarding Required
               </h2>
-              <p className="text-sm text-text-secondary leading-relaxed">
+              <p className="text-xs sm:text-sm text-text-secondary leading-relaxed">
                 Custom domain configuration connects your storefront URL directly to ShopAgent. Please complete your store onboarding setup first to unlock domain mapping.
               </p>
             </div>
 
             <div className="pt-2">
-              <Link href="/onboarding">
-                <Button className="gap-2 px-6 py-2.5 text-sm font-semibold">
+              <Link href="/onboarding" className="inline-block w-full sm:w-auto">
+                <Button className="gap-2 px-6 py-2.5 text-sm font-semibold w-full sm:w-auto justify-center">
                   <span>Complete Onboarding First</span>
-                  <ArrowRight className="w-4 h-4" />
+                  <ArrowRight className="w-4 h-4 shrink-0" />
                 </Button>
               </Link>
             </div>
@@ -116,49 +116,49 @@ export default function DomainPage() {
         </div>
       ) : (
         /* Full-fledged Domain Management Dashboard */
-        <div className="space-y-8 max-w-5xl mx-auto font-sans">
+        <div className="space-y-6 sm:space-y-8 max-w-5xl mx-auto font-sans w-full min-w-0">
           {/* Header */}
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-border pb-6">
-            <div>
-              <h1 className="font-heading text-2xl font-bold text-text-primary">
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-border pb-6 min-w-0">
+            <div className="min-w-0 flex-1">
+              <h1 className="font-heading text-xl sm:text-2xl font-bold text-text-primary">
                 Custom Domain Management
               </h1>
-              <p className="text-xs sm:text-sm text-text-secondary mt-1">
+              <p className="text-xs sm:text-sm text-text-secondary mt-1 leading-relaxed">
                 Configure custom domain routing, Vercel SSL certificates, and DNS verification for your ShopAgent storefront.
               </p>
             </div>
 
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2.5 sm:gap-3 shrink-0 flex-wrap sm:flex-nowrap">
               <Button
                 variant="ghost"
                 onClick={() => {
                   checkOnboarding();
                   fetchDomains();
                 }}
-                className="gap-2 text-xs border border-border bg-surface"
+                className="gap-2 text-xs border border-border bg-surface flex-1 sm:flex-initial justify-center whitespace-nowrap"
               >
-                <RefreshCw className="w-3.5 h-3.5" />
+                <RefreshCw className="w-3.5 h-3.5 shrink-0" />
                 <span>Refresh</span>
               </Button>
 
               <Button
                 onClick={() => setIsAddModalOpen(true)}
-                className="gap-2 text-xs"
+                className="gap-2 text-xs flex-1 sm:flex-initial justify-center whitespace-nowrap"
               >
-                <Plus className="w-4 h-4" />
-                <span>Add Domain</span>
+                <Plus className="w-4 h-4 shrink-0" />
+                <span>Add Custom Domain</span>
               </Button>
             </div>
           </div>
 
           {/* Stats Overview */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
-            <Card className="p-5 flex flex-col justify-between">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-text-secondary">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
+            <Card className="p-4 sm:p-5 flex flex-col justify-between">
+              <div className="flex items-center justify-between gap-2 min-w-0">
+                <span className="text-xs font-semibold text-text-secondary min-w-0 truncate">
                   Total Custom Domains
                 </span>
-                <div className="p-2 rounded-xl bg-primary/10 text-primary">
+                <div className="p-2 rounded-xl bg-primary/10 text-primary shrink-0">
                   <Globe className="w-4 h-4" />
                 </div>
               </div>
@@ -169,12 +169,12 @@ export default function DomainPage() {
               </div>
             </Card>
 
-            <Card className="p-5 flex flex-col justify-between">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-text-secondary">
+            <Card className="p-4 sm:p-5 flex flex-col justify-between">
+              <div className="flex items-center justify-between gap-2 min-w-0">
+                <span className="text-xs font-semibold text-text-secondary min-w-0 truncate">
                   Active & Verified
                 </span>
-                <div className="p-2 rounded-xl bg-success/10 text-success">
+                <div className="p-2 rounded-xl bg-success/10 text-success shrink-0">
                   <CheckCircle2 className="w-4 h-4" />
                 </div>
               </div>
@@ -185,12 +185,12 @@ export default function DomainPage() {
               </div>
             </Card>
 
-            <Card className="p-5 flex flex-col justify-between">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-text-secondary">
+            <Card className="p-4 sm:p-5 flex flex-col justify-between sm:col-span-2 lg:col-span-1">
+              <div className="flex items-center justify-between gap-2 min-w-0">
+                <span className="text-xs font-semibold text-text-secondary min-w-0 truncate">
                   Pending Verification
                 </span>
-                <div className="p-2 rounded-xl bg-warning/10 text-warning">
+                <div className="p-2 rounded-xl bg-warning/10 text-warning shrink-0">
                   <Clock className="w-4 h-4" />
                 </div>
               </div>

@@ -44,13 +44,13 @@ export const DnsDetailsCard: React.FC<DnsDetailsCardProps> = ({ domain, dnsDetai
   })();
 
   return (
-    <div className={`p-6 rounded-2xl border border-border bg-background space-y-6 font-sans ${className}`}>
+    <div className={`p-4 sm:p-6 rounded-2xl border border-border bg-background space-y-5 sm:space-y-6 font-sans min-w-0 ${className}`}>
       {/* Header banner */}
-      <div className="flex items-start gap-3 p-4 rounded-xl bg-primary/10 border border-primary/20 text-text-primary">
+      <div className="flex items-start gap-3 p-3.5 sm:p-4 rounded-xl bg-primary/10 border border-primary/20 text-text-primary min-w-0">
         <Info className="w-5 h-5 text-primary shrink-0 mt-0.5" />
-        <div className="space-y-1 text-xs sm:text-sm">
-          <p className="font-semibold font-heading text-text-primary">
-            DNS Configuration Required for <span className="font-mono text-primary font-bold">{domain}</span>
+        <div className="space-y-1 text-xs sm:text-sm min-w-0 flex-1">
+          <p className="font-semibold font-heading text-text-primary leading-snug">
+            DNS Configuration Required for <span className="font-mono text-primary font-bold break-all">{domain}</span>
           </p>
           <p className="text-text-secondary leading-relaxed">
             Log in to your DNS provider (Cloudflare, GoDaddy, Namecheap, Google Domains) and add the DNS record listed below to point your custom domain to ShopAgent.
@@ -59,30 +59,32 @@ export const DnsDetailsCard: React.FC<DnsDetailsCardProps> = ({ domain, dnsDetai
       </div>
 
       {/* Record requirements table */}
-      <div className="space-y-4">
+      <div className="space-y-4 min-w-0">
         <h4 className="text-xs font-bold text-text-secondary uppercase tracking-wider font-heading">
           Required DNS Records
         </h4>
 
-        <div className="space-y-3">
+        <div className="space-y-3 min-w-0">
           {/* CNAME Target Record */}
-          <div className="p-4 rounded-xl border border-border bg-surface flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 flex-1 text-xs">
-              <div>
+          <div className="p-3.5 sm:p-4 rounded-xl border border-border bg-surface flex flex-col md:flex-row md:items-center justify-between gap-4 min-w-0">
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 flex-1 text-xs min-w-0">
+              <div className="min-w-0">
                 <span className="text-text-secondary block font-medium">Type</span>
-                <span className="font-mono font-bold text-primary bg-primary/10 px-2 py-0.5 rounded text-[11px] uppercase">
+                <span className="font-mono font-bold text-primary bg-primary/10 px-2 py-0.5 rounded text-[11px] uppercase inline-block mt-0.5">
                   CNAME
                 </span>
               </div>
 
-              <div>
+              <div className="min-w-0">
                 <span className="text-text-secondary block font-medium">Name / Host</span>
-                <div className="flex items-center gap-1.5 mt-0.5">
-                  <span className="font-mono font-semibold text-text-primary truncate">{subdomain}</span>
+                <div className="flex items-center gap-1.5 mt-0.5 min-w-0">
+                  <span className="font-mono font-semibold text-text-primary truncate min-w-0 flex-1">
+                    {subdomain}
+                  </span>
                   <button
                     type="button"
                     onClick={() => copyToClipboard(subdomain, "name-cname")}
-                    className="p-1 text-text-secondary hover:text-text-primary rounded hover:bg-background transition-colors cursor-pointer"
+                    className="p-1 text-text-secondary hover:text-text-primary rounded hover:bg-background transition-colors cursor-pointer shrink-0"
                     title="Copy Host"
                   >
                     {copiedKey === "name-cname" ? (
@@ -94,16 +96,16 @@ export const DnsDetailsCard: React.FC<DnsDetailsCardProps> = ({ domain, dnsDetai
                 </div>
               </div>
 
-              <div>
+              <div className="min-w-0">
                 <span className="text-text-secondary block font-medium">Value / Target</span>
-                <div className="flex items-center gap-1.5 mt-0.5">
-                  <span className="font-mono font-semibold text-text-primary truncate max-w-[280px]">
+                <div className="flex items-center gap-1.5 mt-0.5 min-w-0">
+                  <span className="font-mono font-semibold text-text-primary truncate min-w-0 flex-1" title={vercelCnameTarget}>
                     {vercelCnameTarget}
                   </span>
                   <button
                     type="button"
                     onClick={() => copyToClipboard(vercelCnameTarget, "val-cname")}
-                    className="p-1 text-text-secondary hover:text-text-primary rounded hover:bg-background transition-colors cursor-pointer"
+                    className="p-1 text-text-secondary hover:text-text-primary rounded hover:bg-background transition-colors cursor-pointer shrink-0"
                     title="Copy Target Value"
                   >
                     {copiedKey === "val-cname" ? (
@@ -121,26 +123,26 @@ export const DnsDetailsCard: React.FC<DnsDetailsCardProps> = ({ domain, dnsDetai
           {verificationList.map((record, index) => (
             <div
               key={index}
-              className="p-4 rounded-xl border border-border bg-surface flex flex-col md:flex-row md:items-center justify-between gap-4"
+              className="p-3.5 sm:p-4 rounded-xl border border-border bg-surface flex flex-col md:flex-row md:items-center justify-between gap-4 min-w-0"
             >
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 flex-1 text-xs">
-                <div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 flex-1 text-xs min-w-0">
+                <div className="min-w-0">
                   <span className="text-text-secondary block font-medium">Type</span>
-                  <span className="font-mono font-bold text-primary bg-primary/10 px-2 py-0.5 rounded text-[11px] uppercase">
+                  <span className="font-mono font-bold text-primary bg-primary/10 px-2 py-0.5 rounded text-[11px] uppercase inline-block mt-0.5">
                     {record.type || "TXT"}
                   </span>
                 </div>
 
-                <div>
+                <div className="min-w-0">
                   <span className="text-text-secondary block font-medium">Name / Host</span>
-                  <div className="flex items-center gap-1.5 mt-0.5">
-                    <span className="font-mono font-semibold text-text-primary truncate">
+                  <div className="flex items-center gap-1.5 mt-0.5 min-w-0">
+                    <span className="font-mono font-semibold text-text-primary truncate min-w-0 flex-1">
                       {record.domain || subdomain}
                     </span>
                     <button
                       type="button"
                       onClick={() => copyToClipboard(record.domain || subdomain, `name-txt-${index}`)}
-                      className="p-1 text-text-secondary hover:text-text-primary rounded hover:bg-background transition-colors cursor-pointer"
+                      className="p-1 text-text-secondary hover:text-text-primary rounded hover:bg-background transition-colors cursor-pointer shrink-0"
                       title="Copy Name"
                     >
                       {copiedKey === `name-txt-${index}` ? (
@@ -152,16 +154,16 @@ export const DnsDetailsCard: React.FC<DnsDetailsCardProps> = ({ domain, dnsDetai
                   </div>
                 </div>
 
-                <div>
+                <div className="min-w-0">
                   <span className="text-text-secondary block font-medium">Value / Target</span>
-                  <div className="flex items-center gap-1.5 mt-0.5">
-                    <span className="font-mono font-semibold text-text-primary truncate max-w-[280px]">
+                  <div className="flex items-center gap-1.5 mt-0.5 min-w-0">
+                    <span className="font-mono font-semibold text-text-primary truncate min-w-0 flex-1" title={record.value}>
                       {record.value}
                     </span>
                     <button
                       type="button"
                       onClick={() => copyToClipboard(record.value, `val-txt-${index}`)}
-                      className="p-1 text-text-secondary hover:text-text-primary rounded hover:bg-background transition-colors cursor-pointer"
+                      className="p-1 text-text-secondary hover:text-text-primary rounded hover:bg-background transition-colors cursor-pointer shrink-0"
                       title="Copy Value"
                     >
                       {copiedKey === `val-txt-${index}` ? (

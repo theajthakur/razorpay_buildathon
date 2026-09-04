@@ -43,22 +43,22 @@ export const DomainDeleteModal: React.FC<DomainDeleteModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-text-primary/40 backdrop-blur-xs animate-in fade-in duration-200">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-text-primary/40 backdrop-blur-xs animate-in fade-in duration-200 overflow-y-auto">
       <div
-        className="bg-surface border border-border rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-6 font-sans relative"
+        className="bg-surface border border-border rounded-2xl max-w-md w-full p-5 sm:p-6 shadow-2xl space-y-5 sm:space-y-6 font-sans relative my-auto max-h-[90vh] flex flex-col overflow-y-auto min-w-0"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-border pb-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-xl bg-error/10 text-error">
+        <div className="flex items-center justify-between border-b border-border pb-4 min-w-0">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="p-2.5 rounded-xl bg-error/10 text-error shrink-0">
               <AlertTriangle className="w-5 h-5" />
             </div>
-            <div>
-              <h3 className="font-heading text-lg font-bold text-text-primary">
+            <div className="min-w-0">
+              <h3 className="font-heading text-base sm:text-lg font-bold text-text-primary truncate">
                 Delete Custom Domain
               </h3>
-              <p className="text-xs text-text-secondary">
+              <p className="text-xs text-text-secondary truncate">
                 Remove domain routing from Vercel & ShopAgent
               </p>
             </div>
@@ -68,16 +68,16 @@ export const DomainDeleteModal: React.FC<DomainDeleteModalProps> = ({
             type="button"
             onClick={onClose}
             disabled={loading}
-            className="p-1.5 rounded-lg text-text-secondary hover:text-text-primary hover:bg-background transition-colors cursor-pointer"
+            className="p-1.5 rounded-lg text-text-secondary hover:text-text-primary hover:bg-background transition-colors cursor-pointer shrink-0"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* Warning Body */}
-        <div className="space-y-3 text-xs sm:text-sm text-text-secondary leading-relaxed">
-          <p>
-            Are you sure you want to remove <strong className="font-mono text-text-primary">{domainName}</strong>?
+        <div className="space-y-3 text-xs sm:text-sm text-text-secondary leading-relaxed min-w-0">
+          <p className="break-words">
+            Are you sure you want to remove <strong className="font-mono text-text-primary break-all">{domainName}</strong>?
           </p>
           <div className="p-3 rounded-xl bg-background border border-border text-xs text-text-secondary">
             This action will disconnect the custom domain from Vercel. Any storefront or widget embedding using this domain will stop responding.
@@ -86,19 +86,19 @@ export const DomainDeleteModal: React.FC<DomainDeleteModalProps> = ({
 
         {/* Error alert callout */}
         {errorMsg && (
-          <div className="p-3.5 rounded-xl bg-error/10 border border-error/20 text-xs text-error font-medium">
+          <div className="p-3.5 rounded-xl bg-error/10 border border-error/20 text-xs text-error font-medium min-w-0 break-words">
             {errorMsg}
           </div>
         )}
 
         {/* Action Buttons */}
-        <div className="flex items-center justify-end gap-3 pt-4 border-t border-border">
+        <div className="flex flex-col-reverse sm:flex-row sm:items-center justify-end gap-2.5 sm:gap-3 pt-4 border-t border-border">
           <Button
             type="button"
             variant="ghost"
             onClick={onClose}
             disabled={loading}
-            className="text-xs"
+            className="text-xs w-full sm:w-auto"
           >
             Cancel
           </Button>
@@ -108,16 +108,16 @@ export const DomainDeleteModal: React.FC<DomainDeleteModalProps> = ({
             variant="ghost"
             onClick={handleDelete}
             disabled={loading}
-            className="gap-2 text-xs bg-error text-white hover:bg-error/90 border-transparent"
+            className="gap-2 text-xs bg-error text-white hover:bg-error/90 border-transparent w-full sm:w-auto justify-center whitespace-nowrap"
           >
             {loading ? (
               <>
-                <Loader2 className="w-4 h-4 animate-spin" />
+                <Loader2 className="w-4 h-4 animate-spin shrink-0" />
                 <span>Deleting Domain...</span>
               </>
             ) : (
               <>
-                <Trash2 className="w-4 h-4" />
+                <Trash2 className="w-4 h-4 shrink-0" />
                 <span>Delete Domain</span>
               </>
             )}

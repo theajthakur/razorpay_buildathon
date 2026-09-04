@@ -73,25 +73,25 @@ export const DomainList: React.FC<DomainListProps> = ({
             className="border border-border bg-surface rounded-2xl overflow-hidden shadow-2xs transition-all hover:border-border/80"
           >
             {/* Main Row */}
-            <div className="p-5 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+            <div className="p-4 sm:p-5 flex flex-col md:flex-row md:items-center justify-between gap-4 min-w-0">
               {/* Domain Name & Info */}
-              <div className="flex items-center gap-3.5">
-                <div className="p-3 rounded-xl bg-primary/10 text-primary shrink-0">
-                  <Globe className="w-5 h-5" />
+              <div className="flex items-start sm:items-center gap-3 sm:gap-3.5 min-w-0 flex-1">
+                <div className="p-2.5 sm:p-3 rounded-xl bg-primary/10 text-primary shrink-0 mt-0.5 sm:mt-0">
+                  <Globe className="w-4 h-4 sm:w-5 sm:h-5" />
                 </div>
-                <div>
-                  <div className="flex items-center gap-2.5 flex-wrap">
-                    <h4 className="font-mono font-bold text-sm sm:text-base text-text-primary">
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2 sm:gap-2.5 flex-wrap min-w-0">
+                    <h4 className="font-mono font-bold text-sm sm:text-base text-text-primary break-all min-w-0">
                       {item.domain}
                     </h4>
-                    <DomainStatusBadge status={item.status} />
+                    <DomainStatusBadge status={item.status} className="shrink-0" />
                   </div>
-                  <p className="text-xs text-text-secondary mt-1 flex items-center gap-2">
+                  <p className="text-xs text-text-secondary mt-1 flex items-center gap-1.5 sm:gap-2 flex-wrap">
                     <span>Added {item.created_at ? new Date(item.created_at).toLocaleDateString() : "recently"}</span>
                     {item.updated_at && (
                       <>
-                        <span>•</span>
-                        <span>Updated {new Date(item.updated_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                        <span className="hidden sm:inline">•</span>
+                        <span className="w-full sm:w-auto">Updated {new Date(item.updated_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                       </>
                     )}
                   </p>
@@ -99,19 +99,19 @@ export const DomainList: React.FC<DomainListProps> = ({
               </div>
 
               {/* Row Action Controls */}
-              <div className="flex items-center gap-2.5 flex-wrap sm:flex-nowrap justify-end">
+              <div className="flex items-center gap-2 sm:gap-2.5 flex-wrap sm:flex-nowrap justify-start md:justify-end shrink-0 pt-2 md:pt-0 border-t border-border/40 md:border-t-0">
                 {/* Expand / Collapse DNS Details */}
                 <Button
                   type="button"
                   variant="ghost"
                   onClick={() => toggleExpand(item.id)}
-                  className="gap-1.5 text-xs border border-border bg-background"
+                  className="gap-1.5 text-xs border border-border bg-background flex-1 sm:flex-none justify-center whitespace-nowrap"
                 >
                   <span>DNS Setup</span>
                   {isExpanded ? (
-                    <ChevronUp className="w-3.5 h-3.5" />
+                    <ChevronUp className="w-3.5 h-3.5 shrink-0" />
                   ) : (
-                    <ChevronDown className="w-3.5 h-3.5" />
+                    <ChevronDown className="w-3.5 h-3.5 shrink-0" />
                   )}
                 </Button>
 
@@ -120,9 +120,9 @@ export const DomainList: React.FC<DomainListProps> = ({
                   type="button"
                   onClick={() => handleVerify(item.id)}
                   disabled={isVerifying}
-                  className="gap-1.5 text-xs"
+                  className="gap-1.5 text-xs flex-1 sm:flex-none justify-center whitespace-nowrap"
                 >
-                  <RefreshCw className={`w-3.5 h-3.5 ${isVerifying ? "animate-spin" : ""}`} />
+                  <RefreshCw className={`w-3.5 h-3.5 shrink-0 ${isVerifying ? "animate-spin" : ""}`} />
                   <span>{isVerifying ? "Verifying..." : "Verify DNS"}</span>
                 </Button>
 
@@ -130,8 +130,9 @@ export const DomainList: React.FC<DomainListProps> = ({
                 <button
                   type="button"
                   onClick={() => onDeleteTrigger(item.id, item.domain)}
-                  className="p-2 rounded-xl text-text-secondary hover:text-error hover:bg-error/10 border border-border transition-colors cursor-pointer"
+                  className="p-2 rounded-xl text-text-secondary hover:text-error hover:bg-error/10 border border-border transition-colors cursor-pointer shrink-0"
                   title="Delete Domain"
+                  aria-label="Delete Domain"
                 >
                   <Trash2 className="w-4 h-4" />
                 </button>

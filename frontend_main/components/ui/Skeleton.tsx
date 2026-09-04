@@ -154,20 +154,20 @@ export function OnboardingPageSkeleton() {
 
 export function DomainPageSkeleton() {
   return (
-    <div className="space-y-8 max-w-5xl mx-auto py-4 font-sans animate-pulse">
+    <div className="space-y-6 sm:space-y-8 max-w-5xl mx-auto py-4 font-sans animate-pulse w-full min-w-0">
       {/* Title Header Skeleton */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-border pb-6">
-        <div className="space-y-2">
-          <div className="h-7 bg-border/80 rounded-md w-56" />
-          <div className="h-4 bg-border/50 rounded-md w-80 sm:w-96" />
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-border pb-6 min-w-0">
+        <div className="space-y-2 flex-1 min-w-0">
+          <div className="h-7 bg-border/80 rounded-md w-48 sm:w-56" />
+          <div className="h-4 bg-border/50 rounded-md w-full max-w-sm sm:max-w-md" />
         </div>
-        <div className="h-10 bg-border/60 rounded-xl w-36" />
+        <div className="h-10 bg-border/60 rounded-xl w-full sm:w-36 shrink-0" />
       </div>
 
       {/* Stats row skeleton */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
         {[1, 2, 3].map((i) => (
-          <div key={i} className="p-5 rounded-2xl border border-border bg-surface space-y-3">
+          <div key={i} className={`p-4 sm:p-5 rounded-2xl border border-border bg-surface space-y-3 ${i === 3 ? "sm:col-span-2 lg:col-span-1" : ""}`}>
             <div className="h-4 bg-border/60 rounded-md w-28" />
             <div className="h-8 bg-border/80 rounded-md w-20" />
           </div>
@@ -175,30 +175,29 @@ export function DomainPageSkeleton() {
       </div>
 
       {/* Main Card / List Skeleton */}
-      <div className="p-6 rounded-2xl border border-border bg-surface space-y-6">
-        <div className="flex items-center justify-between border-b border-border pb-4">
-          <div className="space-y-2">
-            <div className="h-5 bg-border/80 rounded-md w-44" />
-            <div className="h-3.5 bg-border/50 rounded-md w-64" />
+      <div className="p-4 sm:p-6 rounded-2xl border border-border bg-surface space-y-6 min-w-0">
+        <div className="flex items-center justify-between border-b border-border pb-4 min-w-0">
+          <div className="space-y-2 flex-1 min-w-0">
+            <div className="h-5 bg-border/80 rounded-md w-40 sm:w-44" />
+            <div className="h-3.5 bg-border/50 rounded-md w-52 sm:w-64" />
           </div>
-          <div className="h-8 bg-border/50 rounded-lg w-24" />
         </div>
 
         <div className="space-y-4 pt-2">
           {[1, 2].map((i) => (
-            <div key={i} className="p-5 border border-border bg-background rounded-xl space-y-4">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                <div className="flex items-center gap-3">
+            <div key={i} className="p-4 sm:p-5 border border-border bg-background rounded-xl space-y-4 min-w-0">
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 min-w-0">
+                <div className="flex items-center gap-3 min-w-0 flex-1">
                   <div className="w-10 h-10 rounded-xl bg-border/60 shrink-0" />
-                  <div className="space-y-2">
-                    <div className="h-5 bg-border/80 rounded-md w-48" />
-                    <div className="h-3.5 bg-border/40 rounded-md w-32" />
+                  <div className="space-y-2 flex-1 min-w-0">
+                    <div className="h-5 bg-border/80 rounded-md w-36 sm:w-48" />
+                    <div className="h-3.5 bg-border/40 rounded-md w-28 sm:w-32" />
                   </div>
                 </div>
-                <div className="flex items-center gap-3">
-                  <div className="h-7 bg-border/60 rounded-full w-24" />
-                  <div className="h-9 bg-border/60 rounded-xl w-28" />
-                  <div className="w-9 h-9 bg-border/40 rounded-xl" />
+                <div className="flex items-center gap-2.5 shrink-0 pt-2 md:pt-0 border-t border-border/40 md:border-t-0">
+                  <div className="h-8 bg-border/60 rounded-xl w-24" />
+                  <div className="h-8 bg-border/60 rounded-xl w-28" />
+                  <div className="w-8 h-8 bg-border/40 rounded-xl" />
                 </div>
               </div>
             </div>
