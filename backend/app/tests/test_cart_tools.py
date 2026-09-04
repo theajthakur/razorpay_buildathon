@@ -45,8 +45,7 @@ class TestCartTools(unittest.TestCase):
         cls.onboarding = Onboarding(
             user_id=cls.merchant_id,
             base_url="https://api.cartstore.com",
-            auth_enabled=True,
-            slug="cart-test-slug"
+            auth_enabled=True
         )
         cls.db.add(cls.onboarding)
         cls.db.commit()

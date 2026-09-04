@@ -58,11 +58,11 @@ def resolve_merchant_by_host(
         )
 
     # Find the corresponding merchant onboarding record
-    onboarding = db.query(Onboarding).filter(Onboarding.slug == mapping.slug).first()
+    onboarding = db.query(Onboarding).filter(Onboarding.id == mapping.onboarding_id).first()
     if not onboarding:
         raise HTTPException(
             status_code=404,
-            detail=f"No onboarding configuration found for merchant slug: {mapping.slug}"
+            detail=f"No onboarding configuration found for merchant host: {target_host}"
         )
 
     # Store on request.state.merchant for downstream handlers

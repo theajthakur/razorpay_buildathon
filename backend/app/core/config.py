@@ -67,7 +67,6 @@ class Settings(BaseSettings):
             )
         return self
 
-    CORS_ORIGINS: str = "http://localhost:3000,http://localhost:3001"
     RAZORPAY_SECRET_KEY: str = ""
     RAZORPAY_CLIENT_ID: str = ""
     RAZORPAY_CLIENT_SECRET: str = ""
@@ -89,6 +88,10 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: str = ""
     GOOGLE_API_KEY: str = ""
 
+    # Vercel Configuration
+    VERCEL_TOKEN_KEY: str = ""
+    VERCEL_PROJECT_ID: str = ""
+
     @property
     def effective_gemini_api_key(self) -> str:
         import os
@@ -99,10 +102,6 @@ class Settings(BaseSettings):
         env_file_encoding="utf-8",
         extra="ignore"
     )
-
-    @property
-    def cors_origins_list(self) -> List[str]:
-        return [origin.strip() for origin in self.CORS_ORIGINS.split(",") if origin.strip()]
 
     @property
     def razorpay_key_id(self) -> str:

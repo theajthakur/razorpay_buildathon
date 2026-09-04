@@ -9,6 +9,7 @@ from app.system.router import router as system_router
 from app.agentic.router import router as agentic_router, public_router
 from app.dashboard.router import router as dashboard_router
 from app.merchant.router import router as merchant_router
+from app.onboarding.router import router as onboarding_router
 
 setup_logging()
 logger = get_logger("main")
@@ -33,7 +34,7 @@ def on_startup():
 # Configure CORS Middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins_list,
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -46,6 +47,8 @@ app.include_router(public_router, prefix="/api/public", tags=["Public"])
 app.include_router(dashboard_router, prefix="/api/dashboard", tags=["Dashboard"])
 app.include_router(merchant_router, prefix="/merchant", tags=["Merchant API"])
 app.include_router(merchant_router, prefix="/api/merchant", tags=["Merchant API"])
+app.include_router(onboarding_router, prefix="/onboarding", tags=["Onboarding API"])
+app.include_router(onboarding_router, prefix="/api/onboarding", tags=["Onboarding API"])
 
 @app.get("/")
 def read_root():

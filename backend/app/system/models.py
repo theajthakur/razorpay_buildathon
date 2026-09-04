@@ -53,7 +53,8 @@ class APIKey(Base):
 class Onboarding(Base):
     __tablename__ = "onboardings"
 
-    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True, index=True)
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), unique=True, index=True, nullable=False)
     base_url = Column(String, nullable=False)
     auth_enabled = Column(Boolean, default=True, nullable=False)
     auth_disabled_ack = Column(Boolean, default=False, nullable=False)
@@ -77,8 +78,6 @@ class Onboarding(Base):
     ifsc = Column(String, nullable=True)
     branch_name = Column(String, nullable=True)
 
-    slug = Column(String, unique=True, index=True, nullable=True)
-
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 
@@ -97,8 +96,10 @@ class DomainMapping(Base):
     __tablename__ = "domain_mappings"
 
     id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    onboarding_id = Column(String, ForeignKey("onboardings.id", ondelete="CASCADE"), index=True, nullable=False)
     domain = Column(String, unique=True, index=True, nullable=False)
-    slug = Column(String, ForeignKey("onboardings.slug", ondelete="CASCADE"), index=True, nullable=False)
+    status = Column(String, default="PENDING", nullable=False)
+    dns_details = Column(JSON, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 

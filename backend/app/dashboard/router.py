@@ -283,8 +283,8 @@ def get_merchant_settings(
     display_name = branding_config.get("display_name") or current_user.store_name
 
     assigned_domain = None
-    if onboarding and onboarding.slug:
-        mapping = db.query(DomainMapping).filter(DomainMapping.slug == onboarding.slug).first()
+    if onboarding:
+        mapping = db.query(DomainMapping).filter(DomainMapping.onboarding_id == onboarding.id).first()
         if mapping:
             assigned_domain = mapping.domain
 
@@ -361,8 +361,8 @@ def update_merchant_settings(
     display_name = branding_config.get("display_name") or current_user.store_name
 
     assigned_domain = None
-    if onboarding and onboarding.slug:
-        mapping = db.query(DomainMapping).filter(DomainMapping.slug == onboarding.slug).first()
+    if onboarding:
+        mapping = db.query(DomainMapping).filter(DomainMapping.onboarding_id == onboarding.id).first()
         if mapping:
             assigned_domain = mapping.domain
 

@@ -38,7 +38,6 @@ class TestAgenticAuth(unittest.TestCase):
             user_id=cls.test_user_id,
             base_url="https://api.merchantstore.com/v1",
             auth_enabled=True,
-            slug="test-auth-slug",
             auth_config={
                 "auth_url": "/api/login",
                 "identifier_field": "email",

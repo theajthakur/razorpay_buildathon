@@ -64,7 +64,6 @@ def test_merchant(db_session):
             base_url="https://api.teststore.com",
             auth_enabled=True,
             auth_disabled_ack=False,
-            slug="teststore",
             addresses_config={"path": "user/addresses"},
             create_order_config={"path": "orders", "method": "POST"}
         )
