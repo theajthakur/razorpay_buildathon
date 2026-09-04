@@ -7,7 +7,8 @@ const isPublicRoute = createRouteMatcher([
   "/signup(.*)",
   "/sso-callback(.*)",
   "/documentation(.*)",
-  "/api/(.*)"
+  "/api/(.*)",
+  "/merchant/(.*)"
 ]);
 
 // Define routes that are guest-only (auth routes)

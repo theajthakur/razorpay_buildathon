@@ -1,4 +1,4 @@
-from fastapi import Header, HTTPException, Depends
+from fastapi import Header, Query, HTTPException, Depends
 from sqlalchemy.orm import Session
 from passlib.context import CryptContext
 import jwt
@@ -149,11 +149,13 @@ def hash_api_key(key: str, secret: str) -> str:
 def validate_api_key(
     authorization: str | None = Header(None),
     x_api_key: str | None = Header(None, alias="X-API-Key"),
+    api_key: str | None = Query(None),
+    apikey: str | None = Query(None),
     db: Session = Depends(get_db)
 ) -> User:
     """
     Authenticates external API key requests:
-    - Supports 'Authorization: Bearer <key>', 'Authorization: <key>', and 'X-API-Key: <key>'
+    - Supports 'Authorization: Bearer <key>', 'Authorization: <key>', 'X-API-Key: <key>', and '?api_key=<key>'
     - Verifies format, prefix, active status, expiration
     - Updates last_used_at with a 60-second debounce write limit
     """
@@ -162,6 +164,10 @@ def validate_api_key(
         raw_key = authorization.split(" ")[1]
     elif x_api_key:
         raw_key = x_api_key
+    elif api_key:
+        raw_key = api_key
+    elif apikey:
+        raw_key = apikey
     elif authorization:
         raw_key = authorization
 
