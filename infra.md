@@ -1,126 +1,88 @@
 # Infra.md — Agentic Commerce SaaS (Razorpay Buildathon)
 
-Three-part system: `common-backend`, `frontend_agent`, `frontend_main`.
-Demo vertical: existing food ordering site (single merchant, real APIs).
+Three-part system: `backend`, `frontend_agent`, `frontend_main`.
 
 ---
 
-## 1. common-backend
+## Production Deployment URLs
+
+- **Merchant SaaS Dashboard (`frontend_main`)**: `https://shopagent.vijstack.com`
+- **Customer Chat Widget (`frontend_agent`)**: `https://shopagent-agent.vijstack.com` / Custom Domains
+- **Common Backend (`backend`)**: `https://shopagent-backend.vijstack.com`
+
+---
+
+## System Architecture
+
+```
+┌────────────────────────────────────────────────────────┐   ┌────────────────────────────────────────────────────────┐
+│         frontend_main (https://shopagent.vijstack.com) │   │     frontend_agent (https://agent.mybrand.com)         │
+│          Merchant Control Plane & SaaS Dashboard       │   │        Customer-Facing Conversational Widget           │
+└───────────────────────────┬────────────────────────────┘   └───────────────────────────┬────────────────────────────┘
+                            │                                                            │
+                            └─────────────────────────────┬──────────────────────────────┘
+                                                          │
+                                                          ▼
+                                          ┌───────────────────────────────┐
+                                          │      common backend (FastAPI) │
+                                          │  Port 8000 · Modular Engine   │
+                                          └───────────────┬───────────────┘
+                                                          │
+                    ┌─────────────────────────────────────┼─────────────────────────────────────┐
+                    ▼                                     ▼                                     ▼
+      ┌───────────────────────────┐         ┌───────────────────────────┐         ┌───────────────────────────┐
+      │     Merchant REST APIs    │         │       Razorpay API        │         │      PostgreSQL DB        │
+      │ (Auth, Products, Orders,  │         │   (Order Creation &       │         │ (SQLAlchemy + Alembic     │
+      │  Customers, Addresses)    │         │    Payment Verification)  │         │   9 Core Models)          │
+      └───────────────────────────┘         └───────────────────────────┘         └───────────────────────────┘
+```
+
+---
+
+## 1. common-backend (FastAPI)
 
 The shared engine. Multi-tenant — every request resolves to a `merchant_id` and behaves according to that merchant's stored config. Neither frontend talks to merchant APIs directly; everything routes through here.
 
-### Responsibilities
-- Own the single source of truth for merchant config, sessions, orders-via-agent, and Razorpay tokens.
-- Run the AI agent orchestration (LLM + tool calling) parameterized per merchant.
-- Bridge customer auth to the merchant's own auth API — never store customer passwords.
-- Handle Razorpay OAuth token exchange/refresh and order creation on behalf of the merchant.
-- Enforce the trust/consent checkpoint before any payment is executed.
-
 ### Modules
 
-**a) Merchant Registry**
-- CRUD for merchant profile: name, branding, agent config
-- Stores merchant's connected API endpoints (products, orders, customers, auth) + how to auth to them (API key / bearer token / basic auth)
-- Stores merchant's Razorpay OAuth access + refresh tokens (encrypted at rest)
-- Stores agent behavior settings: confirmation threshold amount, enabled features (order history, open cart negotiation, etc.)
+**a) Merchant Registry & Domain Service**
+- CRUD for merchant profile: name, branding, agent config.
+- Custom domain management (`domain_mappings` table) integrated with Vercel DNS API (`POST /v9/projects/{project_id}/domains`). Provisions DNS records (CNAME `cname.vercel-dns.com` / `e493a233eec4285d.vercel-dns-017.com`) and queries dynamic verification status.
+- Public branding resolution (`GET /api/public/branding`): Host header lookup against `domain_mappings`. Returns 404 Domain Error JSON if host is unmapped (0 placeholder/mock fallback).
 
 **b) Agent Orchestrator**
-- Receives: `merchant_id`, `customer_session`, `message`, `conversation_history`
-- Loads merchant's tool config (which of their APIs map to which agent tools)
-- Calls LLM (Claude API, tool use) with the merchant-specific tool definitions
-- Executes whichever tool the LLM picks → calls the real merchant API → returns result to LLM → LLM replies to customer
-- Tools: `search_products`, `get_product_details`, `check_stock`, `get_order_history`, `get_order_status`, `create_cart`, `confirm_and_pay`
+- Google Gemini / Vertex AI tool calling engine parameterized per merchant.
+- Tools: `search_products`, `add_to_cart`, `get_cart_items`, `update_cart_item`, `remove_from_cart`, `fetch_addresses`, `create_address`, `create_order`, `retry_payment`, `get_order_history`, `get_customer_profile`, `create_conversation_title`.
+- Enforces mandatory tool execution (`create_order`) on purchase confirmation and server-side price re-verification during cart checkout.
 
 **c) Auth Bridge**
-- `POST /auth/login` — takes `merchant_id` + customer credentials → calls that merchant's auth API → returns a short-lived, scoped session token issued by common-backend (not the merchant's raw token)
-- Session token maps internally to the merchant's real token, held server-side only, never sent to frontend_agent
-- Session expires; no persistent password storage, ever
+- Customer authentication is delegated directly to the merchant's auth API.
+- Issues AES-Fernet encrypted session tokens (`MerchantUserSession`), preserving zero password storage on the platform.
 
-**d) Order & Payment Service**
-- `POST /cart` — builds cart against merchant's product API (price/stock validated live, not cached)
-- `POST /checkout/confirm` — the explicit human-confirmation step; nothing charges without this
-- `POST /checkout/pay` — creates a Razorpay Order (test mode) using the merchant's OAuth-authorized token, returns a Payment Link / Checkout session
-- Razorpay webhook receiver — verifies signature, updates order status, notifies agent to relay confirmation to customer
-
-**e) Razorpay OAuth Service**
-- `GET /razorpay/connect` — starts OAuth flow for a merchant (used by frontend_main)
-- `GET /razorpay/callback` — exchanges code for access/refresh token, stores against merchant_id
-- Token refresh handled transparently before each payment call
-
-**f) Merchant Identification**
-- Every inbound request carries `merchant_id` (via header or path — subdomain in production, simple header/path for buildathon demo)
-- Middleware resolves merchant_id → loads config → attaches to request context before any handler runs
-
-### Stack
-- Node.js/Express or FastAPI (pick whichever you're faster in)
-- Postgres (or even SQLite for demo) — merchants, sessions, orders, tool configs
-- Claude API for orchestration (tool use / function calling)
-- Redis (optional, only if you want cleaner session/cart state — skip for demo if short on time)
-
-### Explicitly out of scope for buildathon build
-- Auto-discovery of arbitrary merchant API schemas (manual mapping via frontend_main is enough)
-- Multi-region/scaling concerns
-- Full production-grade encryption/secrets infra — note it as roadmap, don't build it
+**d) Order & Payment Verification Service**
+- Hassle-free merchant order verification endpoint: `GET /merchant/orders/verify?merchant_order_id=...&api_key=sk_live_...`.
+- Flexible authentication accepting API keys via URL query parameters (`?api_key=` / `?apikey=`) or standard HTTP headers (`X-API-Key` / `Authorization: Bearer`).
+- Excluded from Clerk user middleware in `frontend_main/middleware.ts` (`/merchant/(.*)`) to enable seamless server-to-server webhook verification.
 
 ---
 
-## 2. frontend_agent — `agent.merchantsite.com`
+## 2. frontend_agent (Customer Chat Widget)
 
-Customer-facing. This is what the merchant's end customers actually use. One deployment, merchant-branded via config from common-backend (logo/name/colors pulled at load time by `merchant_id`).
+Customer-facing. One deployment, merchant-branded via config from common-backend (`GET /api/public/branding`).
 
 ### Responsibilities
-- Chat interface — the only real UI surface a customer sees
-- Customer login (delegated to merchant's own auth via common-backend's Auth Bridge)
-- Render agent responses richly: product cards, cart summary, order status — not raw text dumps
-- Explicit confirm-before-pay screen/step
-- Razorpay checkout handoff (Payment Link redirect or embedded checkout)
-- Order history / status view, driven by the same chat or a simple side panel
-
-### Key screens
-1. **Landing / chat start** — merchant branding, "Hi, I'm [Merchant]'s assistant"
-2. **Login prompt** — triggered when customer asks for anything needing identity (orders, checkout)
-3. **Chat thread** — main surface; renders text, product cards, cart, confirmation prompts inline
-4. **Checkout confirmation** — explicit "Confirm ₹X order?" step, cannot be skipped
-5. **Order status view** — pulled via agent tool call, displayed as a simple card
-
-### Stack
-- React (Vite) — lightweight, fast to build
-- Talks only to common-backend (never directly to merchant APIs or Razorpay)
-- No sensitive tokens stored client-side beyond the short-lived session token issued by Auth Bridge
+- Conversational UI rendering agent text chunks, product cards, cart drawer, address selector, and inline checkout cards.
+- Real-time NDJSON event streaming.
+- Dedicated **Store Domain Not Found (404)** error view for unmapped custom subdomains, with onboarding CTA redirecting to `https://shopagent.vijstack.com`.
 
 ---
 
-## 3. frontend_main — merchant SaaS dashboard
+## 3. frontend_main (Merchant SaaS Dashboard)
 
-Merchant-facing control plane. This is *your* product's login (separate identity system from the merchant's own customers).
+Merchant-facing control plane built with Next.js 15, TypeScript, Tailwind CSS, and Clerk Authentication.
 
-### Responsibilities
-- Merchant signup/login (your SaaS's own auth — Auth0/Clerk/simple JWT, whatever's fastest)
-- Onboarding wizard: merchant enters/maps their API endpoints (products, orders, customers, auth)
-- Razorpay "Connect" button → kicks off OAuth flow via common-backend
-- Dashboard: agent conversations/activity, orders placed through the agent, basic revenue/analytics
-- Settings: agent branding, confirmation threshold, which tools/features are enabled
-
-### Key screens
-1. **Signup/login** (merchant's own account with your SaaS)
-2. **Onboarding — Connect APIs**: form to input base URL + auth method for products/orders/customers/auth endpoints, with a "test connection" button
-3. **Onboarding — Connect Razorpay**: OAuth button → redirect → success state showing connected account
-4. **Dashboard**: agent traffic, orders via agent, conversion snapshot
-5. **Agent Settings**: name/branding, confirmation threshold amount, feature toggles
-
-### Stack
-- React (Vite), same framework as frontend_agent for consistency/speed
-- Talks only to common-backend (merchant registry + Razorpay OAuth endpoints)
-
----
-
-## Demo narrative this structure supports
-1. Open **frontend_main** → show your food ordering site's APIs already connected, Razorpay connected via OAuth (2-minute onboarding story)
-2. Switch to **frontend_agent** → real customer logs in, browses menu, adds items, confirms, pays via Razorpay test mode, checks order status — all conversational
-3. Close on the architecture: one backend, config-driven per merchant, real auth delegation, real OAuth-scoped payments, explicit human-confirmation checkpoint before money moves
-
-## Security talking points to have ready
-- Customer passwords never touch common-backend — only short-lived scoped session tokens
-- Merchant's Razorpay secret key never touches your platform — OAuth access token only, encrypted at rest, refreshed transparently
-- No payment executes without an explicit confirmation step — mitigates "agent hallucinated a purchase" concern
-- Every payment/order action is logged against merchant_id + session for audit
+### Key Sections
+1. **Onboarding Wizard**: Base URL setup, auth configuration, dynamic resource configurator with live test modals for 6 core endpoints.
+2. **Custom Domain Management (`/domain`)**: Add custom domain, view required DNS records (CNAME/A), verify DNS status with Vercel API, delete domain mappings. Responsive layout (`flex-col md:flex-row`, progressive column reduction).
+3. **API Keys & Settings (`/settings`)**: Provision, pause, or revoke developer keys (`sk_live_...`), configure branding, set payout confirmation thresholds.
+4. **Developer Documentation (`/documentation`)**: SSR interactive API documentation dynamically generated from merchant configuration.
