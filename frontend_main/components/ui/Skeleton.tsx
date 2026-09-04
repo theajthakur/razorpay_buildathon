@@ -152,6 +152,63 @@ export function OnboardingPageSkeleton() {
   );
 }
 
+export function DomainPageSkeleton() {
+  return (
+    <div className="space-y-8 max-w-5xl mx-auto py-4 font-sans animate-pulse">
+      {/* Title Header Skeleton */}
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-border pb-6">
+        <div className="space-y-2">
+          <div className="h-7 bg-border/80 rounded-md w-56" />
+          <div className="h-4 bg-border/50 rounded-md w-80 sm:w-96" />
+        </div>
+        <div className="h-10 bg-border/60 rounded-xl w-36" />
+      </div>
+
+      {/* Stats row skeleton */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
+        {[1, 2, 3].map((i) => (
+          <div key={i} className="p-5 rounded-2xl border border-border bg-surface space-y-3">
+            <div className="h-4 bg-border/60 rounded-md w-28" />
+            <div className="h-8 bg-border/80 rounded-md w-20" />
+          </div>
+        ))}
+      </div>
+
+      {/* Main Card / List Skeleton */}
+      <div className="p-6 rounded-2xl border border-border bg-surface space-y-6">
+        <div className="flex items-center justify-between border-b border-border pb-4">
+          <div className="space-y-2">
+            <div className="h-5 bg-border/80 rounded-md w-44" />
+            <div className="h-3.5 bg-border/50 rounded-md w-64" />
+          </div>
+          <div className="h-8 bg-border/50 rounded-lg w-24" />
+        </div>
+
+        <div className="space-y-4 pt-2">
+          {[1, 2].map((i) => (
+            <div key={i} className="p-5 border border-border bg-background rounded-xl space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-border/60 shrink-0" />
+                  <div className="space-y-2">
+                    <div className="h-5 bg-border/80 rounded-md w-48" />
+                    <div className="h-3.5 bg-border/40 rounded-md w-32" />
+                  </div>
+                </div>
+                <div className="flex items-center gap-3">
+                  <div className="h-7 bg-border/60 rounded-full w-24" />
+                  <div className="h-9 bg-border/60 rounded-xl w-28" />
+                  <div className="w-9 h-9 bg-border/40 rounded-xl" />
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export interface ReusableSkeletonProps {
   loading: boolean;
   fallback: React.ReactNode;

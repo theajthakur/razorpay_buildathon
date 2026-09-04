@@ -3,7 +3,7 @@
 import React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutDashboard, Compass, Settings, LogOut, X } from "lucide-react";
+import { LayoutDashboard, Compass, Settings, LogOut, X, Globe } from "lucide-react";
 import { useClerk } from "@clerk/nextjs";
 import { logoutUser } from "@/lib/api/auth";
 
@@ -19,6 +19,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen = false, onClose = () =
   const navItems = [
     { label: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
     { label: "Onboarding", href: "/onboarding", icon: Compass },
+    { label: "Custom Domain", href: "/domain", icon: Globe },
     { label: "Settings", href: "/settings", icon: Settings },
   ];
 
