@@ -284,7 +284,11 @@ def get_merchant_settings(
 
     assigned_domain = None
     if onboarding:
-        mapping = db.query(DomainMapping).filter(DomainMapping.onboarding_id == onboarding.id).first()
+        mapping = (
+            db.query(DomainMapping)
+            .filter((DomainMapping.onboarding_id == onboarding.id) | (DomainMapping.onboarding_id == onboarding.user_id))
+            .first()
+        )
         if mapping:
             assigned_domain = mapping.domain
 
@@ -362,7 +366,11 @@ def update_merchant_settings(
 
     assigned_domain = None
     if onboarding:
-        mapping = db.query(DomainMapping).filter(DomainMapping.onboarding_id == onboarding.id).first()
+        mapping = (
+            db.query(DomainMapping)
+            .filter((DomainMapping.onboarding_id == onboarding.id) | (DomainMapping.onboarding_id == onboarding.user_id))
+            .first()
+        )
         if mapping:
             assigned_domain = mapping.domain
 

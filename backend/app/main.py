@@ -25,16 +25,24 @@ def on_startup():
         Base.metadata.create_all(bind=engine)
         logger.info("Database tables created/verified successfully.")
         with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE onboardings ADD COLUMN IF NOT EXISTS id VARCHAR;"))
+            conn.execute(text("UPDATE onboardings SET id = user_id WHERE id IS NULL;"))
+            conn.execute(text("ALTER TABLE domain_mappings DROP COLUMN IF EXISTS slug CASCADE;"))
+            conn.execute(text("ALTER TABLE onboardings DROP COLUMN IF EXISTS slug CASCADE;"))
             conn.execute(text("ALTER TABLE onboardings ADD COLUMN IF NOT EXISTS verify_order_config JSON;"))
             conn.execute(text("ALTER TABLE onboardings ADD COLUMN IF NOT EXISTS webhook_path VARCHAR;"))
-        logger.info("Database schema columns verified (verify_order_config, webhook_path).")
+
+            conn.execute(text("ALTER TABLE domain_mappings ADD COLUMN IF NOT EXISTS onboarding_id VARCHAR;"))
+            conn.execute(text("ALTER TABLE domain_mappings ADD COLUMN IF NOT EXISTS status VARCHAR DEFAULT 'PENDING';"))
+            conn.execute(text("ALTER TABLE domain_mappings ADD COLUMN IF NOT EXISTS dns_details JSON;"))
+        logger.info("Database schema columns verified (onboardings.id, verify_order_config, webhook_path, domain_mappings).")
     except Exception as e:
         logger.warning(f"Startup DB column verification warning: {e}")
 
-# Configure CORS Middleware
+# Configure CORS Middleware for production & dynamic custom domains
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origin_regex=r"https?://.*",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

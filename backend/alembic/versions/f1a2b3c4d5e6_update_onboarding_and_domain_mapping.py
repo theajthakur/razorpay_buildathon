@@ -19,58 +19,16 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    conn = op.get_bind()
-    inspector = sa.inspect(conn)
+    # Safe PostgreSQL / SQLite DDL statements with CASCADE
+    op.execute("ALTER TABLE onboardings ADD COLUMN IF NOT EXISTS id VARCHAR;")
+    op.execute("UPDATE onboardings SET id = user_id WHERE id IS NULL;")
 
-    # 1. Update onboardings table
-    onboarding_cols = [c['name'] for c in inspector.get_columns('onboardings')]
-    if 'id' not in onboarding_cols:
-        op.add_column('onboardings', sa.Column('id', sa.String(), nullable=True))
-        # Populate id for any existing row
-        op.execute("UPDATE onboardings SET id = user_id WHERE id IS NULL;")
-        op.alter_column('onboardings', 'id', nullable=False)
+    op.execute("ALTER TABLE domain_mappings DROP COLUMN IF EXISTS slug CASCADE;")
+    op.execute("ALTER TABLE onboardings DROP COLUMN IF EXISTS slug CASCADE;")
 
-    if 'slug' in onboarding_cols:
-        try:
-            op.drop_index('ix_onboardings_slug', table_name='onboardings')
-        except Exception:
-            pass
-        try:
-            op.drop_constraint('uq_onboardings_slug', 'onboardings', type_='unique')
-        except Exception:
-            pass
-        op.drop_column('onboardings', 'slug')
-
-    # 2. Update domain_mappings table
-    domain_mapping_cols = [c['name'] for c in inspector.get_columns('domain_mappings')]
-    if 'slug' in domain_mapping_cols:
-        try:
-            op.drop_index('ix_domain_mappings_slug', table_name='domain_mappings')
-        except Exception:
-            pass
-        try:
-            op.drop_constraint('domain_mappings_slug_fkey', 'domain_mappings', type_='foreignkey')
-        except Exception:
-            pass
-        op.drop_column('domain_mappings', 'slug')
-
-    if 'onboarding_id' not in domain_mapping_cols:
-        op.add_column('domain_mappings', sa.Column('onboarding_id', sa.String(), nullable=True))
-        op.create_foreign_key(
-            'fk_domain_mappings_onboarding_id',
-            'domain_mappings',
-            'onboardings',
-            ['onboarding_id'],
-            ['id'],
-            ondelete='CASCADE'
-        )
-        op.create_index('ix_domain_mappings_onboarding_id', 'domain_mappings', ['onboarding_id'], unique=False)
-
-    if 'status' not in domain_mapping_cols:
-        op.add_column('domain_mappings', sa.Column('status', sa.String(), nullable=False, server_default='PENDING'))
-
-    if 'dns_details' not in domain_mapping_cols:
-        op.add_column('domain_mappings', sa.Column('dns_details', sa.JSON(), nullable=True))
+    op.execute("ALTER TABLE domain_mappings ADD COLUMN IF NOT EXISTS onboarding_id VARCHAR;")
+    op.execute("ALTER TABLE domain_mappings ADD COLUMN IF NOT EXISTS status VARCHAR DEFAULT 'PENDING';")
+    op.execute("ALTER TABLE domain_mappings ADD COLUMN IF NOT EXISTS dns_details JSON;")
 
 
 def downgrade() -> None:

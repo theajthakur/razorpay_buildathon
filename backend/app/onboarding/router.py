@@ -117,14 +117,40 @@ def create_domain(
         raise HTTPException(status_code=e.status_code, detail=e.message)
 
     # Extract DNS details returned from Vercel
-    is_verified = vercel_data.get("verified", False)
+    config_info = vercel_data.get("config", {})
+    rec_cnames = config_info.get("recommendedCNAME", [])
+    cname_target = None
+    if rec_cnames and isinstance(rec_cnames, list):
+        for item in rec_cnames:
+            if isinstance(item, dict) and item.get("rank") == 1:
+                cname_target = str(item.get("value", "")).rstrip(".")
+                break
+        if not cname_target and len(rec_cnames) > 0 and isinstance(rec_cnames[0], dict):
+            cname_target = str(rec_cnames[0].get("value", "")).rstrip(".")
+
+    if not cname_target:
+        cnames = config_info.get("cnames", [])
+        if cnames and isinstance(cnames, list) and len(cnames) > 0:
+            cname_target = str(cnames[0]).rstrip(".")
+        else:
+            cname_target = "cname.vercel-dns.com"
+
     dns_details = {
-        "verified": is_verified,
+        "verified": False,
+        "misconfigured": config_info.get("misconfigured", True),
+        "recommendedCNAME": rec_cnames,
+        "recommendedIPv4": config_info.get("recommendedIPv4", []),
+        "cname_target": cname_target,
+        "cnames": config_info.get("cnames", []),
+        "aValues": config_info.get("aValues", []),
+        "nameservers": config_info.get("nameservers", []),
+        "configuredBy": config_info.get("configuredBy"),
+        "serviceType": config_info.get("serviceType"),
         "verification": vercel_data.get("verification", []),
         "apexName": vercel_data.get("apexName"),
         "gitBranch": vercel_data.get("gitBranch"),
     }
-    initial_status = "ACTIVE" if is_verified else "PENDING"
+    initial_status = "PENDING"
 
     # 3. Create DomainMapping database record
     new_mapping = DomainMapping(
@@ -155,7 +181,7 @@ def list_domains(
 
     mappings = (
         db.query(DomainMapping)
-        .filter(DomainMapping.onboarding_id == onboarding.id)
+        .filter((DomainMapping.onboarding_id == onboarding.id) | (DomainMapping.onboarding_id == onboarding.user_id))
         .order_by(DomainMapping.created_at.desc())
         .all()
     )
@@ -178,7 +204,7 @@ def get_domain(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Domain mapping not found.")
 
     mapping = db.query(DomainMapping).filter(DomainMapping.id == domain_id).first()
-    if not mapping or mapping.onboarding_id != onboarding.id:
+    if not mapping or (mapping.onboarding_id != onboarding.id and mapping.onboarding_id != onboarding.user_id):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Domain mapping not found.")
 
     return mapping
@@ -198,7 +224,7 @@ def verify_domain(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Domain mapping not found.")
 
     mapping = db.query(DomainMapping).filter(DomainMapping.id == domain_id).first()
-    if not mapping or mapping.onboarding_id != onboarding.id:
+    if not mapping or (mapping.onboarding_id != onboarding.id and mapping.onboarding_id != onboarding.user_id):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Domain mapping not found.")
 
     try:
@@ -237,7 +263,7 @@ def delete_domain(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Domain mapping not found.")
 
     mapping = db.query(DomainMapping).filter(DomainMapping.id == domain_id).first()
-    if not mapping or mapping.onboarding_id != onboarding.id:
+    if not mapping or (mapping.onboarding_id != onboarding.id and mapping.onboarding_id != onboarding.user_id):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Domain mapping not found.")
 
     # 1. Remove domain from Vercel

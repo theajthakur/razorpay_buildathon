@@ -30,14 +30,14 @@ def run():
 
             if should_stamp:
                 print("Existing database tables detected without alembic version. Stamping schema to head...")
-                subprocess.run(["alembic", "stamp", "head"], check=True)
+                subprocess.run([sys.executable, "-m", "alembic", "stamp", "head"], check=True)
     except Exception as e:
         print(f"Migration pre-check warning: {e}")
     finally:
         engine.dispose()
 
     print("Running alembic upgrade head...")
-    subprocess.run(["alembic", "upgrade", "head"], check=True)
+    subprocess.run([sys.executable, "-m", "alembic", "upgrade", "head"], check=True)
 
 if __name__ == "__main__":
     run()
