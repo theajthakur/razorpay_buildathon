@@ -21,6 +21,7 @@ import { ReusableSkeleton, DomainPageSkeleton } from "@/components/ui/Skeleton";
 import { DomainList } from "@/components/domain/DomainList";
 import { DomainAddModal } from "@/components/domain/DomainAddModal";
 import { DomainDeleteModal } from "@/components/domain/DomainDeleteModal";
+import { MetricCard } from "@/components/ui/MetricCard";
 
 export default function DomainPage() {
   const [onboarding, setOnboarding] = useState<OnboardingResponse | null>(null);
@@ -153,53 +154,45 @@ export default function DomainPage() {
 
           {/* Stats Overview */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
-            <Card className="p-4 sm:p-5 flex flex-col justify-between">
-              <div className="flex items-center justify-between gap-2 min-w-0">
-                <span className="text-xs font-semibold text-text-secondary min-w-0 truncate">
-                  Total Custom Domains
-                </span>
-                <div className="p-2 rounded-xl bg-primary/10 text-primary shrink-0">
-                  <Globe className="w-4 h-4" />
-                </div>
-              </div>
-              <div className="mt-3">
-                <h3 className="font-heading text-2xl font-bold text-text-primary">
-                  {domains.length}
-                </h3>
-              </div>
-            </Card>
-
-            <Card className="p-4 sm:p-5 flex flex-col justify-between">
-              <div className="flex items-center justify-between gap-2 min-w-0">
-                <span className="text-xs font-semibold text-text-secondary min-w-0 truncate">
-                  Active & Verified
-                </span>
-                <div className="p-2 rounded-xl bg-success/10 text-success shrink-0">
-                  <CheckCircle2 className="w-4 h-4" />
-                </div>
-              </div>
-              <div className="mt-3">
-                <h3 className="font-heading text-2xl font-bold text-success">
-                  {domains.filter((d) => d.status === "ACTIVE").length}
-                </h3>
-              </div>
-            </Card>
-
-            <Card className="p-4 sm:p-5 flex flex-col justify-between sm:col-span-2 lg:col-span-1">
-              <div className="flex items-center justify-between gap-2 min-w-0">
-                <span className="text-xs font-semibold text-text-secondary min-w-0 truncate">
-                  Pending Verification
-                </span>
-                <div className="p-2 rounded-xl bg-warning/10 text-warning shrink-0">
-                  <Clock className="w-4 h-4" />
-                </div>
-              </div>
-              <div className="mt-3">
-                <h3 className="font-heading text-2xl font-bold text-warning">
-                  {domains.filter((d) => d.status === "PENDING").length}
-                </h3>
-              </div>
-            </Card>
+            {[
+              {
+                id: "total-domains",
+                title: "Total Custom Domains",
+                icon: Globe,
+                value: domains.length,
+              },
+              {
+                id: "active-domains",
+                title: "Active & Verified",
+                icon: CheckCircle2,
+                iconBgColor: "bg-success/10",
+                iconTextColor: "text-success",
+                valueColor: "text-success",
+                value: domains.filter((d) => d.status === "ACTIVE").length,
+              },
+              {
+                id: "pending-domains",
+                title: "Pending Verification",
+                icon: Clock,
+                iconBgColor: "bg-warning/10",
+                iconTextColor: "text-warning",
+                valueColor: "text-warning",
+                value: domains.filter((d) => d.status === "PENDING").length,
+                className: "sm:col-span-2 lg:col-span-1",
+              },
+            ].map((metric) => (
+              <MetricCard
+                key={metric.id}
+                id={metric.id}
+                title={metric.title}
+                value={metric.value}
+                icon={metric.icon}
+                iconBgColor={metric.iconBgColor}
+                iconTextColor={metric.iconTextColor}
+                valueColor={metric.valueColor}
+                className={metric.className}
+              />
+            ))}
           </div>
 
           {/* Main Content: Domain List */}

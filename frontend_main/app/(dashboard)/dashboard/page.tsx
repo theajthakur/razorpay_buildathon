@@ -23,6 +23,7 @@ import {
   MetricCardSkeleton,
   ActivityFeedSkeleton
 } from "@/components/ui/Skeleton";
+import { MetricCard } from "@/components/ui/MetricCard";
 
 export default function DashboardPage() {
   const [summary, setSummary] = useState<AnalyticsSummary | null>(null);
@@ -62,6 +63,36 @@ export default function DashboardPage() {
     fetchActivity();
   }, []);
 
+  // JSON Data for metrics summary cards
+  const metricsData = [
+    {
+      id: "revenue",
+      title: "Revenue via Agent",
+      icon: IndianRupee,
+      value: summary?.revenue?.total ?? "₹0.00",
+      trend: {
+        value: summary?.revenue?.relative_yesterday ?? "+0.0%",
+        label: "vs yesterday",
+        isPositive: true,
+      },
+    },
+    {
+      id: "orders",
+      title: "Total Agent Orders",
+      icon: ShoppingBag,
+      value: `${summary?.orders?.total_count ?? "0"} orders`,
+      subtitle: `Avg. Cart: ₹${summary?.orders?.average_cart_value ?? "0"}`,
+    },
+    {
+      id: "conversations",
+      title: "Total Conversations",
+      icon: MessageSquare,
+      value: summary?.conversations?.total ?? "0",
+      subtitle: `Avg. per user: ${summary?.conversations?.average_per_user ?? "0"} chats`,
+      className: "sm:col-span-2 lg:col-span-1",
+    },
+  ];
+
   return (
     <div className="space-y-8 font-sans">
       {/* Header */}
@@ -91,84 +122,19 @@ export default function DashboardPage() {
 
       {/* Grid of Summary Metric Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
-        {/* Metric 1: Revenue via Agent */}
-        <ReusableSkeleton
-          name="revenue-card"
-          loading={summaryLoading}
-          fallback={<MetricCardSkeleton />}
-        >
-          <Card className="h-full flex flex-col justify-between py-4">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-text-secondary">
-                Revenue via Agent
-              </span>
-              <div className="p-2 rounded-xl bg-primary/10 text-primary">
-                <IndianRupee className="w-5 h-5" />
-              </div>
-            </div>
-            <div className="mt-2">
-              <h3 className="font-heading text-3xl font-bold text-text-primary">
-                {summary?.revenue?.total ?? "₹0.00"}
-              </h3>
-              <p className="text-xs text-success font-semibold flex items-center gap-1 mt-1">
-                <TrendingUp className="w-3.5 h-3.5" />
-                <span>{summary?.revenue?.relative_yesterday ?? "+0.0%"} vs yesterday</span>
-              </p>
-            </div>
-          </Card>
-        </ReusableSkeleton>
-
-        {/* Metric 2: Total Agent Orders */}
-        <ReusableSkeleton
-          name="orders-card"
-          loading={summaryLoading}
-          fallback={<MetricCardSkeleton />}
-        >
-          <Card className="h-full flex flex-col justify-between">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-text-secondary">
-                Total Agent Orders
-              </span>
-              <div className="p-2 rounded-xl bg-primary/10 text-primary">
-                <ShoppingBag className="w-5 h-5" />
-              </div>
-            </div>
-            <div className="mt-4">
-              <h3 className="font-heading text-3xl font-bold text-text-primary">
-                {summary?.orders?.total_count ?? "0"} orders
-              </h3>
-              <p className="text-xs text-text-secondary flex items-center gap-1 mt-1 font-medium">
-                <span>Avg. Cart: ₹{summary?.orders?.average_cart_value ?? "0"}</span>
-              </p>
-            </div>
-          </Card>
-        </ReusableSkeleton>
-
-        {/* Metric 3: Active Conversations */}
-        <ReusableSkeleton
-          name="conversations-card"
-          loading={summaryLoading}
-          fallback={<MetricCardSkeleton />}
-        >
-          <Card className="sm:col-span-2 lg:col-span-1 h-full flex flex-col justify-between">
-            <div className="flex items-center justify-between">
-              <span className="text-xs font-semibold text-text-secondary">
-                Total Conversations
-              </span>
-              <div className="p-2 rounded-xl bg-primary/10 text-primary">
-                <MessageSquare className="w-5 h-5" />
-              </div>
-            </div>
-            <div className="mt-4">
-              <h3 className="font-heading text-3xl font-bold text-text-primary">
-                {summary?.conversations?.total ?? "0"}
-              </h3>
-              <p className="text-xs text-text-secondary flex items-center gap-1 mt-1 font-medium">
-                <span>Avg. per user: {summary?.conversations?.average_per_user ?? "0"} chats</span>
-              </p>
-            </div>
-          </Card>
-        </ReusableSkeleton>
+        {metricsData.map((metric) => (
+          <MetricCard
+            key={metric.id}
+            id={metric.id}
+            title={metric.title}
+            value={metric.value}
+            icon={metric.icon}
+            trend={metric.trend}
+            subtitle={metric.subtitle}
+            className={metric.className}
+            loading={summaryLoading}
+          />
+        ))}
       </div>
 
       {/* Recent Activity Feed */}
