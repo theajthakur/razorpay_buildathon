@@ -97,7 +97,7 @@ const getAssistantReply = (userMessage: string): { content: string; products?: P
 
   if (msg.includes("hello") || msg.includes("hi") || msg.includes("hey")) {
     return {
-      content: "Hello! I am your **Ponion AI Assistant**. How can I help you order today? You can search for pizzas, wraps, salads, desserts, and more!",
+      content: "Hello! I am your **ShopAgent AI Assistant**. How can I help you order today? You can search for pizzas, wraps, salads, desserts, and more!",
     };
   }
 

@@ -15,8 +15,8 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Ponion | AI Food Ordering Assistant",
-  description: "An intelligent shopping & ordering assistant for Ponion merchants.",
+  title: "ShopAgent | AI Shopping & Ordering Assistant",
+  description: "An intelligent AI shopping & ordering assistant for e-commerce merchants.",
 };
 
 export default function RootLayout({

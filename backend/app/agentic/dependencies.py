@@ -143,33 +143,6 @@ def resolve_merchant_by_host(
                         request.state.merchant = ob
                         return ob
 
-    # 5. Apex domain matching (e.g. shopagent-backend.vijstack.com -> agent.vijstack.com)
-    for candidate in candidates:
-        cand_apex = get_apex_domain(candidate)
-        if cand_apex and cand_apex not in ("localhost", "127.0.0.1", "onrender.com"):
-            all_mappings = db.query(DomainMapping).all()
-            for m in all_mappings:
-                if m.domain and get_apex_domain(m.domain) == cand_apex:
-                    onboarding = (
-                        db.query(Onboarding)
-                        .filter((Onboarding.id == m.onboarding_id) | (Onboarding.user_id == m.onboarding_id))
-                        .first()
-                    )
-                    if onboarding:
-                        logger.info(f"Resolved merchant via Apex Domain match: candidate='{candidate}' (apex={cand_apex}) -> m.domain='{m.domain}', onboarding.id={onboarding.id}")
-                        request.state.merchant = onboarding
-                        return onboarding
-
-    # 6. Fallback for backend/local direct calls when only 1 merchant profile exists
-    all_onboardings = db.query(Onboarding).all()
-    if len(all_onboardings) == 1:
-        for candidate in candidates:
-            if is_backend_or_local_host(candidate):
-                onboarding = all_onboardings[0]
-                logger.info(f"Resolved merchant via backend/local host fallback: candidate='{candidate}', onboarding.id={onboarding.id}")
-                request.state.merchant = onboarding
-                return onboarding
-
     # Diagnostics log before failing
     all_mapped_domains = [m.domain for m in db.query(DomainMapping).all()]
     all_onboarding_ids = [(ob.id, ob.user_id) for ob in db.query(Onboarding).all()]

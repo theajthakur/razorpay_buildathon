@@ -276,7 +276,7 @@ export function ChatWindow({ conversationId }: ChatWindowProps) {
 
   // 2. Unauthenticated State -> Render Sign In Form
   if (!isAuthenticated) {
-    const displayName = branding?.display_name || "Ponion";
+    const displayName = branding?.display_name || "ShopAgent";
     const hasLogo = !!branding?.logo_url && !logoError;
 
     return (

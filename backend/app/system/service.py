@@ -151,7 +151,7 @@ def upsert_user_onboarding(db: Session, user_id: str, data: OnboardingUpsertRequ
     if not db_onboarding:
         db_onboarding = Onboarding(
             user_id=user_id,
-            base_url=data.base_url if (data.base_url and data.base_url != "http://placeholder") else "https://ponion-backend.onrender.com",
+            base_url=data.base_url if (data.base_url and data.base_url != "http://placeholder") else "https://shopagent-backend.vijstack.com",
             auth_enabled=data.auth_enabled,
             auth_disabled_ack=data.auth_disabled_ack,
             auth_config=auth_config_dict,
@@ -217,7 +217,7 @@ def patch_user_onboarding(db: Session, user_id: str, data: OnboardingPartialUpda
     """
     db_onboarding = db.query(Onboarding).filter(Onboarding.user_id == user_id).first()
     if not db_onboarding:
-        init_base = data.base_url if (data.base_url and data.base_url != "http://placeholder") else "https://ponion-backend.onrender.com"
+        init_base = data.base_url if (data.base_url and data.base_url != "http://placeholder") else "https://shopagent-backend.vijstack.com"
         db_onboarding = Onboarding(
             user_id=user_id,
             base_url=init_base,
@@ -231,7 +231,7 @@ def patch_user_onboarding(db: Session, user_id: str, data: OnboardingPartialUpda
 
     base = update_dict.get("base_url") or db_onboarding.base_url or ""
     if base == "http://placeholder":
-        base = db_onboarding.base_url or "https://ponion-backend.onrender.com"
+        base = db_onboarding.base_url or "https://shopagent-backend.vijstack.com"
 
     if "base_url" in update_dict and update_dict["base_url"] is not None:
         new_base_url = str(update_dict["base_url"]).strip()

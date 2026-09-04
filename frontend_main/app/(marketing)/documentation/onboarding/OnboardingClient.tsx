@@ -79,7 +79,7 @@ function formatEndpointUrl(baseUrl: string, pathOrUrl?: string | null): string {
   let target = pathOrUrl.trim();
 
   if (/^https?:\/\//i.test(target)) {
-    if (target.includes("ponion")) {
+    if (target.includes("placeholder")) {
       return target.replace(/^https?:\/\/[^\/]+/i, baseUrl);
     }
     return target;
@@ -182,7 +182,7 @@ export default function OnboardingClient({ onboarding }: OnboardingClientProps) 
     },
   };
 
-  const cleanBaseUrl = merged.base_url && !merged.base_url.includes("ponion")
+  const cleanBaseUrl = merged.base_url && !merged.base_url.includes("placeholder")
     ? merged.base_url.replace(/\/$/, "")
     : "https://api.yourstore.com";
 

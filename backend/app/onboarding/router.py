@@ -71,7 +71,7 @@ def get_or_create_user_onboarding(user: User, db: Session) -> Onboarding:
     if not onboarding:
         onboarding = Onboarding(
             user_id=user.id,
-            base_url="https://ponion-backend.onrender.com",
+            base_url="https://shopagent-backend.vijstack.com",
             auth_enabled=True,
             branding_config={}
         )

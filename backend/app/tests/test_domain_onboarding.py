@@ -42,14 +42,14 @@ class TestDomainOnboardingAPIs(unittest.TestCase):
         # Create Onboarding for Merchant A
         cls.onboarding_a = Onboarding(
             user_id=cls.merchant_a_id,
-            base_url="https://ponion-backend.onrender.com",
+            base_url="https://shopagent-backend.vijstack.com",
             auth_enabled=True,
             branding_config={}
         )
         # Create Onboarding for Merchant B
         cls.onboarding_b = Onboarding(
             user_id=cls.merchant_b_id,
-            base_url="https://ponion-backend.onrender.com",
+            base_url="https://shopagent-backend.vijstack.com",
             auth_enabled=True,
             branding_config={}
         )

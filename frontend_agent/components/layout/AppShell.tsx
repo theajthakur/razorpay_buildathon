@@ -170,11 +170,7 @@ function AppShellContent({ children }: AppShellProps) {
           </div>
         )}
         <span className="text-lg font-bold tracking-tight text-secondary-900 font-sans truncate max-w-[160px]">
-          {branding?.display_name || (
-            <>
-              Pon<span className="text-primary-500" style={{ color: primaryColor }}>ion</span>
-            </>
-          )}
+          {branding?.display_name || "ShopAgent"}
         </span>
       </div>
     );
@@ -278,27 +274,41 @@ function AppShellContent({ children }: AppShellProps) {
   }
 
   if (brandingError || !branding) {
+    const currentHost = typeof window !== "undefined" ? window.location.host : "this domain";
+
     return (
       <div className="flex flex-col h-screen w-screen items-center justify-center p-6 bg-background-50 font-sans select-none text-center">
-        <div className="bg-white border border-secondary-200 shadow-xl rounded-2xl p-7 max-w-sm w-full space-y-5">
-          <div className="w-12 h-12 rounded-2xl bg-red-50 text-red-500 flex items-center justify-center mx-auto border border-red-100">
-            <AlertTriangle className="w-6 h-6" />
+        <div className="bg-white border border-secondary-200 shadow-xl rounded-2xl p-8 max-w-md w-full space-y-6">
+          <div className="w-14 h-14 rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center mx-auto border border-amber-200/60 shadow-xs">
+            <AlertTriangle className="w-7 h-7" />
           </div>
           <div className="space-y-2">
-            <h2 className="text-lg font-bold text-secondary-900 tracking-tight">
-              Domain Mapping Error
+            <h2 className="text-xl font-bold text-secondary-900 tracking-tight font-sans">
+              Domain Mapping Not Found
             </h2>
-            <p className="text-xs text-secondary-500 leading-relaxed">
-              Unable to connect to store identity for <code className="bg-secondary-100 text-secondary-800 px-1.5 py-0.5 rounded font-mono text-[11px]">{typeof window !== "undefined" ? window.location.host : "domain"}</code>.
+            <p className="text-xs text-secondary-500 leading-relaxed px-2">
+              No active ShopAgent AI store configuration found for <code className="bg-secondary-100 text-secondary-800 px-2 py-0.5 rounded font-mono text-[11px] font-semibold">{currentHost}</code>.
             </p>
           </div>
-          <button
-            onClick={() => window.location.reload()}
-            className="w-full py-2.5 rounded-xl bg-secondary-900 text-white font-semibold text-xs transition-all hover:bg-secondary-800 active:scale-95 cursor-pointer flex items-center justify-center gap-2"
-          >
-            <RefreshCw className="w-3.5 h-3.5" />
-            <span>Retry Connection</span>
-          </button>
+
+          <div className="space-y-3 pt-2">
+            <a
+              href="https://shopagent.vijstack.com"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="w-full py-3 px-4 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-semibold text-xs shadow-md transition-all flex items-center justify-center gap-2 cursor-pointer select-none"
+            >
+              <span>Turn Your E-Commerce Store Into An AI Agent</span>
+            </a>
+
+            <button
+              onClick={() => window.location.reload()}
+              className="w-full py-2.5 px-4 rounded-xl bg-secondary-100 text-secondary-700 hover:bg-secondary-200 font-medium text-xs transition-all flex items-center justify-center gap-2 cursor-pointer select-none"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+              <span>Retry Connection</span>
+            </button>
+          </div>
         </div>
       </div>
     );

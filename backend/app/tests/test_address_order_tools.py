@@ -260,8 +260,8 @@ class TestAddressOrderTools(unittest.TestCase):
             "data": {
                 "products": [
                     {
-                        "id": "p_ponion_1",
-                        "name": "Ponion Chai Mix",
+                        "id": "p_shopagent_1",
+                        "name": "ShopAgent Chai Mix",
                         "price": 299.00,
                         "description": "Authentic instant chai mix"
                     }
@@ -273,8 +273,8 @@ class TestAddressOrderTools(unittest.TestCase):
         import asyncio
         res = asyncio.run(execute_search_products(self.test_user_id, {"query": "chai"}, self.session_data, self.db))
         self.assertEqual(res["count"], 1)
-        self.assertEqual(res["products"][0]["id"], "p_ponion_1")
-        self.assertEqual(res["products"][0]["name"], "Ponion Chai Mix")
+        self.assertEqual(res["products"][0]["id"], "p_shopagent_1")
+        self.assertEqual(res["products"][0]["name"], "ShopAgent Chai Mix")
 
     def test_execute_create_order_empty_cart(self):
         onboarding = Onboarding(

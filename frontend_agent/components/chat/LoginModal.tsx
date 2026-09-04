@@ -90,7 +90,7 @@ export function LoginModal({ isOpen, onClose }: LoginModalProps) {
   };
 
   const isSubmitDisabled = !email.trim() || !password || submitting;
-  const displayName = branding?.display_name || "Ponion";
+  const displayName = branding?.display_name || "ShopAgent";
 
   return (
     <div className="fixed inset-0 bg-secondary-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">

@@ -134,7 +134,7 @@ export default function OnboardingPage() {
   const [sessionToken, setSessionToken] = useState<string | null>(null);
 
   // Connection Details State (Path-Only)
-  const [baseUrl, setBaseUrl] = useState("https://ponion-backend.onrender.com");
+  const [baseUrl, setBaseUrl] = useState("https://shopagent-backend.vijstack.com");
   const [authEnabled, setAuthEnabled] = useState(true);
   const [authDisabledAck, setAuthDisabledAck] = useState(false);
   const [authPath, setAuthPath] = useState("auth/login");
@@ -912,7 +912,7 @@ export default function OnboardingPage() {
         <div className="space-y-6">
           <Input
             label="API Base URL"
-            placeholder="https://ponion-backend.onrender.com"
+            placeholder="https://shopagent-backend.vijstack.com"
             value={baseUrl}
             onChange={(e) => {
               const val = e.target.value;

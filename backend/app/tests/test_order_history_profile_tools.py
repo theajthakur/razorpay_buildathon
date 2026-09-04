@@ -29,7 +29,7 @@ class TestOrderHistoryProfileTools(unittest.TestCase):
         self.test_merchant = User(
             id=self.test_user_id,
             email="merchant_order_profile@example.com",
-            store_name="Ponion Order Store",
+            store_name="ShopAgent Order Store",
             status="approved"
         )
         self.db.add(self.test_merchant)
@@ -174,7 +174,7 @@ class TestOrderHistoryProfileTools(unittest.TestCase):
             "status": "success",
             "data": {
                 "user": {
-                    "full_name": "Ponion Customer",
+                    "full_name": "ShopAgent Customer",
                     "customer_email": "customer_test@example.com",
                     "membership_tier": "Gold VIP",
                     "joined_at": "2025-01-15T00:00:00Z"
@@ -187,7 +187,7 @@ class TestOrderHistoryProfileTools(unittest.TestCase):
         self.assertNotIn("error", res)
         profile = res.get("profile")
         self.assertIsNotNone(profile)
-        self.assertEqual(profile.get("name"), "Ponion Customer")
+        self.assertEqual(profile.get("name"), "ShopAgent Customer")
         self.assertEqual(profile.get("email"), "customer_test@example.com")
         self.assertEqual(profile.get("loyalty_tier"), "Gold VIP")
         self.assertEqual(profile.get("member_since"), "2025-01-15T00:00:00Z")

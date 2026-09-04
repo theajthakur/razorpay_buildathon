@@ -40,7 +40,7 @@ export default function ChatEmptyState() {
     }
   };
 
-  const displayName = branding?.display_name || "Ponion";
+  const displayName = branding?.display_name || "ShopAgent";
 
   return (
     <div className="flex flex-col flex-1 items-center justify-center p-6 w-full max-w-4xl mx-auto min-h-[70vh] font-sans">

@@ -36,13 +36,13 @@ def upgrade() -> None:
     # 2. Seed demo user & onboarding so foreign key requirement (domain_mappings.slug -> onboardings.slug) is met
     op.execute(
         "INSERT INTO users (id, email, store_name, status) "
-        "VALUES ('demo_user_ponion', 'demo@ponion.com', 'Ponion Store', 'approved') "
+        "VALUES ('demo_user_shopagent', 'demo@shopagent.dev', 'ShopAgent Store', 'approved') "
         "ON CONFLICT (id) DO NOTHING;"
     )
     op.execute(
         "INSERT INTO onboardings (user_id, base_url, auth_enabled, auth_disabled_ack, slug) "
-        "VALUES ('demo_user_ponion', 'https://mock.shopagent.dev', true, false, 'ponion') "
-        "ON CONFLICT (user_id) DO UPDATE SET slug = 'ponion';"
+        "VALUES ('demo_user_shopagent', 'https://mock.shopagent.dev', true, false, 'shopagent') "
+        "ON CONFLICT (user_id) DO UPDATE SET slug = 'shopagent';"
     )
 
     tables = inspector.get_table_names()
@@ -71,7 +71,7 @@ def upgrade() -> None:
     # 3. Seed demo domain mapping
     op.execute(
         "INSERT INTO domain_mappings (id, domain, slug) "
-        "VALUES ('5ff2d515-ef66-419b-ab2c-b5f76ee384a6', 'localhost:3001', 'ponion') "
+        "VALUES ('5ff2d515-ef66-419b-ab2c-b5f76ee384a6', 'localhost:3001', 'shopagent') "
         "ON CONFLICT (domain) DO NOTHING;"
     )
 
