@@ -3,7 +3,7 @@ from fastapi.testclient import TestClient
 from app.main import app
 from app.core.database import SessionLocal
 from app.core.security import get_current_user
-from app.system.models import User, Onboarding
+from app.system.models import User, Onboarding, AgentOrder
 
 class TestOnboardingAPIs(unittest.TestCase):
     @classmethod
@@ -32,6 +32,7 @@ class TestOnboardingAPIs(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         # Cleanup test data
+        cls.db.query(AgentOrder).filter(AgentOrder.merchant_id == cls.test_user_id).delete()
         cls.db.query(Onboarding).filter(Onboarding.user_id == cls.test_user_id).delete()
         cls.db.query(User).filter(User.id == cls.test_user_id).delete()
         cls.db.commit()
@@ -39,9 +40,41 @@ class TestOnboardingAPIs(unittest.TestCase):
         app.dependency_overrides.clear()
 
     def setUp(self):
-        # Clean onboarding row
-        self.db.query(Onboarding).filter(Onboarding.user_id == self.test_user_id).delete()
+        # Clean onboarding and orders rows
+        cls = self.__class__
+        cls.db.query(AgentOrder).filter(AgentOrder.merchant_id == cls.test_user_id).delete()
+        cls.db.query(Onboarding).filter(Onboarding.user_id == cls.test_user_id).delete()
+        cls.db.commit()
+
+    def test_analytics_summary_with_decimal_order_total(self):
+        # Create test orders with numeric decimal order_total values
+        order1 = AgentOrder(
+            merchant_id=self.test_user_id,
+            customer_ref="customer1@example.com",
+            items=[],
+            order_total=1499.50,
+            status="payment_captured"
+        )
+        order2 = AgentOrder(
+            merchant_id=self.test_user_id,
+            customer_ref="customer2@example.com",
+            items=[],
+            order_total=2500.00,
+            status="payment_captured"
+        )
+        self.db.add_all([order1, order2])
         self.db.commit()
+
+        # Request analytics summary endpoint
+        response = self.client.get("/system/analytics/summary")
+        self.assertEqual(response.status_code, 200)
+        data = response.json()
+
+        self.assertIn("revenue", data)
+        self.assertIn("orders", data)
+        self.assertIn("conversations", data)
+        self.assertEqual(data["revenue"]["total"], "₹3,999.50")
+        self.assertEqual(data["orders"]["total_count"], "2")
 
     def test_onboarding_upsert_and_fetch(self):
         payload = {

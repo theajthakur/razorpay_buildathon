@@ -348,25 +348,28 @@ def get_analytics_summary(
     merchant_id = current_user.id
 
     # 1. Total Revenue calculation
-    total_rev = db.query(func.sum(AgentOrder.order_total)).filter(
+    raw_total_rev = db.query(func.sum(AgentOrder.order_total)).filter(
         AgentOrder.merchant_id == merchant_id
-    ).scalar() or 0.0
+    ).scalar()
+    total_rev = float(raw_total_rev) if raw_total_rev is not None else 0.0
 
     # Yesterday comparison calculation
     now = datetime.now(timezone.utc)
     today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
     yesterday_start = today_start - timedelta(days=1)
 
-    today_rev = db.query(func.sum(AgentOrder.order_total)).filter(
+    raw_today_rev = db.query(func.sum(AgentOrder.order_total)).filter(
         AgentOrder.merchant_id == merchant_id,
         AgentOrder.created_at >= today_start
-    ).scalar() or 0.0
+    ).scalar()
+    today_rev = float(raw_today_rev) if raw_today_rev is not None else 0.0
 
-    yesterday_rev = db.query(func.sum(AgentOrder.order_total)).filter(
+    raw_yesterday_rev = db.query(func.sum(AgentOrder.order_total)).filter(
         AgentOrder.merchant_id == merchant_id,
         AgentOrder.created_at >= yesterday_start,
         AgentOrder.created_at < today_start
-    ).scalar() or 0.0
+    ).scalar()
+    yesterday_rev = float(raw_yesterday_rev) if raw_yesterday_rev is not None else 0.0
 
     if yesterday_rev > 0:
         pct_diff = ((today_rev - yesterday_rev) / yesterday_rev) * 100.0
@@ -381,9 +384,10 @@ def get_analytics_summary(
         AgentOrder.merchant_id == merchant_id
     ).scalar() or 0
 
-    avg_cart = db.query(func.avg(AgentOrder.order_total)).filter(
+    raw_avg_cart = db.query(func.avg(AgentOrder.order_total)).filter(
         AgentOrder.merchant_id == merchant_id
-    ).scalar() or 0.0
+    ).scalar()
+    avg_cart = float(raw_avg_cart) if raw_avg_cart is not None else 0.0
 
     # 3. Conversations calculation
     conv_count = db.query(func.count(Conversation.id)).filter(
