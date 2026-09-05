@@ -7,11 +7,15 @@ Built for the **[Razorpay AI Buildathon](https://razorpay.com/buildathon/) — A
 > - **Customer Agent Widget**: [https://shopagent-agent.vijstack.com](https://shopagent-agent.vijstack.com)
 > - **Backend API**: [https://shopagent-backend.vijstack.com](https://shopagent-backend.vijstack.com)
 
+## Track 01: Agentic Commerce
+
+> **ShopAgent turns existing merchant commerce APIs into an AI-native storefront where an AI buyer can discover, decide, checkout, and pay.**
+
 ---
 
 ## Executive Summary
 
-**AI Commerce Layer (ShopAgent)** is a multi-tenant SaaS platform that empowers any merchant to transform their existing REST APIs (products, orders, customers, authentication, addresses) into a fully interactive, conversational AI shopping agent. Customers can search catalogs, compare products, manage shopping carts, select delivery addresses, check order status, and complete payments via **Razorpay** directly through a chat interface — without merchants writing or maintaining custom AI infrastructure.
+**ShopAgent** is a multi-tenant SaaS platform built for the **Razorpay AI Buildathon 2026** (Agentic Commerce Track). It empowers any e-commerce merchant to transform their existing REST APIs (products, orders, customers, authentication, addresses) into a fully interactive, conversational AI shopping agent. Customers can search catalogs, compare products, manage shopping carts, select delivery addresses, check order history, and complete payments via **Razorpay** directly through a chat interface — without merchants writing or maintaining custom AI infrastructure.
 
 Merchants onboard their API schemas once via the **Merchant SaaS Dashboard** (`frontend_main`), register their custom branded domain (e.g. `agent.mybrand.com`), and their AI Agent goes live immediately.
 
@@ -19,12 +23,18 @@ Merchants onboard their API schemas once via the **Merchant SaaS Dashboard** (`f
 
 ## Technical Documentation Index
 
-For in-depth architectural guides and developer specifications, see the `docs/` folder:
+For exhaustive engineering specifications, sequence diagrams, security guardrails, failure recovery models, and API references, see the comprehensive `docs/` suite:
 
-- 🌐 [Custom Domain Integration & Vercel DNS Setup](docs/domain_integration.md)
-- 🔑 [Merchant Order Verification & API Key Auth](docs/order_verification.md)
-- 🤖 [Agent Orchestrator & Tool Calling Engine](docs/agent_orchestrator.md)
-- 🚀 [GCP Compute Engine CI/CD Pipeline Guide](docs/gcp_cicd_setup.md)
+| Document | Description |
+|---|---|
+| [Architecture](docs/architecture.md) | Complete system architecture, sub-packages, and state ownership |
+| [Agentic Commerce](docs/agentic-commerce.md) | Intent → search → cart → address → order → payment execution flow |
+| [Payment Flow](docs/payment-flow.md) | Razorpay order and payment lifecycle, state machine, and retry mechanics |
+| [Security & Guardrails](docs/security-and-guardrails.md) | Authentication, tenant isolation, API keys, and AI guardrails |
+| [Failure Recovery](docs/failure-recovery.md) | Payment failure, retry handling, and development incident analysis |
+| [Merchant Integration](docs/merchant-integration.md) | Zero-rebuild merchant API configuration layer and dynamic token delivery |
+| [Custom Domains](docs/custom-domains.md) | Multi-tenant custom domain architecture and Vercel DNS integration |
+| [API Reference](docs/api-reference.md) | Code-verified FastAPI endpoint directory |
 
 ---
 
