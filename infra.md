@@ -7,7 +7,6 @@ Three-part system: `backend`, `frontend_agent`, `frontend_main`.
 ## Production Deployment URLs
 
 - **Merchant SaaS Dashboard (`frontend_main`)**: `https://shopagent.vijstack.com`
-- **Customer Chat Widget (`frontend_agent`)**: `https://shopagent-agent.vijstack.com` / Custom Domains
 - **Common Backend (`backend`)**: `https://shopagent-backend.vijstack.com`
 
 ---

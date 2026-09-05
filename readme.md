@@ -4,7 +4,6 @@ Built for the **[Razorpay AI Buildathon](https://razorpay.com/buildathon/) — A
 
 > **Live Platform Links**:
 > - **Merchant SaaS Dashboard**: [https://shopagent.vijstack.com](https://shopagent.vijstack.com)
-> - **Customer Agent Widget**: [https://shopagent-agent.vijstack.com](https://shopagent-agent.vijstack.com)
 > - **Backend API**: [https://shopagent-backend.vijstack.com](https://shopagent-backend.vijstack.com)
 
 ## Track 01: Agentic Commerce
@@ -101,7 +100,7 @@ The control plane where merchants configure their store, onboard resource endpoi
 - **SSR Developer Documentation (`/documentation`)**: Real-time rendered API documentation dynamically reflecting the merchant's configured endpoints, field mappings, and code examples.
 - **API Keys & Settings (`/settings`)**: Provision, pause, or revoke storefront developer keys (`sk_live_...`), set branding colors, custom subdomains, and human-confirmation payout thresholds.
 
-### 3. `frontend_agent` — Customer Chat Widget (`https://shopagent-agent.vijstack.com`)
+### 3. `frontend_agent` — Customer Chat Widget
 The customer-facing conversational shopping interface.
 
 - **Tech Stack**: Next.js 15 (App Router), TypeScript, Tailwind CSS, Lucide Icons.

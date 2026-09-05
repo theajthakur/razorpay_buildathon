@@ -1,6 +1,6 @@
 # Architecture
 
-Comprehensive architectural blueprint of ShopAgent, detailing component responsibilities, state ownership, authentication boundaries, multi-tenancy, and key design tradeoffs.
+Comprehensive architectural blueprint of ShopAgent, detailing component responsibilities, state ownership, authentication boundaries, multi-tenancy, database entity relationships, and key design tradeoffs.
 
 ## Related Documentation
 
@@ -90,7 +90,30 @@ flowchart TD
 
 ---
 
-### 2.2 Backend & AI Layer
+### 2.2 Security & Authentication Boundaries
+
+ShopAgent enforces distinct security models across different user types and integration touchpoints:
+
+```mermaid
+flowchart LR
+    subgraph MerchantAuth ["Merchant Auth Boundary"]
+        Clerk["Clerk OAuth / Magic Link"] -->|RS256 JWT| Backend1["get_current_user Guard<br/>(JWKS Key Verification)"]
+    end
+
+    subgraph CustomerAuth ["Customer Auth Boundary"]
+        Login["Customer Login Proxy"] -->|Merchant Auth API| MerchantToken["Merchant Access Token"]
+        MerchantToken -->|Fernet AES-256| SessionStore["MerchantUserSession DB"]
+        SessionStore -->|HS256 Token| Backend2["Customer JWT Guard<br/>(get_current_session)"]
+    end
+
+    subgraph S2SAuth ["Server-to-Server Auth Boundary"]
+        APIKeyHeader["Header / Query API Key<br/>sk_live_..."] -->|HMAC-SHA256 + Pepper| Backend3["API Key Guard<br/>(validate_api_key)"]
+    end
+```
+
+---
+
+### 2.3 Backend & AI Layer
 
 #### FastAPI Backend (`backend/app`)
 - **Role**: High-performance asynchronous Python backend serving as the central engine.
@@ -114,19 +137,111 @@ flowchart TD
 
 ---
 
-### 2.3 Storage & External Integrations
+### 2.4 Database Entity-Relationship (ER) Architecture
 
-#### PostgreSQL Database
-- **Role**: Primary relational database managed via SQLAlchemy.
-- **Schema Overview**:
-  - `users`: Merchant account records keyed by Clerk User ID.
-  - `onboardings`: Merchant API endpoint configurations, auth delivery rules, and branding settings.
-  - `domain_mappings`: Custom domain mappings and Vercel DNS verification metadata.
-  - `api_keys`: Merchant server-to-server API key hashes and metadata.
-  - `conversations` & `conversation_messages`: Persistent customer conversation threads and message histories.
-  - `merchant_user_sessions`: Active customer sessions with Fernet-encrypted merchant API access tokens.
-  - `cart_items`: Per-customer, per-merchant shopping cart line items with quantity limits.
-  - `agent_orders`: Internal state records tracking checkout progress from initiation through Razorpay capture.
+The PostgreSQL relational schema is structured to maintain strict tenant separation and full transaction history:
+
+```mermaid
+erDiagram
+    users ||--o| onboardings : "owns (1-to-1)"
+    users ||--o{ api_keys : "owns (1-to-N)"
+    users ||--o{ merchant_user_sessions : "hosts (1-to-N)"
+    users ||--o{ conversations : "hosts (1-to-N)"
+    users ||--o{ cart_items : "stores (1-to-N)"
+    users ||--o{ agent_orders : "processes (1-to-N)"
+    onboardings ||--o{ domain_mappings : "provisions (1-to-N)"
+    conversations ||--o{ conversation_messages : "contains (1-to-N)"
+    conversations ||--o{ agent_orders : "links (0-to-N)"
+
+    users {
+        string id PK "Clerk User ID"
+        string email
+        string store_name
+        string status "pending | approved | blocked"
+    }
+
+    onboardings {
+        string id PK
+        string user_id FK
+        string base_url
+        boolean auth_enabled
+        json auth_config
+        json products_config
+        json order_history_config
+        json customer_profile_config
+        json addresses_config
+        json create_order_config
+        json verify_order_config
+        json branding_config
+    }
+
+    domain_mappings {
+        string id PK
+        string onboarding_id FK
+        string domain UK
+        string status "PENDING | ACTIVE | FAILED"
+        json dns_details
+    }
+
+    api_keys {
+        string id PK
+        string customer_id FK
+        string name
+        string key_prefix
+        string key_hash
+        string status "active | paused"
+    }
+
+    merchant_user_sessions {
+        string id PK
+        string merchant_id FK
+        string customer_ref
+        string email
+        string merchant_token_encrypted
+        datetime expires_at
+    }
+
+    conversations {
+        string id PK
+        string merchant_id FK
+        string user_email
+        string title
+    }
+
+    conversation_messages {
+        string message_id PK
+        string conversation_id FK
+        string sender "user | agent"
+        text message
+        json metadata
+    }
+
+    cart_items {
+        string id PK
+        string merchant_id FK
+        string customer_email
+        string product_id
+        string name
+        numeric price
+        integer quantity
+    }
+
+    agent_orders {
+        string id PK
+        string merchant_id FK
+        string customer_ref
+        string conversation_id FK
+        string merchant_order_id
+        numeric order_total
+        string razorpay_order_id UK
+        string razorpay_payment_id
+        string status "initiated | merchant_order_created | awaiting_payment | payment_captured | failed"
+    }
+```
+
+---
+
+### 2.5 External Services & Infrastructure
 
 #### Merchant APIs
 - **Role**: Existing e-commerce backends owned by merchants.
@@ -155,6 +270,26 @@ To prevent ambiguity, responsibilities across component boundaries are explicitl
 ## 4. Multi-Tenancy & Session Scoping
 
 ShopAgent provides multi-tenant isolation out of the box:
+
+```mermaid
+flowchart TD
+    Req[Incoming HTTP Request] --> ResolveHost["resolve_merchant_by_host Dependency"]
+    ResolveHost --> CheckParam{Explicit merchant_id in Query/Header?}
+    CheckParam -- Yes --> MatchDB1[Fetch Onboarding by User ID]
+    CheckParam -- No --> CheckDomain{Host Header matches DomainMapping?}
+    CheckDomain -- Yes --> MatchDB2[Fetch Onboarding by onboarding_id]
+    CheckDomain -- No --> CheckBase{Host Header matches Onboarding base_url?}
+    CheckBase -- Yes --> MatchDB3[Fetch Onboarding by base_url]
+    CheckBase -- No --> CheckLocal{Local / Backend Host?}
+    CheckLocal -- Yes --> Fallback[Fallback to default merchant]
+    CheckLocal -- No --> Err404[Raise 404 Domain Not Found]
+
+    MatchDB1 --> ScopedContext["Inject merchant_id into Request State"]
+    MatchDB2 --> ScopedContext
+    MatchDB3 --> ScopedContext
+    Fallback --> ScopedContext
+    ScopedContext --> SQLFilter["Enforce WHERE merchant_id = session['merchant_id'] on all SQL Queries"]
+```
 
 1. **Host-Based Merchant Resolution**: `resolve_merchant_by_host` inspects incoming request HTTP headers (`Host`, `X-Forwarded-Host`, `Origin`, `Referer`) or explicit `merchant_id` query parameters, matching them against `DomainMapping` records and `Onboarding.base_url`.
 2. **Customer Session Scoping**: Upon customer login via `/api/public/auth/login`, ShopAgent generates a scoped JWT containing `sub` (Session ID), `merchant_id`, and `customer_ref`.
